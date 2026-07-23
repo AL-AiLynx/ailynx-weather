@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#071824" />
+  <title>AiLynx Weather · 오프라인</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      color: #f5fbff;
+      font-family: Arial, "Noto Sans KR", sans-serif;
+      background: linear-gradient(180deg, #0b2231, #06131d);
+    }
+    main {
+      width: min(100%, 520px);
+      padding: 32px 24px;
+      border: 1px solid rgba(255,255,255,.1);
+      border-radius: 28px;
+      text-align: center;
+      background: rgba(18,49,67,.82);
+    }
+    .icon { font-size: 64px; }
+    h1 { margin: 16px 0 10px; }
+    p { color: #b7cad6; line-height: 1.7; }
+    a {
+      display: inline-block;
+      margin-top: 14px;
+      padding: 12px 18px;
+      border-radius: 999px;
+      color: #06131d;
+      background: #64d6ff;
+      font-weight: 800;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="icon">🌥️</div>
+    <h1>현재 오프라인입니다</h1>
+    <p>네트워크가 연결되면 최신 비트코인 날씨를 다시 확인할 수 있습니다.</p>
+    <a href="./index.html">다시 확인</a>
+  </main>
+</body>
+</html>

@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  />
+
+  <meta
+    name="theme-color"
+    content="#071824"
+  />
+
+  <meta
+    name="description"
+    content="AiLynx Bitcoin Weather - 비트코인 금융 기상청"
+  />
+
+  <title>AiLynx Bitcoin Weather</title>
+
+  <link rel="stylesheet" href="styles.css" />
+  <link
+  rel="manifest"
+  href="manifest.webmanifest"
+  type="application/manifest+json"
+/>
+
+<link
+  rel="apple-touch-icon"
+  href="apple-touch-icon.png"
+/>
+
+<meta
+  name="apple-mobile-web-app-capable"
+  content="yes"
+/>
+
+<meta
+  name="apple-mobile-web-app-status-bar-style"
+  content="black-translucent"
+/>
+
+<meta
+  name="apple-mobile-web-app-title"
+  content="AiLynx Weather"
+/>
+</head>
+
+<body>
+  <main class="app">
+
+    <!-- 상단 브랜드 -->
+    <header class="top-bar">
+      <div class="brand">
+        <div class="logo" aria-hidden="true">
+          🦁
+        </div>
+
+        <div class="brand-text">
+          <h1>AiLynx Bitcoin Weather</h1>
+          <p>비트코인 금융 기상청</p>
+        </div>
+      </div>
+
+      <div class="live-badge">
+        ● SAMPLE DATA
+      </div>
+    </header>
+
+
+    <!-- 1. 현재 BTC 날씨 -->
+    <section class="hero card">
+      <div>
+        <p class="eyebrow">
+          BTC 현재 날씨
+        </p>
+
+        <h2 class="price">
+          $65,240
+        </h2>
+
+        <span class="price-change">
+          +1.48% · 24시간
+        </span>
+
+        <p class="headline">
+          단기 힘은 유지되고 있지만 상위 시간축의 길은 아직 완전히
+          열리지 않았습니다. 지금은 작은 흔들림보다 다음 확인 시각을
+          기다리는 편이 안전합니다.
+        </p>
+      </div>
+
+      <div class="weather-summary">
+        <div
+          class="weather-icon"
+          aria-hidden="true"
+        >
+          🌤️
+        </div>
+
+        <p class="weather-name">
+          구름 조금
+        </p>
+
+        <p class="energy">
+          현재 시장 에너지 69°
+        </p>
+      </div>
+    </section>
+
+
+    <!-- 2. 시간축별 날씨 -->
+    <section class="section">
+      <div class="section-title">
+        <h2>
+          시간축별 날씨
+        </h2>
+
+        <span>
+          HORUS 힘 발현 준비도
+        </span>
+      </div>
+
+      <div class="hourly-card card">
+        <div class="hourly-list">
+
+          <article class="hour">
+            <div class="hour-time">09:00</div>
+            <div class="hour-icon">☀️</div>
+            <div class="hour-energy">62°</div>
+            <div class="hour-rain">💧 10%</div>
+          </article>
+
+          <article class="hour">
+            <div class="hour-time">10:00</div>
+            <div class="hour-icon">🌤️</div>
+            <div class="hour-energy">64°</div>
+            <div class="hour-rain">💧 15%</div>
+          </article>
+
+          <article class="hour">
+            <div class="hour-time">11:00</div>
+            <div class="hour-icon">🌤️</div>
+            <div class="hour-energy">66°</div>
+            <div class="hour-rain">💧 20%</div>
+          </article>
+
+          <article class="hour">
+            <div class="hour-time">12:00</div>
+            <div class="hour-icon">⛅</div>
+            <div class="hour-energy">68°</div>
+            <div class="hour-rain">💧 30%</div>
+          </article>
+
+          <article class="hour">
+            <div class="hour-time">13:00</div>
+            <div class="hour-icon">☁️</div>
+            <div class="hour-energy">71°</div>
+            <div class="hour-rain">💧 45%</div>
+          </article>
+
+          <article class="hour">
+            <div class="hour-time">14:00</div>
+            <div class="hour-icon">🌦️</div>
+            <div class="hour-energy">74°</div>
+            <div class="hour-rain">💧 60%</div>
+          </article>
+
+          <article class="hour">
+            <div class="hour-time">15:00</div>
+            <div class="hour-icon">🌧️</div>
+            <div class="hour-energy">76°</div>
+            <div class="hour-rain">💧 70%</div>
+          </article>
+
+          <article class="hour">
+            <div class="hour-time">16:00</div>
+            <div class="hour-icon">☁️</div>
+            <div class="hour-energy">70°</div>
+            <div class="hour-rain">💧 40%</div>
+          </article>
+
+        </div>
+      </div>
+    </section>
+
+
+    <!-- 3. 상위 시간축 예보 -->
+    <section class="section">
+      <div class="section-title">
+        <h2>
+          상위 시간축 예보
+        </h2>
+
+        <span>
+          예측이 아닌 관찰 일정
+        </span>
+      </div>
+
+      <div class="daily-card card">
+
+        <div class="daily-header">
+          <span>요일</span>
+          <span>시간축</span>
+          <span>시장 상태</span>
+          <span>발현 준비도</span>
+          <span>상단 / 하단</span>
+        </div>
+
+        <div
+          class="daily-list"
+          id="dailyForecast"
+        ></div>
+
+      </div>
+    </section>
+
+
+    <!-- 4. 핵심 관찰 정보 -->
+    <section class="info-grid">
+
+      <article class="info-card card">
+        <p class="info-label">
+          주인공 시간축
+        </p>
+
+        <p class="info-value">
+          470분
+        </p>
+
+        <p class="info-description">
+          현재 시장의 조정과 힘 발현을 관찰하는 중심 시간축입니다.
+        </p>
+      </article>
+
+      <article class="info-card card">
+        <p class="info-label">
+          다음 확인 시각
+        </p>
+
+        <p class="info-value">
+          15:00 KST
+        </p>
+
+        <p class="info-description">
+          WINDOW 상태와 거래량 변화를 다시 확인합니다.
+        </p>
+      </article>
+
+      <article class="info-card card">
+        <p class="info-label">
+          관찰 필요도
+        </p>
+
+        <p class="info-value safe">
+          지금은 낮음
+        </p>
+
+        <p class="info-description">
+          차트를 계속 볼 필요 없이 다음 확인 시각까지 기다립니다.
+        </p>
+      </article>
+
+    </section>
+
+
+    <!-- 하단 -->
+    <footer>
+      <div>
+        마지막 업데이트: 불러오는 중
+      </div>
+
+      <div>
+        확정 대신 조건 · 예언 대신 검증 · 오늘도 안전운전
+      </div>
+    </footer>
+
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

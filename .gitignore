@@ -1,0 +1,14 @@
+# 비밀 환경변수
+.env
+.env.*
+!.env.example
+
+# 설치 패키지
+node_modules/
+
+# 운영체제 임시 파일
+.DS_Store
+Thumbs.db
+
+# 편집기 임시 파일
+.vscode/

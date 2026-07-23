@@ -1,0 +1,511 @@
+
+    :root {
+      --background: #06131d;
+      --background-light: #0b2231;
+      --card: rgba(18, 49, 67, 0.82);
+      --card-border: rgba(255, 255, 255, 0.1);
+
+      --text-main: #f5fbff;
+      --text-sub: #b7cad6;
+      --text-muted: #7f9aaa;
+
+      --cyan: #64d6ff;
+      --yellow: #ffd45a;
+      --green: #72e0a4;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+
+      font-family:
+        Arial,
+        "Apple SD Gothic Neo",
+        "Noto Sans KR",
+        sans-serif;
+
+      color: var(--text-main);
+
+      background:
+        radial-gradient(
+          circle at top right,
+          rgba(45, 160, 195, 0.25),
+          transparent 38%
+        ),
+        linear-gradient(
+          180deg,
+          var(--background-light),
+          var(--background)
+        );
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    .app {
+      width: min(100%, 1100px);
+      margin: 0 auto;
+      padding: 20px 16px 40px;
+    }
+
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+
+      margin-bottom: 18px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo {
+      display: grid;
+      place-items: center;
+
+      width: 48px;
+      height: 48px;
+
+      border: 1px solid rgba(100, 214, 255, 0.3);
+      border-radius: 16px;
+
+      font-size: 25px;
+
+      background: rgba(100, 214, 255, 0.1);
+    }
+
+    .brand-text h1 {
+      margin: 0;
+      font-size: 19px;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-text p {
+      margin: 4px 0 0;
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    .live-badge {
+      padding: 7px 11px;
+
+      border: 1px solid rgba(114, 224, 164, 0.25);
+      border-radius: 999px;
+
+      color: var(--green);
+      background: rgba(114, 224, 164, 0.08);
+
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .card {
+      border: 1px solid var(--card-border);
+      border-radius: 28px;
+
+      background: var(--card);
+      box-shadow: 0 18px 60px rgba(0, 0, 0, 0.2);
+      backdrop-filter: blur(18px);
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.4fr 0.8fr;
+      gap: 20px;
+
+      padding: 28px;
+      margin-bottom: 18px;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+
+      color: var(--cyan);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+    }
+
+    .price {
+      margin: 0;
+      font-size: clamp(38px, 8vw, 72px);
+      line-height: 1;
+      letter-spacing: -0.06em;
+    }
+
+    .price-change {
+      display: inline-block;
+      margin-top: 10px;
+
+      color: var(--green);
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .headline {
+      max-width: 650px;
+      margin: 24px 0 0;
+
+      color: var(--text-sub);
+      font-size: 17px;
+      line-height: 1.65;
+    }
+
+    .weather-summary {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+
+      min-height: 220px;
+      padding: 20px;
+
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 24px;
+
+      background:
+        radial-gradient(
+          circle at top,
+          rgba(255, 212, 90, 0.16),
+          transparent 55%
+        ),
+        rgba(255, 255, 255, 0.035);
+    }
+
+    .weather-icon {
+      margin-bottom: 12px;
+      font-size: 72px;
+    }
+
+    .weather-name {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 800;
+    }
+
+    .energy {
+      margin: 8px 0 0;
+      color: var(--yellow);
+      font-size: 15px;
+    }
+
+    .section {
+      margin-top: 18px;
+    }
+
+    .section-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+
+      margin-bottom: 10px;
+      padding: 0 4px;
+    }
+
+    .section-title h2 {
+      margin: 0;
+      font-size: 17px;
+    }
+
+    .section-title span {
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    .hourly-card {
+      padding: 18px 10px;
+      overflow-x: auto;
+    }
+
+    .hourly-list {
+      display: grid;
+      grid-template-columns: repeat(8, minmax(92px, 1fr));
+      min-width: 760px;
+    }
+
+    .hour {
+      padding: 12px 8px;
+      text-align: center;
+
+      border-right: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .hour:last-child {
+      border-right: 0;
+    }
+
+    .hour-time {
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    .hour-icon {
+      margin: 13px 0;
+      font-size: 31px;
+    }
+
+    .hour-energy {
+      font-size: 22px;
+      font-weight: 800;
+    }
+
+    .hour-rain {
+      margin-top: 10px;
+      color: var(--cyan);
+      font-size: 12px;
+    }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+
+      margin-top: 18px;
+    }
+
+    .info-card {
+      padding: 20px;
+    }
+
+    .info-label {
+      margin: 0 0 10px;
+
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    .info-value {
+      margin: 0;
+      font-size: 21px;
+      font-weight: 800;
+    }
+
+    .info-description {
+      margin: 10px 0 0;
+
+      color: var(--text-sub);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .safe {
+      color: var(--green);
+    }
+
+    footer {
+      margin-top: 28px;
+      padding-top: 18px;
+
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+
+      color: var(--text-muted);
+      text-align: center;
+      font-size: 12px;
+      line-height: 1.7;
+    }
+
+    @media (max-width: 760px) {
+      .app {
+        padding: 16px 12px 30px;
+      }
+
+      .top-bar {
+        align-items: flex-start;
+      }
+
+      .brand-text h1 {
+        font-size: 16px;
+      }
+
+      .hero {
+        grid-template-columns: 1fr;
+        padding: 22px 18px;
+      }
+
+      .weather-summary {
+        min-height: 180px;
+      }
+
+      .info-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .headline {
+        font-size: 15px;
+      }
+    }
+
+/* =========================
+   상위 시간축 예보
+========================= */
+
+.daily-card {
+  padding: 10px 18px;
+  overflow: hidden;
+}
+
+.daily-header,
+.daily-row {
+  display: grid;
+
+  grid-template-columns:
+    70px
+    80px
+    minmax(190px, 1fr)
+    100px
+    120px;
+
+  align-items: center;
+  gap: 12px;
+}
+
+.daily-header {
+  padding: 11px 12px;
+
+  border-bottom:
+    1px solid rgba(255, 255, 255, 0.08);
+
+  color: var(--text-muted);
+
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.daily-row {
+  min-height: 76px;
+  padding: 13px 12px;
+
+  border-bottom:
+    1px solid rgba(255, 255, 255, 0.065);
+}
+
+.daily-row:last-child {
+  border-bottom: 0;
+}
+
+.daily-day {
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.daily-timeframe {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+
+  width: fit-content;
+  min-width: 48px;
+
+  padding: 5px 9px;
+
+  border:
+    1px solid rgba(100, 214, 255, 0.2);
+  border-radius: 999px;
+
+  color: var(--cyan);
+  background:
+    rgba(100, 214, 255, 0.08);
+
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.daily-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.daily-icon {
+  width: 42px;
+
+  font-size: 30px;
+  text-align: center;
+}
+
+.daily-status-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.daily-status-name {
+  color: var(--text-main);
+
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.daily-status-note {
+  color: var(--text-muted);
+
+  font-size: 11px;
+}
+
+.daily-probability {
+  color: var(--cyan);
+
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.daily-range {
+  color: var(--text-main);
+
+  font-size: 15px;
+  font-weight: 800;
+  text-align: right;
+}
+
+/* 모바일 화면 */
+@media (max-width: 760px) {
+  .daily-card {
+    padding: 6px 10px;
+    overflow-x: auto;
+  }
+
+  .daily-header,
+  .daily-row {
+    grid-template-columns:
+      54px
+      60px
+      minmax(170px, 1fr)
+      85px
+      95px;
+
+    min-width: 610px;
+    gap: 8px;
+  }
+
+  .daily-header {
+    padding: 10px 8px;
+  }
+
+  .daily-row {
+    padding: 12px 8px;
+  }
+
+  .daily-day {
+    font-size: 14px;
+  }
+
+  .daily-icon {
+    width: 36px;
+    font-size: 27px;
+  }
+
+  .daily-range {
+    font-size: 13px;
+  }
+}
