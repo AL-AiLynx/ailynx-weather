@@ -1,12 +1,14 @@
 "use strict";
 
-const CACHE_NAME = "ailynx-weather-v1";
+const CACHE_NAME =
+  "ailynx-weather-v2";
 
 const APP_SHELL = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
+  "./weather-data.json",
   "./manifest.webmanifest",
   "./offline.html",
   "./apple-touch-icon.png",
@@ -14,45 +16,137 @@ const APP_SHELL = [
   "./icons/icon-512.png"
 ];
 
-self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL))
-  );
-  self.skipWaiting();
-});
 
-self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches.keys().then((cacheNames) =>
-      Promise.all(
-        cacheNames
-          .filter((name) => name !== CACHE_NAME)
-          .map((name) => caches.delete(name))
-      )
-    )
-  );
-  self.clients.claim();
-});
-
-self.addEventListener("fetch", (event) => {
-  const request = event.request;
-
-  if (request.method !== "GET") return;
-
-  if (request.mode === "navigate") {
-    event.respondWith(
-      fetch(request).catch(async () => {
-        const cache = await caches.open(CACHE_NAME);
-        return (
-          (await cache.match("./index.html")) ||
-          (await cache.match("./offline.html"))
-        );
-      })
+self.addEventListener(
+  "install",
+  (event) => {
+    event.waitUntil(
+      caches
+        .open(CACHE_NAME)
+        .then((cache) =>
+          cache.addAll(APP_SHELL)
+        )
     );
-    return;
-  }
 
-  event.respondWith(
-    caches.match(request).then((cached) => cached || fetch(request))
-  );
-});
+    self.skipWaiting();
+  }
+);
+
+
+self.addEventListener(
+  "activate",
+  (event) => {
+    event.waitUntil(
+      caches
+        .keys()
+        .then((cacheNames) =>
+          Promise.all(
+            cacheNames
+              .filter(
+                (name) =>
+                  name !== CACHE_NAME
+              )
+              .map(
+                (name) =>
+                  caches.delete(name)
+              )
+          )
+        )
+    );
+
+    self.clients.claim();
+  }
+);
+
+
+self.addEventListener(
+  "fetch",
+  (event) => {
+    const request =
+      event.request;
+
+    if (request.method !== "GET") {
+      return;
+    }
+
+    const requestUrl =
+      new URL(request.url);
+
+
+    /*
+      weather-data.json은
+      네트워크 우선, 실패하면 캐시
+    */
+    if (
+      requestUrl.pathname.endsWith(
+        "/weather-data.json"
+      )
+    ) {
+      event.respondWith(
+        fetch(request)
+          .then(async (response) => {
+            const cache =
+              await caches.open(
+                CACHE_NAME
+              );
+
+            cache.put(
+              request,
+              response.clone()
+            );
+
+            return response;
+          })
+          .catch(() =>
+            caches.match(request)
+          )
+      );
+
+      return;
+    }
+
+
+    /*
+      페이지 이동
+    */
+    if (
+      request.mode === "navigate"
+    ) {
+      event.respondWith(
+        fetch(request).catch(
+          async () => {
+            const cache =
+              await caches.open(
+                CACHE_NAME
+              );
+
+            return (
+              (await cache.match(
+                "./index.html"
+              )) ||
+              (await cache.match(
+                "./offline.html"
+              ))
+            );
+          }
+        )
+      );
+
+      return;
+    }
+
+
+    /*
+      CSS·JS·아이콘 등
+    */
+    event.respondWith(
+      caches
+        .match(request)
+        .then(
+          (cachedResponse) =>
+            cachedResponse ||
+            fetch(request)
+        )
+    );
+  }
+);

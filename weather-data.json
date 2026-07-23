@@ -1,0 +1,147 @@
+{
+  "mode": "SAMPLE",
+  "price": 65240,
+  "priceChange": 1.48,
+  "updatedAt": "2026-07-23T17:24:00+09:00",
+
+  "headline": "단기 힘은 유지되고 있지만 상위 시간축의 길은 아직 완전히 열리지 않았습니다. 지금은 작은 흔들림보다 다음 확인 시각을 기다리는 편이 안전합니다.",
+
+  "weather": {
+    "icon": "PARTLY_CLOUDY",
+    "name": "구름 조금",
+    "energy": 69
+  },
+
+  "hourly": [
+    {
+      "time": "09:00",
+      "icon": "SUNNY",
+      "energy": 62,
+      "probability": 10
+    },
+    {
+      "time": "10:00",
+      "icon": "PARTLY_CLOUDY",
+      "energy": 64,
+      "probability": 15
+    },
+    {
+      "time": "11:00",
+      "icon": "PARTLY_CLOUDY",
+      "energy": 66,
+      "probability": 20
+    },
+    {
+      "time": "12:00",
+      "icon": "MOSTLY_CLOUDY",
+      "energy": 68,
+      "probability": 30
+    },
+    {
+      "time": "13:00",
+      "icon": "CLOUDY",
+      "energy": 71,
+      "probability": 45
+    },
+    {
+      "time": "14:00",
+      "icon": "SHOWERS",
+      "energy": 74,
+      "probability": 60
+    },
+    {
+      "time": "15:00",
+      "icon": "RAIN",
+      "energy": 76,
+      "probability": 70
+    },
+    {
+      "time": "16:00",
+      "icon": "CLOUDY",
+      "energy": 70,
+      "probability": 40
+    }
+  ],
+
+  "daily": [
+    {
+      "day": "오늘",
+      "timeframe": "1D",
+      "icon": "PARTLY_CLOUDY",
+      "status": "구름 조금",
+      "note": "단기 힘 유지",
+      "probability": 30,
+      "upperEnergy": 72,
+      "lowerEnergy": 64
+    },
+    {
+      "day": "화",
+      "timeframe": "2D",
+      "icon": "SUNNY",
+      "status": "맑음",
+      "note": "구조 안정 확인",
+      "probability": 20,
+      "upperEnergy": 74,
+      "lowerEnergy": 66
+    },
+    {
+      "day": "수",
+      "timeframe": "3D",
+      "icon": "SHOWERS",
+      "status": "소나기 가능",
+      "note": "힘 발현 창 관찰",
+      "probability": 60,
+      "upperEnergy": 78,
+      "lowerEnergy": 63
+    },
+    {
+      "day": "목",
+      "timeframe": "4D",
+      "icon": "RAIN",
+      "status": "변동성 주의",
+      "note": "상위 구조 충돌",
+      "probability": 65,
+      "upperEnergy": 81,
+      "lowerEnergy": 61
+    },
+    {
+      "day": "금",
+      "timeframe": "5D",
+      "icon": "CLOUDY",
+      "status": "흐림",
+      "note": "방향 합치 대기",
+      "probability": 45,
+      "upperEnergy": 73,
+      "lowerEnergy": 62
+    },
+    {
+      "day": "토",
+      "timeframe": "6D",
+      "icon": "PARTLY_CLOUDY",
+      "status": "구름 조금",
+      "note": "회복 여부 확인",
+      "probability": 35,
+      "upperEnergy": 75,
+      "lowerEnergy": 65
+    },
+    {
+      "day": "일",
+      "timeframe": "1W",
+      "icon": "MOSTLY_CLOUDY",
+      "status": "부분 흐림",
+      "note": "주봉 마감 관찰",
+      "probability": 40,
+      "upperEnergy": 77,
+      "lowerEnergy": 64
+    }
+  ],
+
+  "mainTimeframe": "470M",
+  "nextCheck": "15:00 KST",
+
+  "watchLevel": {
+    "level": "LOW",
+    "text": "지금은 낮음",
+    "description": "차트를 계속 볼 필요 없이 다음 확인 시각까지 기다립니다."
+  }
+}

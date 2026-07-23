@@ -2,165 +2,117 @@
 
 /*
   AiLynx Bitcoin Weather
-  HORUS 연결 전 화면 테스트용 샘플 데이터
+  weather-data.json을 읽어 화면에 표시
 */
 
-const weatherData = {
-  price: 65240,
-  priceChange: 1.48,
+const FALLBACK_DATA = {
+  mode: "OFFLINE",
+  price: 0,
+  priceChange: 0,
+  updatedAt: null,
 
   headline:
-    "단기 힘은 유지되고 있지만 상위 시간축의 길은 아직 완전히 열리지 않았습니다. 지금은 작은 흔들림보다 다음 확인 시각을 기다리는 편이 안전합니다.",
+    "최신 날씨 데이터를 가져오지 못했습니다. 네트워크 연결 상태를 확인해 주세요.",
 
   weather: {
-    icon: "🌤️",
-    name: "구름 조금",
-    energy: 69
+    icon: "CLOUDY",
+    name: "데이터 대기",
+    energy: 0
   },
 
-  hourly: [
-    {
-      time: "09:00",
-      icon: "☀️",
-      energy: 62,
-      probability: 10
-    },
-    {
-      time: "10:00",
-      icon: "🌤️",
-      energy: 64,
-      probability: 15
-    },
-    {
-      time: "11:00",
-      icon: "🌤️",
-      energy: 66,
-      probability: 20
-    },
-    {
-      time: "12:00",
-      icon: "⛅",
-      energy: 68,
-      probability: 30
-    },
-    {
-      time: "13:00",
-      icon: "☁️",
-      energy: 71,
-      probability: 45
-    },
-    {
-      time: "14:00",
-      icon: "🌦️",
-      energy: 74,
-      probability: 60
-    },
-    {
-      time: "15:00",
-      icon: "🌧️",
-      energy: 76,
-      probability: 70
-    },
-    {
-      time: "16:00",
-      icon: "☁️",
-      energy: 70,
-      probability: 40
-    }
-  ],
+  hourly: [],
+  daily: [],
 
-  /*
-    1D~1W 시간축의 상태 샘플
-    가격 방향 예측이 아니라 관찰 일정
-  */
-  daily: [
-    {
-      day: "오늘",
-      timeframe: "1D",
-      icon: "🌤️",
-      status: "구름 조금",
-      note: "단기 힘 유지",
-      probability: 30,
-      upperEnergy: 72,
-      lowerEnergy: 64
-    },
-    {
-      day: "화",
-      timeframe: "2D",
-      icon: "☀️",
-      status: "맑음",
-      note: "구조 안정 확인",
-      probability: 20,
-      upperEnergy: 74,
-      lowerEnergy: 66
-    },
-    {
-      day: "수",
-      timeframe: "3D",
-      icon: "🌦️",
-      status: "소나기 가능",
-      note: "힘 발현 창 관찰",
-      probability: 60,
-      upperEnergy: 78,
-      lowerEnergy: 63
-    },
-    {
-      day: "목",
-      timeframe: "4D",
-      icon: "🌧️",
-      status: "변동성 주의",
-      note: "상위 구조 충돌",
-      probability: 65,
-      upperEnergy: 81,
-      lowerEnergy: 61
-    },
-    {
-      day: "금",
-      timeframe: "5D",
-      icon: "☁️",
-      status: "흐림",
-      note: "방향 합치 대기",
-      probability: 45,
-      upperEnergy: 73,
-      lowerEnergy: 62
-    },
-    {
-      day: "토",
-      timeframe: "6D",
-      icon: "🌤️",
-      status: "구름 조금",
-      note: "회복 여부 확인",
-      probability: 35,
-      upperEnergy: 75,
-      lowerEnergy: 65
-    },
-    {
-      day: "일",
-      timeframe: "1W",
-      icon: "⛅",
-      status: "부분 흐림",
-      note: "주봉 마감 관찰",
-      probability: 40,
-      upperEnergy: 77,
-      lowerEnergy: 64
-    }
-  ],
-
-  mainTimeframe: "470분",
-  nextCheck: "15:00 KST",
+  mainTimeframe: "-",
+  nextCheck: "-",
 
   watchLevel: {
-    text: "지금은 낮음",
+    level: "UNKNOWN",
+    text: "확인 필요",
     description:
-      "차트를 계속 볼 필요 없이 다음 확인 시각까지 기다립니다."
+      "최신 데이터가 연결되면 관찰 필요도를 다시 표시합니다."
   }
 };
 
+let weatherData = FALLBACK_DATA;
+
 
 /*
-  가격 형식 변환
+  날씨 코드 → 이모지
+*/
+const WEATHER_ICONS = {
+  SUNNY: "☀️",
+  PARTLY_CLOUDY: "🌤️",
+  MOSTLY_CLOUDY: "⛅",
+  CLOUDY: "☁️",
+  SHOWERS: "🌦️",
+  RAIN: "🌧️",
+  STORM: "⛈️",
+  FOG: "🌫️",
+  WIND: "💨",
+  HOT: "🔥",
+  COLD: "❄️"
+};
+
+
+function getWeatherIcon(iconCode) {
+  return WEATHER_ICONS[iconCode] || "☁️";
+}
+
+
+/*
+  JSON 데이터 불러오기
+*/
+async function loadWeatherData() {
+  try {
+    const response = await fetch(
+      "./weather-data.json",
+      {
+        cache: "no-store"
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `날씨 데이터 응답 오류: ${response.status}`
+      );
+    }
+
+    const data = await response.json();
+
+    if (
+      typeof data.price !== "number" ||
+      !data.weather
+    ) {
+      throw new Error(
+        "날씨 데이터 형식이 올바르지 않습니다."
+      );
+    }
+
+    weatherData = data;
+
+    console.log(
+      "AiLynx JSON 데이터 연결 성공"
+    );
+  } catch (error) {
+    console.error(
+      "AiLynx JSON 데이터 연결 실패:",
+      error
+    );
+
+    weatherData = FALLBACK_DATA;
+  }
+}
+
+
+/*
+  가격 표시
 */
 function formatPrice(value) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "데이터 대기";
+  }
+
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
@@ -170,9 +122,38 @@ function formatPrice(value) {
 
 
 /*
-  현재 한국 시각
+  470M → 470분
 */
-function getCurrentKST() {
+function formatTimeframe(value) {
+  if (typeof value !== "string") {
+    return "-";
+  }
+
+  const minuteMatch =
+    value.match(/^(\d+)M$/);
+
+  if (minuteMatch) {
+    return `${minuteMatch[1]}분`;
+  }
+
+  return value;
+}
+
+
+/*
+  데이터 관측 시각 표시
+*/
+function formatUpdatedAt(value) {
+  if (!value) {
+    return "시각 확인 불가";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "시각 확인 불가";
+  }
+
   return new Intl.DateTimeFormat("ko-KR", {
     timeZone: "Asia/Seoul",
     year: "numeric",
@@ -181,12 +162,42 @@ function getCurrentKST() {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false
-  }).format(new Date());
+  }).format(date);
 }
 
 
 /*
-  현재 날씨 카드
+  상단 상태 배지
+*/
+function renderStatusBadge() {
+  const badge =
+    document.querySelector(".live-badge");
+
+  if (!badge) {
+    return;
+  }
+
+  if (!navigator.onLine) {
+    badge.textContent =
+      "● OFFLINE CACHE";
+
+    return;
+  }
+
+  if (weatherData.mode === "SAMPLE") {
+    badge.textContent =
+      "● SAMPLE DATA";
+
+    return;
+  }
+
+  badge.textContent =
+    "● LIVE DATA";
+}
+
+
+/*
+  현재 날씨
 */
 function renderCurrentWeather() {
   const priceElement =
@@ -215,27 +226,28 @@ function renderCurrentWeather() {
     !weatherNameElement ||
     !energyElement
   ) {
-    console.error(
-      "현재 날씨 화면 요소를 찾지 못했습니다."
-    );
-
     return;
   }
 
   priceElement.textContent =
     formatPrice(weatherData.price);
 
+  const change =
+    Number(weatherData.priceChange) || 0;
+
   const sign =
-    weatherData.priceChange >= 0 ? "+" : "";
+    change >= 0 ? "+" : "";
 
   changeElement.textContent =
-    `${sign}${weatherData.priceChange.toFixed(2)}% · 24시간`;
+    `${sign}${change.toFixed(2)}% · 24시간`;
 
   headlineElement.textContent =
     weatherData.headline;
 
   weatherIconElement.textContent =
-    weatherData.weather.icon;
+    getWeatherIcon(
+      weatherData.weather.icon
+    );
 
   weatherNameElement.textContent =
     weatherData.weather.name;
@@ -249,50 +261,40 @@ function renderCurrentWeather() {
   시간축별 날씨
 */
 function renderHourlyWeather() {
-  const hourCards =
-    document.querySelectorAll(".hour");
+  const container =
+    document.querySelector(".hourly-list");
 
-  hourCards.forEach((card, index) => {
-    const data =
-      weatherData.hourly[index];
+  if (!container) {
+    return;
+  }
 
-    if (!data) {
-      card.style.display = "none";
-      return;
-    }
+  container.innerHTML = "";
 
-    const timeElement =
-      card.querySelector(".hour-time");
+  weatherData.hourly.forEach((data) => {
+    const card =
+      document.createElement("article");
 
-    const iconElement =
-      card.querySelector(".hour-icon");
+    card.className = "hour";
 
-    const energyElement =
-      card.querySelector(".hour-energy");
+    card.innerHTML = `
+      <div class="hour-time">
+        ${data.time}
+      </div>
 
-    const probabilityElement =
-      card.querySelector(".hour-rain");
+      <div class="hour-icon">
+        ${getWeatherIcon(data.icon)}
+      </div>
 
-    if (
-      !timeElement ||
-      !iconElement ||
-      !energyElement ||
-      !probabilityElement
-    ) {
-      return;
-    }
+      <div class="hour-energy">
+        ${data.energy}°
+      </div>
 
-    timeElement.textContent =
-      data.time;
+      <div class="hour-rain">
+        💧 ${data.probability}%
+      </div>
+    `;
 
-    iconElement.textContent =
-      data.icon;
-
-    energyElement.textContent =
-      `${data.energy}°`;
-
-    probabilityElement.textContent =
-      `💧 ${data.probability}%`;
+    container.appendChild(card);
   });
 }
 
@@ -301,18 +303,14 @@ function renderHourlyWeather() {
   상위 시간축 예보
 */
 function renderDailyForecast() {
-  const dailyContainer =
+  const container =
     document.querySelector("#dailyForecast");
 
-  if (!dailyContainer) {
-    console.error(
-      "상위 시간축 예보 영역을 찾지 못했습니다."
-    );
-
+  if (!container) {
     return;
   }
 
-  dailyContainer.innerHTML = "";
+  container.innerHTML = "";
 
   weatherData.daily.forEach((data) => {
     const row =
@@ -333,7 +331,7 @@ function renderDailyForecast() {
 
       <div class="daily-status">
         <span class="daily-icon">
-          ${data.icon}
+          ${getWeatherIcon(data.icon)}
         </span>
 
         <span class="daily-status-text">
@@ -352,21 +350,24 @@ function renderDailyForecast() {
       </div>
 
       <div class="daily-range">
-        ${data.upperEnergy}° / ${data.lowerEnergy}°
+        ${data.upperEnergy}° /
+        ${data.lowerEnergy}°
       </div>
     `;
 
-    dailyContainer.appendChild(row);
+    container.appendChild(row);
   });
 }
 
 
 /*
-  주인공 시간축·다음 확인·관찰 필요도
+  핵심 정보 카드
 */
 function renderInfoCards() {
   const infoValues =
-    document.querySelectorAll(".info-value");
+    document.querySelectorAll(
+      ".info-value"
+    );
 
   const infoDescriptions =
     document.querySelectorAll(
@@ -377,15 +378,13 @@ function renderInfoCards() {
     infoValues.length < 3 ||
     infoDescriptions.length < 3
   ) {
-    console.error(
-      "하단 정보 카드를 찾지 못했습니다."
-    );
-
     return;
   }
 
   infoValues[0].textContent =
-    weatherData.mainTimeframe;
+    formatTimeframe(
+      weatherData.mainTimeframe
+    );
 
   infoValues[1].textContent =
     weatherData.nextCheck;
@@ -395,72 +394,112 @@ function renderInfoCards() {
 
   infoDescriptions[2].textContent =
     weatherData.watchLevel.description;
+
+  infoValues[2].classList.remove(
+    "safe"
+  );
+
+  if (
+    weatherData.watchLevel.level ===
+    "LOW"
+  ) {
+    infoValues[2].classList.add(
+      "safe"
+    );
+  }
 }
 
 
 /*
-  마지막 업데이트 시각
+  마지막 관측 시각
 */
 function renderLastUpdated() {
   const footerFirstLine =
-    document.querySelector("footer div");
+    document.querySelector(
+      "footer div"
+    );
 
   if (!footerFirstLine) {
     return;
   }
 
   footerFirstLine.textContent =
-    `마지막 업데이트: ${getCurrentKST()} KST`;
+    `마지막 관측: ${formatUpdatedAt(
+      weatherData.updatedAt
+    )} KST`;
 }
 
 
 /*
-  앱 실행
+  전체 화면 표시
 */
-function initializeApp() {
-  try {
-    renderCurrentWeather();
-    renderHourlyWeather();
-    renderDailyForecast();
-    renderInfoCards();
-    renderLastUpdated();
-
-    console.log(
-      "AiLynx Weather 화면 연결 성공"
-    );
-  } catch (error) {
-    console.error(
-      "AiLynx Weather 실행 오류:",
-      error
-    );
-  }
+function renderApp() {
+  renderStatusBadge();
+  renderCurrentWeather();
+  renderHourlyWeather();
+  renderDailyForecast();
+  renderInfoCards();
+  renderLastUpdated();
 }
+
+
+/*
+  앱 시작
+*/
+async function initializeApp() {
+  await loadWeatherData();
+  renderApp();
+}
+
+
+/*
+  온라인·오프라인 변화 감지
+*/
+window.addEventListener(
+  "online",
+  async () => {
+    await loadWeatherData();
+    renderApp();
+  }
+);
+
+window.addEventListener(
+  "offline",
+  () => {
+    renderStatusBadge();
+  }
+);
 
 
 document.addEventListener(
   "DOMContentLoaded",
   initializeApp
 );
+
+
 /*
-  AiLynx PWA 서비스 워커 등록
+  서비스 워커 등록
 */
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", async () => {
-    try {
-      const registration =
-        await navigator.serviceWorker.register(
-          "./service-worker.js"
-        );
+  window.addEventListener(
+    "load",
+    async () => {
+      try {
+        const registration =
+          await navigator.serviceWorker.register(
+            "./service-worker.js"
+          );
 
-      console.log(
-        "AiLynx 서비스 워커 등록 성공:",
-        registration.scope
-      );
-    } catch (error) {
-      console.error(
-        "AiLynx 서비스 워커 등록 실패:",
-        error
-      );
+        console.log(
+          "AiLynx 서비스 워커 등록 성공:",
+          registration.scope
+        );
+      } catch (error) {
+        console.error(
+          "AiLynx 서비스 워커 등록 실패:",
+          error
+        );
+      }
     }
-  });
+  );
 }
