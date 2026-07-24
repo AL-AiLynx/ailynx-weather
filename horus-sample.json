@@ -1,0 +1,57 @@
+{
+  "schemaVersion": "0.4-draft",
+
+  "source": {
+    "platform": "TradingView",
+    "exchange": "Coinbase",
+    "symbol": "BTCUSD",
+    "timeframe": "1H",
+    "capturedAt": "2026-07-24T15:17:38+09:00",
+    "chartTimezone": "UTC-04:00"
+  },
+
+  "horusA": {
+    "layer": "FORCE",
+    "selfRole": "SUPPORT",
+    "nextHint": "2H",
+    "mode": "WAIT",
+    "baseScore": 53,
+    "state": "WEAK"
+  },
+
+  "horusB": {
+    "layer": "STRUCTURE",
+    "selfRole": "SUPPORT",
+    "nextHint": "2H",
+    "mode": "BLOCK",
+    "baseScore": 55,
+    "state": "WAIT"
+  },
+
+  "maat": {
+    "mode": "WATCH",
+    "phase": "VOL_TRIGGER_WAIT",
+    "mainTimeframe": "1H",
+    "parentTimeframe": "2H",
+    "window": "+/-50M",
+    "count": "OPEN",
+    "noise": {
+      "state": "BUILD",
+      "score": 73
+    },
+    "volume": "WAIT",
+    "result": "WINDOW_OPEN",
+    "reset": "NO",
+    "why": "OH.RISK"
+  },
+
+  "maat2": {
+    "structureScore": 86,
+    "forceScore": 9,
+    "windowScore": 45,
+    "riskScore": 5,
+    "phase": "STRUCTURE_TOUCH",
+    "result": "WATCH",
+    "note": "STRUCT OK / FORCE WAIT"
+  }
+}
