@@ -1,14 +1,16 @@
 "use strict";
 
 const CACHE_NAME =
-  "ailynx-weather-v4";
+  "ailynx-weather-v5";
 
 const APP_SHELL = [
   "./",
   "./index.html",
   "./styles.css",
+  "./weather-engine.js",
   "./app.js",
   "./weather-data.json",
+  "./horus-sample.json",
   "./manifest.webmanifest",
   "./offline.html",
   "./apple-touch-icon.png",
