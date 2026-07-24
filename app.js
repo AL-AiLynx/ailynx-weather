@@ -1,5 +1,7 @@
 "use strict";
 
+const APP_DATA_MODE = "HORUS_SAMPLE";
+
 /*
   AiLynx Bitcoin Weather
   weather-data.json을 읽어 화면에 표시
@@ -167,6 +169,109 @@ function parseUpdatedAt(value) {
   return Number.isNaN(date.getTime())
     ? null
     : date;
+}
+
+
+async function applyHorusSampleOverlay() {
+  if (APP_DATA_MODE !== "HORUS_SAMPLE") {
+    return;
+  }
+
+  const engine = window.AiLynxWeatherEngine;
+
+  if (!engine) {
+    console.warn("AiLynx HORUS 엔진을 찾을 수 없습니다.");
+    return;
+  }
+
+  if (typeof engine.translateHorusToWeather !== "function") {
+    console.warn("AiLynx HORUS 변환 함수를 찾을 수 없습니다.");
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      "./horus-sample.json",
+      {
+        cache: "no-store"
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `HORUS 샘플 응답 오류: ${response.status}`
+      );
+    }
+
+    const input = await response.json();
+    const result =
+      engine.translateHorusToWeather(input);
+
+    if (!result || typeof result !== "object") {
+      console.warn("AiLynx HORUS 변환 결과가 없습니다.");
+      return;
+    }
+
+    if (result.ruleId === "NO_MATCHING_RULE") {
+      console.warn("AiLynx HORUS 일치 규칙이 없습니다.");
+      return;
+    }
+
+    if (
+      !result.weather ||
+      !result.watchLevel ||
+      typeof result.weather !== "object" ||
+      typeof result.watchLevel !== "object"
+    ) {
+      console.warn("AiLynx HORUS 핵심 결과가 없습니다.");
+      return;
+    }
+
+    weatherData = {
+      ...weatherData,
+      headline:
+        result.headline ?? weatherData.headline,
+      weather: {
+        ...weatherData.weather,
+        icon:
+          result.weather.icon ?? weatherData.weather.icon,
+        name:
+          result.weather.name ?? weatherData.weather.name,
+        energy:
+          result.weather.energy === null ||
+          Number.isFinite(result.weather.energy)
+            ? result.weather.energy
+            : weatherData.weather.energy
+      },
+      watchLevel: {
+        ...weatherData.watchLevel,
+        level:
+          result.watchLevel.level ??
+          weatherData.watchLevel.level,
+        text:
+          result.watchLevel.text ??
+          weatherData.watchLevel.text,
+        description:
+          result.watchLevel.description ??
+          weatherData.watchLevel.description
+      }
+    };
+
+    console.log(
+      "AiLynx HORUS 샘플 적용 성공:",
+      {
+        ruleId: result.ruleId,
+        condition: result.condition,
+        weather: result.weather.name,
+        watchLevel: result.watchLevel.level
+      }
+    );
+  } catch (error) {
+    console.error(
+      "AiLynx HORUS 샘플 적용 실패:",
+      error
+    );
+  }
 }
 
 
@@ -367,7 +472,9 @@ function renderCurrentWeather() {
     weatherData.weather.name;
 
   energyElement.textContent =
-    `현재 시장 에너지 ${weatherData.weather.energy}°`;
+    Number.isFinite(weatherData.weather.energy)
+      ? `현재 시장 에너지 ${weatherData.weather.energy}°`
+      : "현재 시장 에너지 산정 대기";
 }
 
 
@@ -384,7 +491,12 @@ function renderHourlyWeather() {
 
   container.innerHTML = "";
 
-  weatherData.hourly.forEach((data) => {
+  const hourlyData =
+    Array.isArray(weatherData.hourly)
+      ? weatherData.hourly
+      : [];
+
+  hourlyData.forEach((data) => {
     const card =
       document.createElement("article");
 
@@ -426,7 +538,12 @@ function renderDailyForecast() {
 
   container.innerHTML = "";
 
-  weatherData.daily.forEach((data) => {
+  const dailyData =
+    Array.isArray(weatherData.daily)
+      ? weatherData.daily
+      : [];
+
+  dailyData.forEach((data) => {
     const row =
       document.createElement("article");
 
@@ -585,6 +702,7 @@ function startFreshnessTimer() {
 */
 async function initializeApp() {
   await loadWeatherData();
+  await applyHorusSampleOverlay();
   renderApp();
   startFreshnessTimer();
 }
@@ -597,6 +715,7 @@ window.addEventListener(
   "online",
   async () => {
     await loadWeatherData();
+    await applyHorusSampleOverlay();
     renderApp();
   }
 );

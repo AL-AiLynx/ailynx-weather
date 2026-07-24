@@ -1,7 +1,7 @@
 "use strict";
 
 const CACHE_NAME =
-  "ailynx-weather-v5";
+  "ailynx-weather-v6";
 
 const APP_SHELL = [
   "./",
@@ -79,20 +79,30 @@ self.addEventListener(
       weather-data.json은
       네트워크 우선, 실패하면 캐시
     */
-    if (
+    const isJsonDataRequest =
       requestUrl.pathname.endsWith(
         "/weather-data.json"
-      )
-    ) {
+      ) ||
+      requestUrl.pathname.endsWith(
+        "/horus-sample.json"
+      );
+
+    if (isJsonDataRequest) {
       event.respondWith(
         fetch(request)
           .then(async (response) => {
+            if (!response.ok) {
+              throw new Error(
+                `JSON data response error: ${response.status}`
+              );
+            }
+
             const cache =
               await caches.open(
                 CACHE_NAME
               );
 
-            cache.put(
+            await cache.put(
               request,
               response.clone()
             );
@@ -109,12 +119,17 @@ self.addEventListener(
 
             return new Response(
               JSON.stringify({
-                error: "Weather data unavailable"
+                error: requestUrl.pathname.endsWith(
+                  "/horus-sample.json"
+                )
+                  ? "HORUS sample unavailable"
+                  : "Weather data unavailable"
               }),
               {
                 status: 503,
                 headers: {
-                  "Content-Type": "application/json"
+                  "Content-Type":
+                    "application/json; charset=utf-8"
                 }
               }
             );
