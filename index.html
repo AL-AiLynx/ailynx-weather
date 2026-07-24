@@ -18,34 +18,61 @@
     content="AiLynx Bitcoin Weather - 비트코인 금융 기상청"
   />
 
+  <meta
+    name="format-detection"
+    content="telephone=no"
+  />
+
   <title>AiLynx Bitcoin Weather</title>
 
-  <link rel="stylesheet" href="styles.css" />
+  <!-- 기본 디자인 -->
   <link
-  rel="manifest"
-  href="manifest.webmanifest"
-  type="application/manifest+json"
-/>
+    rel="stylesheet"
+    href="./styles.css"
+  />
 
-<link
-  rel="apple-touch-icon"
-  href="apple-touch-icon.png"
-/>
+  <!-- PWA 매니페스트 -->
+  <link
+    rel="manifest"
+    href="./manifest.webmanifest"
+    type="application/manifest+json"
+  />
 
-<meta
-  name="apple-mobile-web-app-capable"
-  content="yes"
-/>
+  <!-- 브라우저 파비콘 -->
+  <link
+    rel="icon"
+    type="image/png"
+    sizes="192x192"
+    href="./icons/icon-192.png"
+  />
 
-<meta
-  name="apple-mobile-web-app-status-bar-style"
-  content="black-translucent"
-/>
+  <!-- 아이폰 홈 화면 아이콘 -->
+  <link
+    rel="apple-touch-icon"
+    href="./apple-touch-icon.png"
+  />
 
-<meta
-  name="apple-mobile-web-app-title"
-  content="AiLynx Weather"
-/>
+  <!-- 표준 모바일 웹앱 설정 -->
+  <meta
+    name="mobile-web-app-capable"
+    content="yes"
+  />
+
+  <!-- Apple PWA 설정 -->
+  <meta
+    name="apple-mobile-web-app-capable"
+    content="yes"
+  />
+
+  <meta
+    name="apple-mobile-web-app-status-bar-style"
+    content="black-translucent"
+  />
+
+  <meta
+    name="apple-mobile-web-app-title"
+    content="AiLynx Weather"
+  />
 </head>
 
 <body>
@@ -54,13 +81,21 @@
     <!-- 상단 브랜드 -->
     <header class="top-bar">
       <div class="brand">
-        <div class="logo" aria-hidden="true">
+        <div
+          class="logo"
+          aria-hidden="true"
+        >
           🦁
         </div>
 
         <div class="brand-text">
-          <h1>AiLynx Bitcoin Weather</h1>
-          <p>비트코인 금융 기상청</p>
+          <h1>
+            AiLynx Bitcoin Weather
+          </h1>
+
+          <p>
+            비트코인 금융 기상청
+          </p>
         </div>
       </div>
 
@@ -127,59 +162,147 @@
         <div class="hourly-list">
 
           <article class="hour">
-            <div class="hour-time">09:00</div>
-            <div class="hour-icon">☀️</div>
-            <div class="hour-energy">62°</div>
-            <div class="hour-rain">💧 10%</div>
+            <div class="hour-time">
+              09:00
+            </div>
+
+            <div class="hour-icon">
+              ☀️
+            </div>
+
+            <div class="hour-energy">
+              62°
+            </div>
+
+            <div class="hour-rain">
+              💧 10%
+            </div>
           </article>
 
           <article class="hour">
-            <div class="hour-time">10:00</div>
-            <div class="hour-icon">🌤️</div>
-            <div class="hour-energy">64°</div>
-            <div class="hour-rain">💧 15%</div>
+            <div class="hour-time">
+              10:00
+            </div>
+
+            <div class="hour-icon">
+              🌤️
+            </div>
+
+            <div class="hour-energy">
+              64°
+            </div>
+
+            <div class="hour-rain">
+              💧 15%
+            </div>
           </article>
 
           <article class="hour">
-            <div class="hour-time">11:00</div>
-            <div class="hour-icon">🌤️</div>
-            <div class="hour-energy">66°</div>
-            <div class="hour-rain">💧 20%</div>
+            <div class="hour-time">
+              11:00
+            </div>
+
+            <div class="hour-icon">
+              🌤️
+            </div>
+
+            <div class="hour-energy">
+              66°
+            </div>
+
+            <div class="hour-rain">
+              💧 20%
+            </div>
           </article>
 
           <article class="hour">
-            <div class="hour-time">12:00</div>
-            <div class="hour-icon">⛅</div>
-            <div class="hour-energy">68°</div>
-            <div class="hour-rain">💧 30%</div>
+            <div class="hour-time">
+              12:00
+            </div>
+
+            <div class="hour-icon">
+              ⛅
+            </div>
+
+            <div class="hour-energy">
+              68°
+            </div>
+
+            <div class="hour-rain">
+              💧 30%
+            </div>
           </article>
 
           <article class="hour">
-            <div class="hour-time">13:00</div>
-            <div class="hour-icon">☁️</div>
-            <div class="hour-energy">71°</div>
-            <div class="hour-rain">💧 45%</div>
+            <div class="hour-time">
+              13:00
+            </div>
+
+            <div class="hour-icon">
+              ☁️
+            </div>
+
+            <div class="hour-energy">
+              71°
+            </div>
+
+            <div class="hour-rain">
+              💧 45%
+            </div>
           </article>
 
           <article class="hour">
-            <div class="hour-time">14:00</div>
-            <div class="hour-icon">🌦️</div>
-            <div class="hour-energy">74°</div>
-            <div class="hour-rain">💧 60%</div>
+            <div class="hour-time">
+              14:00
+            </div>
+
+            <div class="hour-icon">
+              🌦️
+            </div>
+
+            <div class="hour-energy">
+              74°
+            </div>
+
+            <div class="hour-rain">
+              💧 60%
+            </div>
           </article>
 
           <article class="hour">
-            <div class="hour-time">15:00</div>
-            <div class="hour-icon">🌧️</div>
-            <div class="hour-energy">76°</div>
-            <div class="hour-rain">💧 70%</div>
+            <div class="hour-time">
+              15:00
+            </div>
+
+            <div class="hour-icon">
+              🌧️
+            </div>
+
+            <div class="hour-energy">
+              76°
+            </div>
+
+            <div class="hour-rain">
+              💧 70%
+            </div>
           </article>
 
           <article class="hour">
-            <div class="hour-time">16:00</div>
-            <div class="hour-icon">☁️</div>
-            <div class="hour-energy">70°</div>
-            <div class="hour-rain">💧 40%</div>
+            <div class="hour-time">
+              16:00
+            </div>
+
+            <div class="hour-icon">
+              ☁️
+            </div>
+
+            <div class="hour-energy">
+              70°
+            </div>
+
+            <div class="hour-rain">
+              💧 40%
+            </div>
           </article>
 
         </div>
@@ -269,7 +392,7 @@
     <!-- 하단 -->
     <footer>
       <div>
-        마지막 업데이트: 불러오는 중
+        마지막 관측: 불러오는 중
       </div>
 
       <div>
@@ -279,6 +402,6 @@
 
   </main>
 
-  <script src="app.js"></script>
+  <script src="./app.js"></script>
 </body>
 </html>
