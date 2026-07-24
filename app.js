@@ -35,6 +35,17 @@ const FALLBACK_DATA = {
 };
 
 let weatherData = FALLBACK_DATA;
+let hasLoadedWeatherData = false;
+let freshnessIntervalId = null;
+
+const STATUS_CLASSES = [
+  "status-fresh",
+  "status-delay",
+  "status-stale",
+  "status-expired",
+  "status-offline",
+  "status-error"
+];
 
 
 /*
@@ -90,6 +101,7 @@ async function loadWeatherData() {
     }
 
     weatherData = data;
+    hasLoadedWeatherData = true;
 
     console.log(
       "AiLynx JSON 데이터 연결 성공"
@@ -100,7 +112,9 @@ async function loadWeatherData() {
       error
     );
 
-    weatherData = FALLBACK_DATA;
+    if (!hasLoadedWeatherData) {
+      weatherData = FALLBACK_DATA;
+    }
   }
 }
 
@@ -141,20 +155,29 @@ function formatTimeframe(value) {
 
 
 /*
-  데이터 관측 시각 표시
+  데이터 관측 시각 처리
 */
-function formatUpdatedAt(value) {
-  if (!value) {
-    return "시각 확인 불가";
+function parseUpdatedAt(value) {
+  if (typeof value !== "string" || !value.trim()) {
+    return null;
   }
 
   const date = new Date(value);
 
-  if (Number.isNaN(date.getTime())) {
-    return "시각 확인 불가";
+  return Number.isNaN(date.getTime())
+    ? null
+    : date;
+}
+
+
+function formatUpdatedAt(value) {
+  const date = parseUpdatedAt(value);
+
+  if (!date) {
+    return null;
   }
 
-  return new Intl.DateTimeFormat("ko-KR", {
+  const parts = new Intl.DateTimeFormat("ko-KR", {
     timeZone: "Asia/Seoul",
     year: "numeric",
     month: "2-digit",
@@ -162,13 +185,115 @@ function formatUpdatedAt(value) {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false
-  }).format(date);
+  }).formatToParts(date);
+  const values = {};
+
+  parts.forEach((part) => {
+    values[part.type] = part.value;
+  });
+
+  return `${values.year}. ${values.month}. ${values.day}. ` +
+    `${values.hour}:${values.minute}`;
 }
 
 
-/*
-  상단 상태 배지
-*/
+function getExpectedUpdateMinutes() {
+  const value =
+    weatherData.dataMeta?.expectedUpdateMinutes;
+
+  return typeof value === "number" &&
+    Number.isFinite(value) && value > 0
+    ? value
+    : 60;
+}
+
+
+function getElapsedMinutes(value) {
+  const date = parseUpdatedAt(value);
+
+  if (!date) {
+    return null;
+  }
+
+  return Math.max(
+    0,
+    Math.floor((Date.now() - date.getTime()) / 60000)
+  );
+}
+
+
+function formatElapsedTime(minutes) {
+  if (!Number.isFinite(minutes) || minutes < 1) {
+    return "방금 전";
+  }
+
+  const totalMinutes = Math.floor(minutes);
+
+  if (totalMinutes < 60) {
+    return `${totalMinutes}분 전`;
+  }
+
+  if (totalMinutes < 1440) {
+    const hours = Math.floor(totalMinutes / 60);
+    const remainingMinutes = totalMinutes % 60;
+
+    return remainingMinutes
+      ? `${hours}시간 ${remainingMinutes}분 전`
+      : `${hours}시간 전`;
+  }
+
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+
+  return hours
+    ? `${days}일 ${hours}시간 전`
+    : `${days}일 전`;
+}
+
+
+function getFreshnessStatus() {
+  const elapsedMinutes =
+    getElapsedMinutes(weatherData.updatedAt);
+
+  if (!navigator.onLine) {
+    return {
+      status: "offline",
+      text: elapsedMinutes === null
+        ? "● OFFLINE CACHE · 마지막 관측 시각 확인 불가"
+        : `● OFFLINE CACHE · 마지막 관측 ${formatElapsedTime(elapsedMinutes)}`
+    };
+  }
+
+  if (elapsedMinutes === null) {
+    return { status: "error", text: "● DATA ERROR" };
+  }
+
+  const expectedMinutes = getExpectedUpdateMinutes();
+
+  if (elapsedMinutes <= expectedMinutes) {
+    return {
+      status: "fresh",
+      text: weatherData.mode === "SAMPLE"
+        ? `● SAMPLE DATA · ${formatElapsedTime(elapsedMinutes)}`
+        : `● LIVE DATA · ${formatElapsedTime(elapsedMinutes)}`
+    };
+  }
+
+  if (elapsedMinutes <= expectedMinutes * 2) {
+    return { status: "delay", text: `● DATA DELAY · ${formatElapsedTime(elapsedMinutes)}` };
+  }
+
+  if (elapsedMinutes <= expectedMinutes * 4) {
+    return { status: "stale", text: `● STALE DATA · ${formatElapsedTime(elapsedMinutes)}` };
+  }
+
+  return {
+    status: "expired",
+    text: `● DATA EXPIRED · ${formatElapsedTime(elapsedMinutes)}`
+  };
+}
+
+
 function renderStatusBadge() {
   const badge =
     document.querySelector(".live-badge");
@@ -177,22 +302,11 @@ function renderStatusBadge() {
     return;
   }
 
-  if (!navigator.onLine) {
-    badge.textContent =
-      "● OFFLINE CACHE";
+  const freshness = getFreshnessStatus();
 
-    return;
-  }
-
-  if (weatherData.mode === "SAMPLE") {
-    badge.textContent =
-      "● SAMPLE DATA";
-
-    return;
-  }
-
-  badge.textContent =
-    "● LIVE DATA";
+  badge.classList.remove(...STATUS_CLASSES);
+  badge.classList.add(`status-${freshness.status}`);
+  badge.textContent = freshness.text;
 }
 
 
@@ -411,28 +525,33 @@ function renderInfoCards() {
 
 
 /*
-  마지막 관측 시각
+  전체 화면 표시
 */
 function renderLastUpdated() {
   const footerFirstLine =
-    document.querySelector(
-      "footer div"
-    );
+    document.querySelector("footer div");
 
   if (!footerFirstLine) {
     return;
   }
 
+  const updatedAt =
+    formatUpdatedAt(weatherData.updatedAt);
+
+  if (!updatedAt) {
+    footerFirstLine.textContent =
+      "마지막 관측: 시각 확인 불가";
+
+    return;
+  }
+
   footerFirstLine.textContent =
-    `마지막 관측: ${formatUpdatedAt(
-      weatherData.updatedAt
-    )} KST`;
+    `마지막 관측: ${updatedAt} KST · ${formatElapsedTime(
+      getElapsedMinutes(weatherData.updatedAt)
+    )}`;
 }
 
 
-/*
-  전체 화면 표시
-*/
 function renderApp() {
   renderStatusBadge();
   renderCurrentWeather();
@@ -443,12 +562,31 @@ function renderApp() {
 }
 
 
+function refreshFreshnessDisplay() {
+  renderStatusBadge();
+  renderLastUpdated();
+}
+
+
+function startFreshnessTimer() {
+  if (freshnessIntervalId !== null) {
+    return;
+  }
+
+  freshnessIntervalId = window.setInterval(
+    refreshFreshnessDisplay,
+    60000
+  );
+}
+
+
 /*
   앱 시작
 */
 async function initializeApp() {
   await loadWeatherData();
   renderApp();
+  startFreshnessTimer();
 }
 
 
@@ -466,7 +604,7 @@ window.addEventListener(
 window.addEventListener(
   "offline",
   () => {
-    renderStatusBadge();
+    refreshFreshnessDisplay();
   }
 );
 

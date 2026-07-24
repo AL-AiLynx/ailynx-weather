@@ -1,7 +1,7 @@
 "use strict";
 
 const CACHE_NAME =
-  "ailynx-weather-v2";
+  "ailynx-weather-v4";
 
 const APP_SHELL = [
   "./",
@@ -97,9 +97,26 @@ self.addEventListener(
 
             return response;
           })
-          .catch(() =>
-            caches.match(request)
-          )
+          .catch(async () => {
+            const cachedResponse =
+              await caches.match(request);
+
+            if (cachedResponse) {
+              return cachedResponse;
+            }
+
+            return new Response(
+              JSON.stringify({
+                error: "Weather data unavailable"
+              }),
+              {
+                status: 503,
+                headers: {
+                  "Content-Type": "application/json"
+                }
+              }
+            );
+          })
       );
 
       return;

@@ -1,4 +1,9 @@
 {
+  "dataMeta": {
+    "source": "SAMPLE",
+    "expectedUpdateMinutes": 60,
+    "schemaVersion": "0.3"
+  },
   "mode": "SAMPLE",
   "price": 65240,
   "priceChange": 1.48,
