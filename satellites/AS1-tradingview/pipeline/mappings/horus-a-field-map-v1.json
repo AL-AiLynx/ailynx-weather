@@ -1,0 +1,80 @@
+{
+  "layout_id": "HORUS_A",
+  "source_files": [
+    "current/horus-a/AL GENUT A GPT FORCE HETEM GATE.txt",
+    "current/horus-a/AL PER A GPT HETEM MONITOR.txt",
+    "current/horus-a/AL ARMOR GPT.txt",
+    "current/horus-a/AL EARRING GPT.txt",
+    "current/horus-a/AL GLOVE GPT.txt",
+    "current/horus-a/AL HELMET GPT.txt",
+    "current/horus-a/AL NECKLACE GPT.txt",
+    "current/horus-a/AL PANTS GPT.txt",
+    "current/horus-a/AL RING GPT.txt",
+    "current/horus-a/AL SHIELD GPT.txt",
+    "current/horus-a/AL SHOES GPT.txt"
+  ],
+  "exporter_candidate": "current/horus-a/AL GENUT A GPT FORCE HETEM GATE.txt (HETEM Gate Alert Bus, lines 1484-1564)",
+  "common_envelope_mapping": {
+    "schema_version": "new literal: as1.v1; current alertBusSchemaVersionA/gawSchemaVersionA is a different internal version",
+    "satellite_id": "new literal: AS1",
+    "platform": "new literal: TRADINGVIEW; current source field is source=TradingView",
+    "layout_id": "new literal: HORUS_A; current fields are observer=HORUS and group=A",
+    "observer": "current JSON field observer=HORUS (GENUT lines 283 and alertcondition lines 1570-1574); recommended exporter label: GENUT_A_FORCE_HETEM_GATE",
+    "code_version": "current alertVersion passed to f_makeAlertBusJson at lines 1514 and 1533-1561; expose as code_version",
+    "ticker_id": "syminfo.tickerid; current JSON field symbol at GENUT line 298",
+    "symbol": "not emitted separately; derive a display symbol from syminfo.tickerid only if a stable split rule is agreed",
+    "timeframe": "timeframe.period; current JSON field tf at GENUT line 299",
+    "bar_open_time": "current time at GENUT line 300 is the bar open epoch; convert to ISO-8601 UTC",
+    "bar_close_time": "missing; add time_close and convert to ISO-8601 UTC",
+    "sent_at": "missing; add exporter send time (TBD: TradingView-safe timestamp policy)",
+    "packet_type": "new literal: BAR_CLOSE_SNAPSHOT; map only snapshotJsonA, not real-time trigger JSON",
+    "confirmed": "barstate.isconfirmed in the snapshot guard at line 1515; emit true",
+    "quality": "derive normal/degraded from source readiness; current sourceConnected validation exists in PER A lines 493 onward, but GENUT exporter does not emit quality",
+    "dedup_key": "replace snapshotDedupKeyA (line 1513) with HORUS_A|syminfo.tickerid|timeframe.period|time_close|as1.v1"
+  },
+  "payload_mapping": {
+    "direction": "alertBusDirA / AL_GENUT_A_DIRECTION",
+    "state": "alertBusStateA / AL_GENUT_A_STATE",
+    "risk": "alertBusRiskA / AL_GENUT_A_RISK",
+    "total_score": "alertBusTotalA / AL_GENUT_A_TOTAL_SCORE",
+    "force_score": "AL_GENUT_A_FORCE_SCORE",
+    "force_fade_score": "AL_GENUT_A_FORCE_FADE_SCORE",
+    "flow": "alertBusFlowA",
+    "flow_shift": "AL_GENUT_A_FLOW_SHIFT",
+    "gate_state": "alertBusGateStateA",
+    "gate_score": "alertBusGateScoreA",
+    "pressure_index": "alertBusPressureIndexA",
+    "block": "alertBusBlockA / AL_GENUT_A_BLOCK_FLAG",
+    "event_code": "alertBusEventCodeA / AL_GENUT_A_EVENT_CODE",
+    "event_severity": "alertBusEventSeverityA",
+    "next_timeframe_hint": "alertBusNextTfA",
+    "mode_code": "alertBusModeCodeA",
+    "active_component_count": "AL_GENUT_A_ACTIVE_COUNT",
+    "gpt_allowed": "gptAllowed",
+    "voice_allowed": "voiceAllowed"
+  },
+  "missing_fields": [
+    "AS1 common envelope fields are not present as named fields",
+    "separate symbol",
+    "bar_close_time",
+    "sent_at",
+    "quality",
+    "AS1 contract-form dedup_key containing layout_id, ticker_id, timeframe, bar_close_time, schema_version"
+  ],
+  "duplicate_fields": [
+    "GENUT alert() JSON bus and GENUT alertcondition() JSON both emit overlapping force/state/event snapshots",
+    "PER A experimental JSON repeats symbol, timeframe, time and defense/force state already available from GENUT",
+    "nine component scripts expose independent alertcondition events while GENUT imports their output plots"
+  ],
+  "excluded_fields": [
+    "open, high, low, close, volume: not required for the HORUS A layout-state payload in this draft",
+    "gaw_code, gaw_line, brief_policy, defense_rule_version, defense_eval_status, defense_type, eval_horizons, role_map_version, purpose: internal briefing/defense metadata, not needed for the first common snapshot",
+    "all AS2 TrendSpider road/wall/gate calculations",
+    "all AS3 OpenMarket order-book and liquidity Zone data"
+  ],
+  "notes": [
+    "Use exactly one external sender: GENUT snapshotJsonA at lines 1511-1517.",
+    "Disable or do not configure the GENUT real-time trigger bus (lines 1534-1563) and PER A experimental alert() (lines 979-985) for the AS1 v1 route.",
+    "The existing schema file currently uses different literals (as1-alert-envelope-v1, tradingview, horus-a, bar_close_snapshot) than this task's required live draft literals (as1.v1, TRADINGVIEW, HORUS_A, BAR_CLOSE_SNAPSHOT). Harmonize the schema before runtime validation."
+  ]
+}
