@@ -1,0 +1,476 @@
+//@version=6
+indicator("AL RSI GATE MAAT2 BUS V1 [ACTIVE]", shorttitle="RSIGATE_MAAT2", overlay=false, max_lines_count=120, max_labels_count=20)
+
+showVisuals = input.bool(true, "DISPLAY: FULL (끄면 HEADLESS)", group="00. Render")
+
+// MAAT2 MOMENTUM / GATE / RISK layer.
+// Latest active RSI/Gate sensor for MAAT2.
+// Preferred Hub connection candidate.
+// Outputs use AL_RSIGATE_* prefix to avoid collision with legacy RSI.
+// RSI GATE is a supporting momentum gate and invalidation sensor, not a direction predictor.
+
+string G_CORE = "AL RSI GATE | Core"
+string G_BAND = "AL RSI GATE | Band"
+string G_DIV = "AL RSI GATE | Divergence"
+string G_UI = "AL RSI GATE | Table"
+
+float src = input.source(close, "RSI Source", group=G_CORE, display=display.none)
+int rsiLen = input.int(14, "RSI Length", minval=1, maxval=200, group=G_CORE)
+int slopeLen = input.int(3, "Slope Length", minval=1, maxval=50, group=G_CORE)
+int pctLen = input.int(120, "Percentile Lookback", minval=20, maxval=1000, group=G_CORE)
+bool showWarningBg = input.bool(true, "Warning Background", group=G_CORE)
+
+bool showBand = input.bool(false, "Show RSI Band", group=G_BAND)
+int bandLen = input.int(34, "Band Length", minval=5, maxval=300, group=G_BAND)
+float bandMult = input.float(1.6, "Band Mult", minval=0.2, maxval=5.0, step=0.1, group=G_BAND)
+
+bool showDiv = input.bool(true, "Show Divergence Lines", group=G_DIV)
+bool showRegularDiv = input.bool(true, "Regular Divergence", group=G_DIV)
+bool showHiddenDiv = input.bool(true, "Hidden Divergence", group=G_DIV)
+int pivLeft = input.int(5, "Pivot Left", minval=1, maxval=30, group=G_DIV)
+int pivRight = input.int(5, "Pivot Right", minval=1, maxval=30, group=G_DIV)
+int minBarsBetween = input.int(5, "Min Pivot Gap", minval=1, maxval=200, group=G_DIV)
+int maxBarsBetween = input.int(80, "Max Pivot Gap", minval=5, maxval=500, group=G_DIV)
+int maxDivLines = input.int(60, "Max Divergence Lines", minval=10, maxval=120, group=G_DIV)
+
+bool showTable = input.bool(true, "표 표시", group=G_UI, display=display.none)
+string tablePosOpt = input.string("우측 상단", "표 위치", options=["좌측 상단", "중앙 상단", "우측 상단", "좌측 중앙", "정중앙", "우측 중앙", "좌측 하단", "중앙 하단", "우측 하단"], group=G_UI, display=display.none)
+int tableSizeScale = input.int(4, "표 크기 1~10", minval=1, maxval=10, group=G_UI, display=display.none)
+int cellWidthOpt = input.int(0, "셀 너비 (0 = 자동)", minval=0, maxval=40, group=G_UI, display=display.none)
+int cellHeightOpt = input.int(0, "셀 높이 (0 = 자동)", minval=0, maxval=20, group=G_UI, display=display.none)
+bool showTableFrame = input.bool(true, "표 외곽선 표시", group=G_UI, display=display.none)
+bool showTableGrid = input.bool(true, "표 내부 그리드 표시", group=G_UI, display=display.none)
+int frameWidthOpt = input.int(1, "외곽선 두께", minval=0, maxval=5, group=G_UI, display=display.none)
+int gridWidthOpt = input.int(1, "그리드 두께", minval=0, maxval=5, group=G_UI, display=display.none)
+color frameColorOpt = input.color(color.new(color.white, 70), "표 외곽선 색상", group=G_UI, display=display.none)
+color gridColorOpt = input.color(color.new(color.white, 85), "표 테두리 색상", group=G_UI, display=display.none)
+color tableHeaderBg = input.color(color.new(color.teal, 35), "헤더 배경색", group=G_UI, display=display.none)
+color tableBodyBg = input.color(color.new(color.black, 20), "본문 배경색", group=G_UI, display=display.none)
+color tableFinalBg = input.color(color.new(color.black, 15), "종합 행 배경색", group=G_UI, display=display.none)
+color tableTextColor = input.color(color.white, "기본 글자색", group=G_UI, display=display.none)
+color upTextColor = input.color(color.lime, "UP 글자색", group=G_UI, display=display.none)
+color downTextColor = input.color(color.red, "DOWN 글자색", group=G_UI, display=display.none)
+color warnTextColor = input.color(color.orange, "경고 글자색", group=G_UI, display=display.none)
+color neutralTextColor = input.color(color.gray, "중립 글자색", group=G_UI, display=display.none)
+int tableBgTransp = input.int(20, "표 배경 투명도", minval=0, maxval=100, group=G_UI, display=display.none)
+int headerBgTransp = input.int(35, "헤더 배경 투명도", minval=0, maxval=100, group=G_UI, display=display.none)
+int riskBgTransp = input.int(35, "위험/경고 배경 투명도", minval=0, maxval=100, group=G_UI, display=display.none)
+string langMode = input.string("CODE", "상태 언어", options=["KR", "EN", "CODE"], group=G_UI, display=display.none)
+string columnMode = input.string("NORMAL", "열 표시 모드", options=["COMPACT", "NORMAL", "DEBUG"], group=G_UI, display=display.none)
+bool debugMode = input.bool(false, "디버그 모드", group=G_UI, display=display.none)
+bool compactRows = input.bool(true, "행 간격 압축", group=G_UI, display=display.none)
+bool showStateRow = input.bool(true, "STATE 행 표시", group=G_UI, display=display.none)
+bool showScoreRow = input.bool(true, "SCORE 행 표시", group=G_UI, display=display.none)
+bool showMomRow = input.bool(true, "MOM 행 표시", group=G_UI, display=display.none)
+bool showBandRow = input.bool(true, "BAND 행 표시", group=G_UI, display=display.none)
+bool showPctRow = input.bool(true, "PCT 행 표시", group=G_UI, display=display.none)
+bool showDivRow = input.bool(true, "DIV 행 표시", group=G_UI, display=display.none)
+bool showFinalRow = input.bool(true, "FINAL 행 표시", group=G_UI, display=display.none)
+bool showBusRow = input.bool(true, "BUS 행 표시", group=G_UI, display=display.none)
+
+f_clamp(float v, float lo, float hi) =>
+    math.max(lo, math.min(hi, v))
+
+f_pos(string opt) =>
+    result = position.top_right
+    if opt == "좌측 상단"
+        result := position.top_left
+    else if opt == "중앙 상단"
+        result := position.top_center
+    else if opt == "우측 상단"
+        result := position.top_right
+    else if opt == "좌측 중앙"
+        result := position.middle_left
+    else if opt == "정중앙"
+        result := position.middle_center
+    else if opt == "우측 중앙"
+        result := position.middle_right
+    else if opt == "좌측 하단"
+        result := position.bottom_left
+    else if opt == "중앙 하단"
+        result := position.bottom_center
+    else if opt == "우측 하단"
+        result := position.bottom_right
+    result
+
+f_sizeFromScale(int scale) =>
+    result = size.small
+    if scale <= 2
+        result := size.tiny
+    else if scale <= 5
+        result := size.small
+    else if scale <= 7
+        result := size.normal
+    else if scale <= 9
+        result := size.large
+    else
+        result := size.huge
+    result
+
+f_tableCell(t, int col, int row, string txt, color txtColor, color bgColor, txtSize) =>
+    if cellWidthOpt > 0 and cellHeightOpt > 0
+        table.cell(t, col, row, txt, width=cellWidthOpt, height=cellHeightOpt, text_color=txtColor, bgcolor=bgColor, text_size=txtSize)
+    else if cellWidthOpt > 0
+        table.cell(t, col, row, txt, width=cellWidthOpt, text_color=txtColor, bgcolor=bgColor, text_size=txtSize)
+    else if cellHeightOpt > 0
+        table.cell(t, col, row, txt, height=cellHeightOpt, text_color=txtColor, bgcolor=bgColor, text_size=txtSize)
+    else
+        table.cell(t, col, row, txt, text_color=txtColor, bgcolor=bgColor, text_size=txtSize)
+
+f_row2(t, int row, string a, string b, color ca, color cb, color bg, txtSize) =>
+    f_tableCell(t, 0, row, a, ca, bg, txtSize)
+    f_tableCell(t, 1, row, b, cb, bg, txtSize)
+
+f_num(float v) =>
+    str.tostring(int(math.round(v)))
+
+f_dirText(int d, string lang) =>
+    string txt = "N"
+    if lang == "KR"
+        if d > 0
+            txt := "상승"
+        else if d < 0
+            txt := "하락"
+        else
+            txt := "중립"
+    else if lang == "EN"
+        if d > 0
+            txt := "BULL"
+        else if d < 0
+            txt := "BEAR"
+        else
+            txt := "NEUT"
+    else
+        if d > 0
+            txt := "B"
+        else if d < 0
+            txt := "S"
+        else
+            txt := "N"
+    txt
+
+f_stateText(int s, string lang) =>
+    string txt = "N"
+    if lang == "KR"
+        if s == 6
+            txt := "과열"
+        else if s == 5
+            txt := "반전감시"
+        else if s == 4
+            txt := "무에너지"
+        else if s == 3
+            txt := "경고"
+        else if s == 2
+            txt := "하락"
+        else if s == 1
+            txt := "상승"
+        else
+            txt := "중립"
+    else if lang == "EN"
+        if s == 6
+            txt := "OVERHEAT"
+        else if s == 5
+            txt := "REVERSAL"
+        else if s == 4
+            txt := "NO ENERGY"
+        else if s == 3
+            txt := "WARNING"
+        else if s == 2
+            txt := "BEAR"
+        else if s == 1
+            txt := "BULL"
+        else
+            txt := "NEUTRAL"
+    else
+        if s == 6
+            txt := "OH"
+        else if s == 5
+            txt := "RV"
+        else if s == 4
+            txt := "NE"
+        else if s == 3
+            txt := "W"
+        else if s == 2
+            txt := "S"
+        else if s == 1
+            txt := "B"
+        else
+            txt := "N"
+    txt
+
+float rsiValue = ta.rsi(src, rsiLen)
+float rsiSlope = rsiValue - nz(rsiValue[slopeLen], rsiValue)
+float rsiAccel = rsiSlope - nz(rsiSlope[1], rsiSlope)
+float rsiPctRaw = ta.percentrank(rsiValue, pctLen)
+float rsiPct = nz(rsiPctRaw, 50.0)
+
+float bandBasis = ta.sma(rsiValue, bandLen)
+float bandDev = ta.stdev(rsiValue, bandLen)
+float bandUpper = bandBasis + bandDev * bandMult
+float bandLower = bandBasis - bandDev * bandMult
+float bandWidth = bandUpper - bandLower
+float bandWidthAvg = ta.sma(bandWidth, bandLen)
+int bandCode = bandWidth > bandWidthAvg * 1.15 ? 1 : bandWidth < bandWidthAvg * 0.85 ? -1 : 0
+string bandText = bandCode > 0 ? "EXPAND" : bandCode < 0 ? "CONTRACT" : "NEUTRAL"
+
+float rsiPL = ta.pivotlow(rsiValue, pivLeft, pivRight)
+float rsiPH = ta.pivothigh(rsiValue, pivLeft, pivRight)
+bool isPL = not na(rsiPL)
+bool isPH = not na(rsiPH)
+int currLowIndex = bar_index - pivRight
+int currHighIndex = bar_index - pivRight
+float currPriceLow = low[pivRight]
+float currPriceHigh = high[pivRight]
+float currRsiLow = rsiPL
+float currRsiHigh = rsiPH
+
+var float prevPriceLow = na
+var float prevRsiLow = na
+var int prevLowIndex = na
+var float prevPriceHigh = na
+var float prevRsiHigh = na
+var int prevHighIndex = na
+var line[] divLines = array.new_line()
+
+int lowGap = isPL and not na(prevLowIndex) ? currLowIndex - prevLowIndex : 0
+int highGap = isPH and not na(prevHighIndex) ? currHighIndex - prevHighIndex : 0
+bool lowDistanceOk = lowGap >= minBarsBetween and lowGap <= maxBarsBetween
+bool highDistanceOk = highGap >= minBarsBetween and highGap <= maxBarsBetween
+bool lowReady = isPL and not na(prevPriceLow) and not na(prevRsiLow) and lowDistanceOk
+bool highReady = isPH and not na(prevPriceHigh) and not na(prevRsiHigh) and highDistanceOk
+
+bool bullRegular = showDiv and showRegularDiv and lowReady and currPriceLow < prevPriceLow and currRsiLow > prevRsiLow
+bool bearRegular = showDiv and showRegularDiv and highReady and currPriceHigh > prevPriceHigh and currRsiHigh < prevRsiHigh
+bool bullHidden = showDiv and showHiddenDiv and lowReady and currPriceLow > prevPriceLow and currRsiLow < prevRsiLow
+bool bearHidden = showDiv and showHiddenDiv and highReady and currPriceHigh < prevPriceHigh and currRsiHigh > prevRsiHigh
+
+if showVisuals and (bullRegular or bullHidden)
+    color lineCol = bullRegular ? color.lime : color.new(color.lime, 35)
+    line newLine = line.new(prevLowIndex, prevRsiLow, currLowIndex, currRsiLow, xloc=xloc.bar_index, extend=extend.none, color=lineCol, style=bullRegular ? line.style_solid : line.style_dashed, width=2)
+    array.push(divLines, newLine)
+
+if showVisuals and (bearRegular or bearHidden)
+    color lineCol = bearRegular ? color.red : color.new(color.red, 35)
+    line newLine = line.new(prevHighIndex, prevRsiHigh, currHighIndex, currRsiHigh, xloc=xloc.bar_index, extend=extend.none, color=lineCol, style=bearRegular ? line.style_solid : line.style_dashed, width=2)
+    array.push(divLines, newLine)
+
+if array.size(divLines) > maxDivLines
+    line oldLine = array.shift(divLines)
+    line.delete(oldLine)
+
+if isPL
+    prevPriceLow := currPriceLow
+    prevRsiLow := currRsiLow
+    prevLowIndex := currLowIndex
+
+if isPH
+    prevPriceHigh := currPriceHigh
+    prevRsiHigh := currRsiHigh
+    prevHighIndex := currHighIndex
+
+bool noEnergy = rsiValue >= 45 and rsiValue <= 55 and math.abs(rsiSlope) < 0.2 and bandCode <= 0
+bool bullReversal = bullRegular or (rsiValue < 35 and rsiSlope > 0.4 and rsiAccel > 0)
+bool bearDistribution = bearRegular or (rsiValue > 65 and rsiSlope < -0.4 and rsiAccel < 0)
+bool overheat = (rsiValue >= 80 and rsiSlope > 0) or (rsiValue <= 20 and rsiSlope < 0)
+bool rsiWarning = (rsiValue > 70 and rsiSlope < -0.4) or (rsiValue < 30 and rsiSlope > 0.4) or (bandCode < 0 and math.abs(rsiSlope) > 1.5)
+
+float slopeAdj = f_clamp(rsiSlope * 1.4, -12, 12)
+float pctAdj = f_clamp((rsiPct - 50.0) * 0.10, -5, 5)
+float rsiScore = f_clamp(rsiValue + slopeAdj + pctAdj, 0, 100)
+
+int rsiDir = rsiScore >= 60 ? 1 : rsiScore <= 40 ? -1 : 0
+int divCode = bullRegular ? 1 : bearRegular ? -1 : bullHidden ? 2 : bearHidden ? -2 : 0
+int slopeCode = rsiSlope > 0.4 and rsiAccel >= 0 ? 2 : rsiSlope > 0.4 ? 1 : rsiSlope < -0.4 and rsiAccel <= 0 ? -2 : rsiSlope < -0.4 ? -1 : 0
+int riskCode = 0
+if overheat
+    riskCode := 4
+else if bullReversal or bearDistribution
+    riskCode := 4
+else if rsiWarning
+    riskCode := 3
+else if noEnergy
+    riskCode := 2
+else if rsiValue > 70 or rsiValue < 30
+    riskCode := 1
+
+int eventCode = 0
+if overheat
+    eventCode := 5
+else if bullReversal or bearDistribution
+    eventCode := 4
+else if rsiWarning
+    eventCode := 2
+else if noEnergy
+    eventCode := 3
+else if bullRegular or bearRegular or bullHidden or bearHidden
+    eventCode := 7
+else if rsiDir != 0
+    eventCode := 1
+else if math.abs(rsiSlope) > 3 and bandCode > 0
+    eventCode := 9
+
+bool rsiGateValid = not na(rsiValue) and not na(rsiScore)
+bool rsiGateOverbought = rsiValue >= 70
+bool rsiGateOversold = rsiValue <= 30
+bool rsiGateDivergence = divCode != 0
+bool rsiGateBlocked = riskCode >= 3 or rsiGateDivergence
+bool rsiGateOpen = rsiGateValid and not rsiGateBlocked and rsiScore >= 40 and rsiScore <= 60
+bool rsiGateExpand = bandCode > 0 and math.abs(rsiSlope) > 0.4
+bool rsiGateBuild = math.abs(rsiSlope) > 0.4 and not rsiGateExpand
+int rsiGateDirPack = rsiScore >= 60 ? 2 : rsiScore <= 40 ? 0 : 1
+int rsiGateRiskCode = rsiGateValid ? riskCode : 5
+int rsiGateEventCode = 0
+if not rsiGateValid
+    rsiGateEventCode := 9
+else if rsiGateBlocked
+    rsiGateEventCode := 8
+else if rsiGateOpen
+    rsiGateEventCode := 7
+else if rsiGateOverbought
+    rsiGateEventCode := 4
+else if rsiGateOversold
+    rsiGateEventCode := 5
+else if rsiGateExpand
+    rsiGateEventCode := 3
+else if rsiGateBuild
+    rsiGateEventCode := 2
+else
+    rsiGateEventCode := 1
+int rsiGateDetailCode = 0
+if not rsiGateValid
+    rsiGateDetailCode := 90
+else if rsiGateBlocked
+    rsiGateDetailCode := rsiGateDivergence ? (divCode > 0 ? 50 : 51) : 70
+else if rsiGateOpen
+    rsiGateDetailCode := 60
+else if rsiGateOverbought
+    rsiGateDetailCode := 40
+else if rsiGateOversold
+    rsiGateDetailCode := 41
+else if rsiGateExpand
+    rsiGateDetailCode := rsiGateDirPack == 2 ? 30 : rsiGateDirPack == 0 ? 31 : 10
+else if rsiGateBuild
+    rsiGateDetailCode := rsiSlope > 0 ? 20 : 21
+else
+    rsiGateDetailCode := 10
+float rsiGateScore = rsiScore
+int rsiGateSlopeCode = slopeCode
+int rsiGateBandCode = bandCode
+int rsiGateDivCode = divCode
+int rsiGatePackCode = rsiGateDirPack * 10000 + rsiGateRiskCode * 1000 + rsiGateEventCode * 10 + (rsiGateValid ? 1 : 0)
+
+int stateCode = 0
+if overheat
+    stateCode := 6
+else if bullReversal or bearDistribution
+    stateCode := 5
+else if noEnergy
+    stateCode := 4
+else if rsiWarning
+    stateCode := 3
+else if rsiScore >= 60
+    stateCode := 1
+else if rsiScore <= 40
+    stateCode := 2
+
+color rsiColor = rsiScore >= 60 ? color.lime : rsiScore <= 40 ? color.red : color.white
+color bgCol = na
+if showWarningBg
+    if stateCode == 6
+        bgCol := color.new(color.red, 88)
+    else if stateCode == 5 or stateCode == 3
+        bgCol := color.new(color.orange, 90)
+    else if stateCode == 4
+        bgCol := color.new(color.gray, 92)
+
+plot(showVisuals ? rsiValue : na, title="RSI", color=rsiColor, linewidth=2)
+hline(80, "80", color=showVisuals ? color.new(color.red, 40) : color.new(color.gray, 100))
+hline(70, "70", color=showVisuals ? color.new(color.red, 55) : color.new(color.gray, 100))
+hline(60, "60", color=showVisuals ? color.new(color.lime, 65) : color.new(color.gray, 100))
+hline(50, "50", color=showVisuals ? color.new(color.white, 45) : color.new(color.gray, 100))
+hline(40, "40", color=showVisuals ? color.new(color.red, 65) : color.new(color.gray, 100))
+hline(30, "30", color=showVisuals ? color.new(color.lime, 55) : color.new(color.gray, 100))
+hline(20, "20", color=showVisuals ? color.new(color.lime, 40) : color.new(color.gray, 100))
+pBandU = plot(showVisuals and showBand ? bandUpper : na, title="RSI Band Upper", color=color.new(color.aqua, 55), linewidth=1)
+pBandL = plot(showVisuals and showBand ? bandLower : na, title="RSI Band Lower", color=color.new(color.aqua, 55), linewidth=1)
+fill(pBandU, pBandL, color=showVisuals and showBand ? color.new(color.aqua, 92) : na, title="RSI Band Fill")
+bgcolor(showVisuals ? bgCol : na, title="RSI Warning Background")
+
+int T_LAST_COL = 1
+int T_LAST_ROW = 9
+int tableFrameWidth = showTableFrame ? frameWidthOpt : 0
+int tableGridWidth = showTableGrid ? gridWidthOpt : 0
+var table gateTable = showVisuals ? table.new(f_pos(tablePosOpt), T_LAST_COL + 1, T_LAST_ROW + 1, bgcolor=color.new(tableBodyBg, tableBgTransp), frame_color=frameColorOpt, frame_width=tableFrameWidth, border_color=gridColorOpt, border_width=tableGridWidth) : na
+if barstate.islast and showVisuals
+    table.clear(gateTable, 0, 0, T_LAST_COL, T_LAST_ROW)
+    if showTable
+        string momText = "FLAT"
+        if slopeCode == 2
+            momText := "ACCEL UP"
+        else if slopeCode == 1
+            momText := "DECEL UP"
+        else if slopeCode == -2
+            momText := "ACCEL DOWN"
+        else if slopeCode == -1
+            momText := "DECEL DOWN"
+        string divText = "-"
+        if bullRegular
+            divText := "BULL"
+        else if bearRegular
+            divText := "BEAR"
+        else if bullHidden
+            divText := "H.BULL"
+        else if bearHidden
+            divText := "H.BEAR"
+        string finalText = "OPEN"
+        if stateCode == 6
+            finalText := "OVERHEAT"
+        else if stateCode == 5
+            finalText := "WATCH"
+        else if stateCode == 4
+            finalText := "NO ENERGY"
+        else if stateCode == 3
+            finalText := "BLOCK"
+        txtSize = f_sizeFromScale(tableSizeScale)
+        string activeMode = debugMode ? "DEBUG" : columnMode
+        color headerBg = color.new(tableHeaderBg, headerBgTransp)
+        color bodyBg = color.new(tableBodyBg, tableBgTransp)
+        color finalBg = color.new(tableFinalBg, tableBgTransp)
+        color riskBg = riskCode >= 3 ? color.new(warnTextColor, riskBgTransp) : bodyBg
+        int row = 0
+        if showStateRow
+            f_row2(gateTable, row, "RSI", f_stateText(stateCode, langMode) + " " + f_dirText(rsiDir, langMode), tableTextColor, rsiColor, headerBg, txtSize)
+            row := row + 1
+        if showScoreRow
+            string scoreTxt = activeMode == "DEBUG" ? "S" + f_num(rsiScore) + " R" + str.tostring(riskCode) + " E" + str.tostring(eventCode) : f_num(rsiScore)
+            f_row2(gateTable, row, "SCORE", scoreTxt, tableTextColor, tableTextColor, riskBg, txtSize)
+            row := row + 1
+        if showMomRow
+            string momCell = activeMode == "DEBUG" ? momText + " / SLOPE " + str.tostring(slopeCode) : momText
+            f_row2(gateTable, row, activeMode == "COMPACT" ? "MOM" : "MOMENTUM", momCell, neutralTextColor, tableTextColor, bodyBg, txtSize)
+            row := row + 1
+        if showBandRow and activeMode != "COMPACT"
+            f_row2(gateTable, row, "BAND", bandText, neutralTextColor, tableTextColor, bodyBg, txtSize)
+            row := row + 1
+        if showPctRow and activeMode != "COMPACT"
+            f_row2(gateTable, row, "PCT", "P" + f_num(rsiPct), neutralTextColor, tableTextColor, bodyBg, txtSize)
+            row := row + 1
+        if showDivRow and activeMode != "COMPACT"
+            f_row2(gateTable, row, "DIV", divText, neutralTextColor, tableTextColor, bodyBg, txtSize)
+            row := row + 1
+        if showFinalRow
+            string finalCell = activeMode == "DEBUG" ? finalText + " / ST " + str.tostring(stateCode) : finalText
+            f_row2(gateTable, row, "FINAL", finalCell, neutralTextColor, tableTextColor, finalBg, txtSize)
+            row := row + 1
+        if showBusRow
+            string busText = "D" + str.tostring(rsiDir) + " S" + f_num(rsiScore) + " R" + str.tostring(riskCode) + " E" + str.tostring(eventCode)
+            f_row2(gateTable, row, "BUS", busText, neutralTextColor, tableTextColor, finalBg, txtSize)
+
+plot(float(rsiGatePackCode), title="AL_RSIGATE_PACK_CODE", display=display.none)
+plot(rsiGateScore, title="AL_RSIGATE_SCORE", display=display.none)
+plot(float(rsiGateDetailCode), title="AL_RSIGATE_DETAIL_CODE", display=display.none)
+plot(float(rsiGateEventCode), title="AL_RSIGATE_EVENT_CODE", display=display.none)
+plot(float(rsiGateRiskCode), title="AL_RSIGATE_RISK_CODE", display=display.none)
+plot(float(rsiGateSlopeCode), title="AL_RSIGATE_SLOPE_CODE", display=display.none)
+plot(float(rsiGateBandCode), title="AL_RSIGATE_BAND_CODE", display=display.none)
+plot(float(rsiGateDivCode), title="AL_RSIGATE_DIV_CODE", display=display.none)

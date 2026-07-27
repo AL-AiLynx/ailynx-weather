@@ -1,0 +1,1265 @@
+//@version=6
+// AL PER B GPT HETEM MONITOR
+// DEFENSE version derived from AL PER B STRATEGY EVENT AUDIT.
+// Purpose: risk management and asset defense validation for AiLynx/Lynx briefings.
+// PER B CSV update:
+// - BLOCK_ON is separated from recovery/fade and has close-comment priority.
+// - Recovery/fade remains enabled by default because PER B fade validation was slightly positive.
+// - FLOW_SHIFT guards require stronger opposite confirmation and weakening evidence.
+// - Profit protection is applied before the emergency stop.
+// Research/validation script only. Not financial advice and not an aggressive profit system.
+strategy("AL PER B GPT HETEM MONITOR", overlay=true, max_bars_back=3000, max_labels_count=500, initial_capital=10000, default_qty_type=strategy.percent_of_equity, default_qty_value=25, commission_type=strategy.commission.percent, commission_value=0.04, slippage=1, pyramiding=0, calc_on_every_tick=true, process_orders_on_close=false)
+
+//==================================================
+// GAW compact helpers (GPT_CODE table digest)
+//==================================================
+f_gawLayer(string s) =>
+    string out = "L"
+    if s == "FORCE"
+        out := "F"
+    else if s == "STRUCTURE"
+        out := "S"
+    out
+
+f_gawGate(string s) =>
+    string out = "WT"
+    if s == "OPEN"
+        out := "GO"
+    else if s == "BLOCKED"
+        out := "GB"
+    else if s == "CONGESTED"
+        out := "GC"
+    else if s == "CLEARING"
+        out := "CL"
+    else if s == "RISK"
+        out := "RK"
+    out
+
+f_gawBand(string s) =>
+    string out = s
+    if s == "NONE"
+        out := "N"
+    else if s == "LOW"
+        out := "L"
+    else if s == "MID"
+        out := "M"
+    else if s == "HIGH"
+        out := "H"
+    else if s == "EXTREME"
+        out := "X"
+    else if s == "SAFE"
+        out := "N"
+    else if s == "RISK"
+        out := "RK"
+    out
+
+f_gawState(string s) =>
+    string out = s
+    if s == "IDLE"
+        out := "ID"
+    else if s == "SET"
+        out := "ST"
+    else if s == "TRIG"
+        out := "TR"
+    else if s == "HOLD"
+        out := "HD"
+    else if s == "FAIL"
+        out := "FL"
+    out
+
+f_gawRisk(string s) =>
+    string out = s
+    if s == "NONE" or s == "SAFE"
+        out := "N"
+    else if s == "LOW"
+        out := "L"
+    else if s == "MID"
+        out := "M"
+    else if s == "HIGH"
+        out := "H"
+    else if s == "EXTREME"
+        out := "X"
+    else if s == "RISK" or s == "RK"
+        out := "RK"
+    out
+
+f_gawBlock(string s) =>
+    string out = "C"
+    if s == "BLOCK"
+        out := "B"
+    else if s == "HARD_BLOCK"
+        out := "HB"
+    else if s == "SOFT_BLOCK"
+        out := "B"
+    else if s == "PREWARN"
+        out := "PW"
+    else if s == "CLEAR"
+        out := "C"
+    out
+
+f_gawFlow(string s) =>
+    string out = "FL"
+    if s == "UP"
+        out := "UP"
+    else if s == "DOWN"
+        out := "DN"
+    else if s == "DN"
+        out := "DN"
+    else if s == "FLAT"
+        out := "FL"
+    else if s == "SHIFT"
+        out := "SH"
+    else if s == "MIXED"
+        out := "MX"
+    out
+
+f_gawEvent(string s) =>
+    string out = s
+    if s == "TF_SNAPSHOT"
+        out := "TFS"
+    else if s == "FORCE_SHIFT"
+        out := "FS"
+    else if s == "FORCE_CONFIRM"
+        out := "FC"
+    else if s == "FORCE_FADE_BLOCK"
+        out := "FFB"
+    else if s == "PRESSURE_RISING"
+        out := "PR"
+    else if s == "TRAP_WAIT"
+        out := "TW"
+    else if s == "STRUCTURE_SHIFT"
+        out := "SS"
+    else if s == "GATE_BLOCKED"
+        out := "GB"
+    else if s == "GATE_CLEARING"
+        out := "GCL"
+    else if s == "BLOCK_PREWARN"
+        out := "BPW"
+    else if s == "RECOVERY_FAIL"
+        out := "RF"
+    else if s == "TRAP_FAKEOUT_WAIT"
+        out := "TFW"
+    else if s == "OBSERVE"
+        out := "OBS"
+    out
+
+f_gawNextText(float code) =>
+    int c = int(math.round(nz(code, 0)))
+    string txt = "NONE"
+    if c == 1
+        txt := "1M"
+    else if c == 16
+        txt := "3M"
+    else if c == 2
+        txt := "5M"
+    else if c == 3
+        txt := "15M"
+    else if c == 4
+        txt := "30M"
+    else if c == 17
+        txt := "45M"
+    else if c == 5
+        txt := "1H"
+    else if c == 6
+        txt := "2H"
+    else if c == 18
+        txt := "3H"
+    else if c == 7
+        txt := "4H"
+    else if c == 8
+        txt := "6H"
+    else if c == 9
+        txt := "8H"
+    else if c == 19
+        txt := "10H"
+    else if c == 10
+        txt := "12H"
+    else if c == 20
+        txt := "14H"
+    else if c == 11
+        txt := "16H"
+    else if c == 21
+        txt := "18H"
+    else if c == 12
+        txt := "20H"
+    else if c == 13
+        txt := "22H"
+    else if c == 14
+        txt := "1D"
+    else if c == 22
+        txt := "2D"
+    else if c == 23
+        txt := "3D"
+    else if c == 15
+        txt := "1W"
+    else if c == 24
+        txt := "1MO"
+    txt
+
+f_pos(string opt) =>
+    opt == "TL" ? position.top_left :
+     opt == "TC" ? position.top_center :
+     opt == "TR" ? position.top_right :
+     opt == "ML" ? position.middle_left :
+     opt == "MC" ? position.middle_center :
+     opt == "MR" ? position.middle_right :
+     opt == "BL" ? position.bottom_left :
+     opt == "BC" ? position.bottom_center : position.bottom_right
+
+f_tsize(string opt) =>
+    opt == "XS" ? size.tiny : opt == "S" ? size.small : opt == "M" ? size.normal : opt == "L" ? size.large : size.huge
+
+f_numSize(string opt) =>
+    opt == "XS" ? size.small : opt == "S" ? size.normal : opt == "M" ? size.large : opt == "L" ? size.large : size.huge
+
+f_tablePos(string opt) =>
+    opt == "좌상" ? position.top_left :
+     opt == "상중" ? position.top_center :
+     opt == "우상" ? position.top_right :
+     opt == "좌중" ? position.middle_left :
+     opt == "정중" ? position.middle_center :
+     opt == "우중" ? position.middle_right :
+     opt == "좌하" ? position.bottom_left :
+     opt == "하중" ? position.bottom_center : position.bottom_right
+
+f_textSizeFromScale(int sc) =>
+    sz = size.normal
+    if sc <= 2
+        sz := size.tiny
+    else if sc <= 4
+        sz := size.small
+    else if sc <= 6
+        sz := size.normal
+    else if sc <= 8
+        sz := size.large
+    else
+        sz := size.huge
+    sz
+
+f_boolText(bool x) =>
+    x ? "YES" : "NO"
+
+f_dirText(int d) =>
+    d > 0 ? "UP" : d < 0 ? "DOWN" : "FLAT"
+
+f_stateText(int s) =>
+    s == 4 ? "FAIL" : s == 3 ? "HOLD" : s == 2 ? "TRIG" : s == 1 ? "SET" : "IDLE"
+
+f_riskText(int r) =>
+    r == 0 ? "SAFE" : r == 1 ? "MID" : "RISK"
+
+f_reasonText(int r) =>
+    r == 1 ? "FAIL" : r == 2 ? "THIN" : r == 3 ? "ALIGN" : r == 4 ? "RISK" : r == 5 ? "SETUP" : r == 6 ? "WAIT" : r == 7 ? "LINK" : "NONE"
+
+f_scoreBand(float v) =>
+    v >= 85 ? "STR" : v >= 65 ? "POS" : v >= 35 ? "NEU" : v >= 15 ? "NEG" : "DNG"
+
+f_hetemBand(float v) =>
+    v >= 80 ? "EXTREME" : v >= 60 ? "HIGH" : v >= 40 ? "MID" : v >= 20 ? "LOW" : "NONE"
+
+f_gateStateText(float code) =>
+    int c = int(math.round(nz(code, 0)))
+    c == 1 ? "OPEN" : c == 2 ? "BLOCKED" : c == 3 ? "CONGESTED" : c == 4 ? "CLEARING" : c == 5 ? "RISK" : "WAIT"
+
+f_hetemEventTextB(float code) =>
+    int c = int(math.round(nz(code, 0)))
+    (c == 210 or c == 220) ? "STRUCTURE_SHIFT" : c == 225 ? "GATE_BLOCKED" : c == 230 ? "BLOCK_PREWARN" : c == 235 ? "GATE_CLEARING" : c == 240 ? "RECOVERY_FAIL" : (c == 250 or c == 260 or c == 270) ? "TRAP_FAKEOUT_WAIT" : "OBSERVE"
+
+f_hetemBlockText(bool hardBlock, bool prewarn, bool blockOn) =>
+    hardBlock ? "HARD_BLOCK" : prewarn ? "PREWARN" : blockOn ? "BLOCK" : "CLEAR"
+
+f_hetemFlowText(int shift, float slope) =>
+    shift != 0 ? "SHIFT" : slope > 0 ? "UP" : slope < 0 ? "DOWN" : "FLAT"
+
+f_hetemNoteB(string gateTxt, string eventTxt, float pressure) =>
+    string out = "SAFE_DRIVE | STRUCTURE WAIT | GATE " + gateTxt
+    if eventTxt == "STRUCTURE_SHIFT"
+        out := "SAFE_DRIVE | STRUCTURE SHIFT | WATCH NEXT"
+    else if gateTxt == "CLEARING"
+        out := "SAFE_DRIVE | STRUCTURE CLEARING | WATCH NEXT"
+    else if pressure >= 60
+        out := "SAFE_DRIVE | PRESSURE RISING | NO TRADE INSTRUCTION"
+    out
+
+f_numTxt(float v) =>
+    str.tostring(int(math.round(v)))
+
+f_pxTxt(float v) =>
+    str.tostring(v, format.mintick)
+
+f_histChar(float x) =>
+    x >= 3 ? "+" : x <= -3 ? "-" : "."
+
+f_maxMaybe(float a, float b) =>
+    na(a) ? b : na(b) ? a : math.max(a, b)
+
+f_minMaybe(float a, float b) =>
+    na(a) ? b : na(b) ? a : math.min(a, b)
+
+f_clamp(float x, float lo, float hi) =>
+    math.max(lo, math.min(hi, x))
+
+f_sideText(int d) =>
+    d > 0 ? "UP" : d < 0 ? "DOWN" : "NEUTRAL"
+
+f_powerFlowText(float slope, float delta) =>
+    string out = "FLAT"
+    if slope >= 3 and delta >= 0
+        out := "UP_ACCEL"
+    else if slope > 0
+        out := "UP_FLOW"
+    else if slope <= -3 and delta <= 0
+        out := "DN_ACCEL"
+    else if slope < 0
+        out := "DN_FLOW"
+    out
+
+f_briefingModeText(int modeCode) =>
+    string out = "WAIT"
+    if modeCode == 7
+        out := "HARD_RISK"
+    else if modeCode == 6
+        out := "MIXED_CAUTION"
+    else if modeCode == 5
+        out := "FAKEOUT"
+    else if modeCode == 4
+        out := "TRAP"
+    else if modeCode == 3
+        out := "MACRO_CONFLICT"
+    else if modeCode == 2
+        out := "BLOCK_PRESSURE"
+    else if modeCode == 1
+        out := "CLEAN_FLOW"
+    out
+
+f_jsonPair(string k, string v) =>
+    string safe = str.replace_all(v, "\\", "\\\\")
+    safe := str.replace_all(safe, "\"", "\\\"")
+    "\"" + k + "\":\"" + safe + "\""
+
+f_jsonNumPair(string k, string v) =>
+    "\"" + k + "\":" + v
+
+f_perBAlertJson(string eventState, string warningType, string warningSide, string riskLevel, string powerFlow, string blockSourceMask, string briefingMode, string closeReason, string ecTxt, string esTxt, string gpTxt, string gawCodeTxt, string gawLineTxt, string kemiScoreTxt, string kemiCodeTxt, string kheperScoreTxt, string kheperCodeTxt, string kheperBridgeTxt, string kheperHandoffTxt, string sensorMaskCodeTxt) =>
+    "{" +
+     f_jsonPair("source", "PER_B") + "," +
+     f_jsonPair("system", "AiLynx") + "," +
+     f_jsonPair("role", "defense_validation") + "," +
+     f_jsonPair("gv", "GV3") + "," +
+     f_jsonPair("ec", ecTxt) + "," +
+     f_jsonNumPair("es", esTxt) + "," +
+     f_jsonPair("gp", gpTxt) + "," +
+     f_jsonPair("symbol", syminfo.tickerid) + "," +
+     f_jsonPair("timeframe", timeframe.period) + "," +
+     f_jsonPair("time", str.tostring(time)) + "," +
+     f_jsonPair("price", str.tostring(close, format.mintick)) + "," +
+     f_jsonPair("eventState", eventState) + "," +
+     f_jsonPair("warningType", warningType) + "," +
+     f_jsonPair("warningSide", warningSide) + "," +
+     f_jsonPair("riskLevel", riskLevel) + "," +
+     f_jsonPair("powerFlow", powerFlow) + "," +
+     f_jsonPair("briefingMode", briefingMode) + "," +
+     f_jsonPair("blockSourceMask", blockSourceMask) + "," +
+     f_jsonPair("closeReason", closeReason) + "," +
+     f_jsonPair("gaw_code", gawCodeTxt) + "," +
+     f_jsonPair("gaw_line", gawLineTxt) + "," +
+     f_jsonNumPair("kemi_score", kemiScoreTxt) + "," +
+     f_jsonNumPair("kemi_code", kemiCodeTxt) + "," +
+     f_jsonNumPair("kheper_score", kheperScoreTxt) + "," +
+     f_jsonNumPair("kheper_code", kheperCodeTxt) + "," +
+     f_jsonNumPair("kheper_bridge", kheperBridgeTxt) + "," +
+     f_jsonNumPair("kheper_handoff", kheperHandoffTxt) + "," +
+     f_jsonNumPair("sensor_mask_code", sensorMaskCodeTxt) + "," +
+     f_jsonPair("note", "PER_B_STRATEGY_ALERT_EXPERIMENT") +
+     "}"
+
+f_finalCode(int bDir, bool bLong, bool bShort, bool bWait, bool bExit, bool bBlock, int bShift) =>
+    string out = "WAIT"
+    if bBlock
+        out := "BLOCK"
+    else if bExit
+        out := "RISK_FADE"
+    else if bLong
+        out := "UP_PRS"
+    else if bShort
+        out := "DN_PRS"
+    else if bShift > 0
+        out := "UP_FLOW"
+    else if bShift < 0
+        out := "DN_FLOW"
+    else if bWait
+        out := "WAIT"
+    else if bDir > 0
+        out := "UP_OBS"
+    else if bDir < 0
+        out := "DN_OBS"
+    out
+
+f_finalNum(string code) =>
+    code == "UP_PRS" ? 1 : code == "DN_PRS" ? -1 : code == "BLOCK" ? -2 : code == "RISK_FADE" ? 2 : code == "UP_FLOW" ? 3 : code == "DN_FLOW" ? -3 : code == "UP_OBS" ? 1 : code == "DN_OBS" ? -1 : 0
+
+f_finalNote(bool bLongOk, bool bShortOk, bool bBlock, bool bWait, int bShift, bool bBarConf) =>
+    string out = bLongOk and bShortOk ? "DUAL" : bLongOk ? "UP_OK" : bShortOk ? "DN_OK" : "NONE"
+    if bBlock
+        out := "LOCK"
+    else if bWait
+        out := "WAIT"
+    else if bShift != 0
+        out := "SHIFT"
+    else if bBarConf
+        out := "CLOSE"
+    else
+        out := "RT"
+    out
+
+string G_SRC = "PER B | Sources"
+srcDir       = input.source(close, "GENUT_B_DIRECTION", group=G_SRC, display=display.none)
+srcState     = input.source(close, "GENUT_B_STATE", group=G_SRC, display=display.none)
+srcRisk      = input.source(close, "GENUT_B_RISK", group=G_SRC, display=display.none)
+srcTotal     = input.source(close, "GENUT_B_TOTAL_SCORE", group=G_SRC, display=display.none)
+srcLongOk    = input.source(close, "GENUT_B_STRUCTURE_UP_STATE", group=G_SRC, display=display.none)
+srcShortOk   = input.source(close, "GENUT_B_STRUCTURE_DOWN_STATE", group=G_SRC, display=display.none)
+srcWait      = input.source(close, "GENUT_B_WAIT_FLAG", group=G_SRC, display=display.none)
+srcExitOk    = input.source(close, "GENUT_B_RECOVERY_BLOCK_STATE", group=G_SRC, display=display.none)
+srcBlock     = input.source(close, "GENUT_B_BLOCK_FLAG", group=G_SRC, display=display.none)
+srcBlockRsn  = input.source(close, "GENUT_B_BLOCK_REASON_CODE", group=G_SRC, display=display.none)
+srcBarConf   = input.source(close, "GENUT_B_BAR_CONFIRMED", group=G_SRC, display=display.none)
+srcFlowDelta = input.source(close, "GENUT_B_FLOW_DELTA", group=G_SRC, display=display.none)
+srcFlowSlope = input.source(close, "GENUT_B_FLOW_SLOPE", group=G_SRC, display=display.none)
+srcFlowUp    = input.source(close, "GENUT_B_FLOW_UP_STREAK", group=G_SRC, display=display.none)
+srcFlowDn    = input.source(close, "GENUT_B_FLOW_DN_STREAK", group=G_SRC, display=display.none)
+srcFlowShift = input.source(close, "GENUT_B_FLOW_SHIFT", group=G_SRC, display=display.none)
+srcReadyCnt  = input.source(close, "GENUT_B_LINK_READY_COUNT", group=G_SRC, display=display.none)
+srcIssueCnt  = input.source(close, "GENUT_B_LINK_ISSUE_COUNT", group=G_SRC, display=display.none)
+srcRiskBlockScore = input.source(close, "GENUT_B_RISK_BLOCK_SCORE", group=G_SRC, display=display.none)
+srcMacroConflictScore = input.source(close, "GENUT_B_MACRO_CONFLICT_SCORE", group=G_SRC, display=display.none)
+srcLiquidityPressureScore = input.source(close, "GENUT_B_LIQUIDITY_PRESSURE_SCORE", group=G_SRC, display=display.none)
+srcTrapPressureScore = input.source(close, "GENUT_B_TRAP_PRESSURE_SCORE", group=G_SRC, display=display.none)
+srcFakeoutPressureScore = input.source(close, "GENUT_B_FAKEOUT_PRESSURE_SCORE", group=G_SRC, display=display.none)
+srcBriefingModeCode = input.source(close, "GENUT_B_BRIEFING_MODE_CODE", group=G_SRC, display=display.none)
+srcFlowShiftStrong = input.source(close, "GENUT_B_FLOW_SHIFT_STRONG", group=G_SRC, display=display.none)
+srcFlowShiftWeak = input.source(close, "GENUT_B_FLOW_SHIFT_WEAK", group=G_SRC, display=display.none)
+srcBlockPrewarn = input.source(close, "GENUT_B_BLOCK_PREWARN", group=G_SRC, display=display.none)
+srcBlockHard = input.source(close, "GENUT_B_BLOCK_HARD", group=G_SRC, display=display.none)
+srcBlockSoft = input.source(close, "GENUT_B_BLOCK_SOFT", group=G_SRC, display=display.none)
+srcExitStrong = input.source(close, "GENUT_B_STRUCTURE_FADE_STRONG", group=G_SRC, display=display.none)
+srcRiskRising = input.source(close, "GENUT_B_RISK_RISING", group=G_SRC, display=display.none)
+srcMacroRising = input.source(close, "GENUT_B_MACRO_RISING", group=G_SRC, display=display.none)
+srcLiquidityRising = input.source(close, "GENUT_B_LIQUIDITY_RISING", group=G_SRC, display=display.none)
+srcTrapRising = input.source(close, "GENUT_B_TRAP_RISING", group=G_SRC, display=display.none)
+srcFakeoutRising = input.source(close, "GENUT_B_FAKEOUT_RISING", group=G_SRC, display=display.none)
+srcEntrySuppress = input.source(close, "GENUT_B_GATE_SUPPRESS", group=G_SRC, display=display.none)
+srcHardExitOk = input.source(close, "GENUT_B_HARD_BLOCK_STATE", group=G_SRC, display=display.none)
+srcNeutralDiagnosticScore = input.source(close, "GENUT_B_NEUTRAL_DIAGNOSTIC_SCORE", group=G_SRC, display=display.none)
+srcExitWeak = input.source(close, "GENUT_B_STRUCTURE_FADE_WEAK", group=G_SRC, display=display.none)
+srcBlockSourceMask = input.source(close, "GENUT_B_BLOCK_SOURCE_MASK", group=G_SRC, display=display.none)
+srcStructureScore = input.source(close, "GENUT_B_STRUCTURE_SCORE", group=G_SRC, display=display.none)
+srcStructurePressureScore = input.source(close, "GENUT_B_STRUCTURE_PRESSURE_SCORE", group=G_SRC, display=display.none)
+srcHetemGateScore = input.source(close, "GENUT_B_HETEM_GATE_SCORE", group=G_SRC, display=display.none)
+srcHetemPressureIndex = input.source(close, "GENUT_B_HETEM_PRESSURE_INDEX", group=G_SRC, display=display.none)
+srcHetemGateStateCode = input.source(close, "GENUT_B_HETEM_GATE_STATE_CODE", group=G_SRC, display=display.none)
+srcHetemEventCode = input.source(close, "GENUT_B_HETEM_EVENT_CODE", group=G_SRC, display=display.none)
+srcTfRoleCode = input.source(close, "GENUT_B_TF_ROLE_CODE", group=G_SRC, display=display.none)
+srcNextTfHintCode = input.source(close, "GENUT_B_NEXT_TF_HINT_CODE", group=G_SRC, display=display.none)
+srcModeCode = input.source(close, "GENUT_B_MODE_CODE", group=G_SRC, display=display.none)
+srcEventCode = input.source(close, "GENUT_B_EVENT_CODE", group=G_SRC, display=display.none)
+srcGenutKemiScore = input.source(close, "GENUT_B_KEMI_SCORE", group=G_SRC, display=display.none)
+srcGenutKemiCode = input.source(close, "GENUT_B_KEMI_CODE", group=G_SRC, display=display.none)
+srcGenutKheperScore = input.source(close, "GENUT_B_KHEPER_SCORE", group=G_SRC, display=display.none)
+srcGenutKheperCode = input.source(close, "GENUT_B_KHEPER_CODE", group=G_SRC, display=display.none)
+srcGenutSensorMaskCode = input.source(close, "GENUT_B_SENSOR_MASK_CODE", group=G_SRC, display=display.none)
+
+string G_UI = "PER B | UI"
+bool showTable = input.bool(true, "표 표시", group=G_UI)
+string tablePosOpt = input.string("우하", "표 위치", options=["좌상","상중","우상","좌중","정중","우중","좌하","하중","우하"], group=G_UI)
+int tableScale = input.int(5, "표 크기 1~9", minval=1, maxval=9, group=G_UI)
+bool showTableBorder = input.bool(true, "표 테두리 표시", group=G_UI)
+color tableFrameColor = input.color(color.new(color.white, 10), "표 외곽선 색상", group=G_UI)
+color tableBorderColor = input.color(color.new(color.white, 45), "표 내부 테두리 색상", group=G_UI)
+int tableFrameWidth = input.int(1, "표 외곽선 두께", minval=0, maxval=3, group=G_UI)
+int tableBorderWidth = input.int(1, "표 내부 테두리 두께", minval=0, maxval=3, group=G_UI)
+int tableBgTransp = input.int(15, "표 배경 투명도", minval=0, maxval=100, group=G_UI)
+color colBg = input.color(color.new(color.rgb(18, 22, 31), 8), "Background", group=G_UI, display=display.none)
+color colGrid = input.color(color.new(color.silver, 86), "Grid", group=G_UI, display=display.none)
+color colHead = input.color(color.rgb(215, 220, 228), "Header", group=G_UI, display=display.none)
+color colText = input.color(color.rgb(245, 247, 250), "Text", group=G_UI, display=display.none)
+color colSoft = input.color(color.rgb(170, 176, 188), "Soft", group=G_UI, display=display.none)
+color colGood = input.color(color.rgb(0, 234, 126), "Good", group=G_UI, display=display.none)
+color colWarn = input.color(color.rgb(255, 166, 0), "Warn", group=G_UI, display=display.none)
+color colBad = input.color(color.rgb(255, 60, 82), "Bad", group=G_UI, display=display.none)
+color colAccent = input.color(color.rgb(32, 210, 255), "Accent", group=G_UI, display=display.none)
+color colNum = input.color(color.rgb(235, 244, 255), "Number", group=G_UI, display=display.none)
+
+string G_AL = "PER B | Alerts"
+bool useAlerts = input.bool(true, "Use Alerts", group=G_AL, display=display.none)
+bool enablePerAlerts = input.bool(false, "Enable PER legacy alerts", group=G_AL, display=display.none)
+bool enablePerBAlertExperiment = input.bool(false, "Enable PER B Alert Experiment", group=G_AL, display=display.none)
+bool perBAlertConfirmedOnly = input.bool(true, "Alert On Confirmed Bar Only", group=G_AL, display=display.none)
+int perBAlertMinWarningLevel = input.int(1, "Alert Minimum Warning Level", minval=0, maxval=2, group=G_AL, display=display.none)
+int perBAlertCooldownBars = input.int(5, "Alert Cooldown Bars", minval=0, maxval=500, group=G_AL, display=display.none)
+string perBAlertFrequencyMode = input.string("BAR_CLOSE", "Alert Frequency Mode", options=["BAR_CLOSE","ONCE_PER_BAR"], group=G_AL, display=display.none)
+
+string G_STRAT = "PER B Strategy Defense | Events"
+string operationMode = input.string("MONITOR_ONLY", "Operation Mode", options=["MONITOR_ONLY","DEFENSE_BACKTEST"], group=G_STRAT, display=display.none)
+bool enableShadowTrades = input.bool(true, "Enable Shadow Strategy Orders", group=G_STRAT, display=display.none)
+string defenseSensitivity = input.string("BALANCED", "Defense Sensitivity", options=["STRICT","BALANCED","LOOSE","EXIT_AUDIT"], group=G_STRAT, display=display.none)
+bool useBarConfirmedFilter = input.bool(false, "Use Bar Confirmed Filter", group=G_STRAT, display=display.none)
+string tradeMode = input.string("STRICT_PER", "Defense Probe Mode", options=["STRICT_PER","PRESSURE_PROBE","FLOW_PROBE","HYBRID_PROBE"], group=G_STRAT, display=display.none)
+bool allowProbeEntries = input.bool(false, "Enable Probe Observations", group=G_STRAT, display=display.none)
+bool allowLongProbe = input.bool(true, "Track Up Pressure", group=G_STRAT, display=display.none)
+bool allowShortProbe = input.bool(true, "Track Down Pressure", group=G_STRAT, display=display.none)
+bool allowProbeInBlock = input.bool(false, "Allow Probe In Block", group=G_STRAT, display=display.none)
+bool useLinkCountInputs = input.bool(false, "Use LINK Count Inputs", group=G_STRAT, display=display.none)
+float probeTotalMin = input.float(55.0, "Probe Total Min", minval=0.0, maxval=100.0, step=1.0, group=G_STRAT, display=display.none)
+float probeFlowMin = input.float(3.0, "Probe Flow Min", minval=0.0, maxval=100.0, step=0.5, group=G_STRAT, display=display.none)
+int probeCooldownBars = input.int(20, "Defense Observe Cooldown", minval=0, maxval=300, group=G_STRAT, display=display.none)
+int defenseCooldownBars = input.int(12, "Defense Fade Cooldown", minval=0, maxval=300, group=G_STRAT, display=display.none)
+// Low timeframe modes are audit/research modes only. They are not production trading modes.
+string timeframeMode = input.string("HTF_DEFENSE", "Timeframe Mode", options=["HTF_DEFENSE","LTF_AUDIT","LTF_RARE_ONLY"], group=G_STRAT, display=display.none)
+bool closeOnBlock = input.bool(true, "Close On BLOCK_ON", group=G_STRAT, display=display.none)
+bool closeOnExit = input.bool(true, "Risk Fade Guard", group=G_STRAT, display=display.none)
+bool closeOnFlowShift = input.bool(true, "Strong Opposite Flow Guard", group=G_STRAT, display=display.none)
+bool closeOnLinkIssue = input.bool(true, "Close On LINK_ISSUE", group=G_STRAT, display=display.none)
+float flowStrongOppositeMin = input.float(3.0, "Strong Opposite Flow Min", minval=0.0, maxval=100.0, step=0.5, group=G_STRAT, display=display.none)
+float flowSlopeDeteriorationMin = input.float(2.0, "Flow Slope Deterioration Min", minval=0.0, maxval=100.0, step=0.5, group=G_STRAT, display=display.none)
+float flowTotalDropMin = input.float(3.0, "Flow Fade Total Drop Min", minval=0.0, maxval=100.0, step=0.5, group=G_STRAT, display=display.none)
+int flowActiveWeakeningMin = input.int(1, "Flow Active Weakening Min", minval=0, maxval=10, group=G_STRAT, display=display.none)
+
+string G_RISK = "PER B Strategy Defense | Risk"
+bool useStopLoss = input.bool(true, "Risk guard use", group=G_RISK, display=display.none)
+float stopLossPct = input.float(1.2, "Risk guard %", minval=0.05, maxval=50.0, step=0.05, group=G_RISK, display=display.none)
+bool useTakeProfit = input.bool(false, "Profit guard use", group=G_RISK, display=display.none)
+float takeProfitPct = input.float(2.4, "Profit guard %", minval=0.05, maxval=100.0, step=0.05, group=G_RISK, display=display.none)
+int maxBarsInTrade = input.int(96, "Max Bars In Trade", minval=0, maxval=5000, group=G_RISK, display=display.none)
+float breakEvenAfterPct = input.float(0.5, "Break Even After MFE %", minval=0.0, maxval=20.0, step=0.05, group=G_RISK, display=display.none)
+float trailAfterMfePct = input.float(0.8, "Trail After MFE %", minval=0.0, maxval=20.0, step=0.05, group=G_RISK, display=display.none)
+float protectProfitAfterPct = input.float(0.8, "Protect Profit After MFE %", minval=0.0, maxval=20.0, step=0.05, group=G_RISK, display=display.none)
+float trailGivebackPct = input.float(0.35, "Trail Giveback %", minval=0.05, maxval=20.0, step=0.05, group=G_RISK, display=display.none)
+
+bool monitorOnlyMode = operationMode == "MONITOR_ONLY"
+bool defenseBacktestMode = operationMode == "DEFENSE_BACKTEST"
+bool perLegacyAlertsOn = enablePerAlerts and defenseBacktestMode and useAlerts
+
+bool sourceConnected =
+     math.abs(nz(srcDir, 999)) <= 1 and
+     nz(srcState, 999) >= -10 and nz(srcState, 999) <= 10 and
+     nz(srcRisk, 999) >= 0 and nz(srcRisk, 999) <= 2 and
+     nz(srcTotal, 999) >= 0 and nz(srcTotal, 999) <= 100 and
+     nz(srcLongOk, 999) >= 0 and nz(srcLongOk, 999) <= 1 and
+     nz(srcShortOk, 999) >= 0 and nz(srcShortOk, 999) <= 1 and
+     nz(srcWait, 999) >= 0 and nz(srcWait, 999) <= 1 and
+     nz(srcExitOk, 999) >= 0 and nz(srcExitOk, 999) <= 1 and
+     nz(srcBlock, 999) >= 0 and nz(srcBlock, 999) <= 1 and
+     nz(srcBarConf, 999) >= 0 and nz(srcBarConf, 999) <= 1 and
+     nz(srcFlowShift, 999) >= -5 and nz(srcFlowShift, 999) <= 5
+
+int bDir = sourceConnected ? int(math.round(srcDir)) : 0
+int bState = sourceConnected ? int(math.round(srcState)) : 0
+int bRisk = sourceConnected ? int(math.round(srcRisk)) : 2
+float bTotal = sourceConnected ? math.max(0.0, math.min(100.0, srcTotal)) : 0.0
+bool bLongOk = sourceConnected and srcLongOk > 0.5
+bool bShortOk = sourceConnected and srcShortOk > 0.5
+bool bWait = (not sourceConnected) or srcWait > 0.5
+bool bExitOk = sourceConnected and srcExitOk > 0.5
+bool bBlock = (not sourceConnected) or srcBlock > 0.5
+int bBlockRsn = sourceConnected ? int(math.round(nz(srcBlockRsn, 0))) : 7
+bool bBarConf = sourceConnected and srcBarConf > 0.5
+float bFlowDelta = sourceConnected ? nz(srcFlowDelta, 0) : 0.0
+float bFlowSlope = sourceConnected ? nz(srcFlowSlope, 0) : 0.0
+int bFlowUp = sourceConnected ? int(math.round(nz(srcFlowUp, 0))) : 0
+int bFlowDn = sourceConnected ? int(math.round(nz(srcFlowDn, 0))) : 0
+int bFlowShift = sourceConnected ? int(math.round(nz(srcFlowShift, 0))) : 0
+bool perKemiLinked = sourceConnected and (math.abs(nz(srcGenutKemiScore, close) - close) > 0.000001 or math.abs(nz(srcGenutKemiCode, close) - close) > 0.000001)
+bool perKheperLinked = sourceConnected and (math.abs(nz(srcGenutKheperScore, close) - close) > 0.000001 or math.abs(nz(srcGenutKheperCode, close) - close) > 0.000001)
+bool perSensorMaskLinked = sourceConnected and math.abs(nz(srcGenutSensorMaskCode, close) - close) > 0.000001
+float perKemiScore = perKemiLinked ? f_clamp(nz(srcGenutKemiScore, 0), 0, 100) : 0.0
+int perKemiCode = perKemiLinked ? int(f_clamp(math.round(nz(srcGenutKemiCode, 0)), 0, 6)) : 0
+float perKheperScore = perKheperLinked ? f_clamp(nz(srcGenutKheperScore, 0), 0, 100) : 0.0
+int perKheperCode = perKheperLinked ? int(f_clamp(math.round(nz(srcGenutKheperCode, 0)), 0, 46)) : 0
+int perKheperBridge = int(math.floor(float(perKheperCode) / 10.0))
+int perKheperHandoff = int(f_clamp(float(perKheperCode - perKheperBridge * 10 - 3), -3, 3))
+int perSensorMaskCode = perSensorMaskLinked ? int(f_clamp(math.round(nz(srcGenutSensorMaskCode, 0)), -3, 5)) : 0
+bool optRiskBlockScoreOk = nz(srcRiskBlockScore, 999) >= 0 and nz(srcRiskBlockScore, 999) <= 100
+bool optMacroConflictScoreOk = nz(srcMacroConflictScore, 999) >= 0 and nz(srcMacroConflictScore, 999) <= 100
+bool optLiquidityPressureScoreOk = nz(srcLiquidityPressureScore, 999) >= 0 and nz(srcLiquidityPressureScore, 999) <= 100
+bool optTrapPressureScoreOk = nz(srcTrapPressureScore, 999) >= 0 and nz(srcTrapPressureScore, 999) <= 100
+bool optFakeoutPressureScoreOk = nz(srcFakeoutPressureScore, 999) >= 0 and nz(srcFakeoutPressureScore, 999) <= 100
+bool optBriefingModeCodeOk = nz(srcBriefingModeCode, 999) >= 0 and nz(srcBriefingModeCode, 999) <= 7
+bool optFlowShiftStrongOk = nz(srcFlowShiftStrong, 999) >= 0 and nz(srcFlowShiftStrong, 999) <= 1
+bool optFlowShiftWeakOk = nz(srcFlowShiftWeak, 999) >= 0 and nz(srcFlowShiftWeak, 999) <= 1
+bool optBlockPrewarnOk = nz(srcBlockPrewarn, 999) >= 0 and nz(srcBlockPrewarn, 999) <= 1
+bool optBlockHardOk = nz(srcBlockHard, 999) >= 0 and nz(srcBlockHard, 999) <= 1
+bool optBlockSoftOk = nz(srcBlockSoft, 999) >= 0 and nz(srcBlockSoft, 999) <= 1
+bool optExitStrongOk = nz(srcExitStrong, 999) >= 0 and nz(srcExitStrong, 999) <= 1
+bool optRiskRisingOk = nz(srcRiskRising, 999) >= 0 and nz(srcRiskRising, 999) <= 1
+bool optMacroRisingOk = nz(srcMacroRising, 999) >= 0 and nz(srcMacroRising, 999) <= 1
+bool optLiquidityRisingOk = nz(srcLiquidityRising, 999) >= 0 and nz(srcLiquidityRising, 999) <= 1
+bool optTrapRisingOk = nz(srcTrapRising, 999) >= 0 and nz(srcTrapRising, 999) <= 1
+bool optFakeoutRisingOk = nz(srcFakeoutRising, 999) >= 0 and nz(srcFakeoutRising, 999) <= 1
+bool optEntrySuppressOk = nz(srcEntrySuppress, 999) >= 0 and nz(srcEntrySuppress, 999) <= 1
+bool optHardExitOkOk = nz(srcHardExitOk, 999) >= 0 and nz(srcHardExitOk, 999) <= 1
+bool optNeutralDiagnosticScoreOk = nz(srcNeutralDiagnosticScore, 999) >= 0 and nz(srcNeutralDiagnosticScore, 999) <= 100
+bool optExitWeakOk = nz(srcExitWeak, 999) >= 0 and nz(srcExitWeak, 999) <= 1
+bool optBlockSourceMaskOk = nz(srcBlockSourceMask, 999) >= 0 and nz(srcBlockSourceMask, 999) <= 255
+float genutRiskBlockScore = optRiskBlockScoreOk ? nz(srcRiskBlockScore, 0) : 0
+float genutMacroConflictScore = optMacroConflictScoreOk ? nz(srcMacroConflictScore, 0) : 0
+float genutLiquidityPressureScore = optLiquidityPressureScoreOk ? nz(srcLiquidityPressureScore, 0) : 0
+float genutTrapPressureScore = optTrapPressureScoreOk ? nz(srcTrapPressureScore, 0) : 0
+float genutFakeoutPressureScore = optFakeoutPressureScoreOk ? nz(srcFakeoutPressureScore, 0) : 0
+int genutBriefingModeCode = optBriefingModeCodeOk ? int(math.round(nz(srcBriefingModeCode, 0))) : 0
+bool genutFlowShiftStrong = optFlowShiftStrongOk and nz(srcFlowShiftStrong, 0) > 0.5
+bool genutFlowShiftWeak = optFlowShiftWeakOk and nz(srcFlowShiftWeak, 0) > 0.5
+bool genutBlockPrewarn = optBlockPrewarnOk and nz(srcBlockPrewarn, 0) > 0.5
+bool genutBlockHard = optBlockHardOk and nz(srcBlockHard, 0) > 0.5
+bool genutBlockSoft = optBlockSoftOk and nz(srcBlockSoft, 0) > 0.5
+bool genutExitStrong = optExitStrongOk and nz(srcExitStrong, 0) > 0.5
+bool genutRiskRising = optRiskRisingOk and nz(srcRiskRising, 0) > 0.5
+bool genutMacroRising = optMacroRisingOk and nz(srcMacroRising, 0) > 0.5
+bool genutLiquidityRising = optLiquidityRisingOk and nz(srcLiquidityRising, 0) > 0.5
+bool genutTrapRising = optTrapRisingOk and nz(srcTrapRising, 0) > 0.5
+bool genutFakeoutRising = optFakeoutRisingOk and nz(srcFakeoutRising, 0) > 0.5
+bool genutEntrySuppress = optEntrySuppressOk and nz(srcEntrySuppress, 0) > 0.5
+bool genutHardExitOk = optHardExitOkOk and nz(srcHardExitOk, 0) > 0.5
+float genutNeutralDiagnosticScore = optNeutralDiagnosticScoreOk ? nz(srcNeutralDiagnosticScore, 0) : 0
+bool genutExitWeak = optExitWeakOk and nz(srcExitWeak, 0) > 0.5
+float genutBlockSourceMask = optBlockSourceMaskOk ? nz(srcBlockSourceMask, 0) : 0
+bool optStructureScoreOk = nz(srcStructureScore, 999) >= 0 and nz(srcStructureScore, 999) <= 100
+bool optStructurePressureScoreOk = nz(srcStructurePressureScore, 999) >= 0 and nz(srcStructurePressureScore, 999) <= 100
+bool optHetemGateScoreOk = nz(srcHetemGateScore, 999) >= 0 and nz(srcHetemGateScore, 999) <= 100
+bool optHetemPressureIndexOk = nz(srcHetemPressureIndex, 999) >= 0 and nz(srcHetemPressureIndex, 999) <= 100
+bool optHetemGateStateCodeOk = nz(srcHetemGateStateCode, 999) >= 0 and nz(srcHetemGateStateCode, 999) <= 5
+bool optHetemEventCodeOk = nz(srcHetemEventCode, 999) >= 0 and nz(srcHetemEventCode, 999) <= 999
+bool optTfRoleCodeOk = nz(srcTfRoleCode, 999) >= 0 and nz(srcTfRoleCode, 999) <= 20
+bool optNextTfHintCodeOk = nz(srcNextTfHintCode, 999) >= 0 and nz(srcNextTfHintCode, 999) <= 20
+bool optModeCodeOk = nz(srcModeCode, 999) >= 0 and nz(srcModeCode, 999) <= 20
+bool optEventCodeOk = nz(srcEventCode, 999) >= 0 and nz(srcEventCode, 999) <= 999
+float hetemStructureScore = optStructureScoreOk ? nz(srcStructureScore, 0) : bTotal
+float hetemStructurePressureScore = optStructurePressureScoreOk ? nz(srcStructurePressureScore, 0) : math.max(genutRiskBlockScore, genutMacroConflictScore)
+float hetemGateScore = optHetemGateScoreOk ? nz(srcHetemGateScore, 0) : (bBlock ? 0.0 : bTotal)
+float hetemPressureFallback = math.max(hetemStructurePressureScore, math.max(genutLiquidityPressureScore, math.max(genutTrapPressureScore, genutFakeoutPressureScore)))
+float hetemPressureIndex = optHetemPressureIndexOk ? nz(srcHetemPressureIndex, 0) : hetemPressureFallback
+float hetemGateStateCode = optHetemGateStateCodeOk ? nz(srcHetemGateStateCode, 0) : (genutBlockHard or bBlock) ? 2.0 : genutBlockPrewarn ? 3.0 : bRisk >= 2 ? 5.0 : bWait ? 0.0 : bTotal >= 60 ? 1.0 : 4.0
+float hetemEventCode = optHetemEventCodeOk ? nz(srcHetemEventCode, 0) : optEventCodeOk ? nz(srcEventCode, 0) : 200.0
+float hetemModeCode = optModeCodeOk ? nz(srcModeCode, 0) : 0.0
+float hetemTfRoleCode = optTfRoleCodeOk ? nz(srcTfRoleCode, 0) : 0.0
+float hetemNextTfCode = optNextTfHintCodeOk ? nz(srcNextTfHintCode, 0) : 0.0
+string hetemGateState = f_gateStateText(hetemGateStateCode)
+string hetemEventText = f_hetemEventTextB(hetemEventCode)
+bool genutBlockSoftWarn = genutBlockSoft and not genutBlockHard
+bool genutBlockPrewarnWarn = genutBlockPrewarn and not genutBlockHard
+bool genutTrapFakeoutWarn = genutTrapRising or genutFakeoutRising or genutTrapPressureScore >= 60 or genutFakeoutPressureScore >= 60
+bool genutEntrySuppressWarn = genutEntrySuppress and not genutBlockHard
+
+// Runtime-safe PER B DEFENSE uses core GENUT_B outputs only.
+bool defenseSourceConnected = sourceConnected
+float bTriggerScore = bTotal
+float bBaseScore = bTotal
+float bStructScore = 0.0
+float bAlignScore = bDir != 0 ? 60.0 : 0.0
+float bNetScore = math.min(100.0, math.abs(bFlowSlope))
+float bDirectionalNet = bDir > 0 ? bNetScore : bDir < 0 ? -bNetScore : 0.0
+int bActiveCount = (bDir != 0 ? 1 : 0) + (bState >= 2 ? 1 : 0) + (bLongOk or bShortOk ? 1 : 0) + (math.abs(bFlowSlope) > 0 ? 1 : 0) + (math.abs(bFlowDelta) > 0 ? 1 : 0)
+int bFailCount = bRisk == 2 ? 1 : 0
+int readyCount = sourceConnected ? int(math.round(nz(srcReadyCnt, 0))) : 0
+int issueCount = sourceConnected and useLinkCountInputs ? int(math.round(nz(srcIssueCnt, 0))) : 0
+bool linkIssue = (not sourceConnected) or (useLinkCountInputs and issueCount > 0) or bBlockRsn == 7
+
+bool coreExit = sourceConnected and (bExitOk or bState == 4)
+bool perLong = not bBlock and bDir > 0 and bLongOk
+bool perShort = not bBlock and bDir < 0 and bShortOk
+bool perWait = bWait or bDir == 0 or bState < 2
+bool perExit = coreExit or bBlock
+
+float d5 = bar_index > 4 ? (bTotal[4] - bTotal[5]) : 0.0
+float d4 = bar_index > 3 ? (bTotal[3] - bTotal[4]) : 0.0
+float d3 = bar_index > 2 ? (bTotal[2] - bTotal[3]) : 0.0
+float d2 = bar_index > 1 ? (bTotal[1] - bTotal[2]) : 0.0
+float d1 = bar_index > 0 ? (bTotal - bTotal[1]) : 0.0
+string perHist = f_histChar(d5) + f_histChar(d4) + f_histChar(d3) + f_histChar(d2) + f_histChar(d1)
+
+string sigCode = bLongOk and bShortOk ? "BOTH" : bLongOk ? "UP_PRS" : bShortOk ? "DN_PRS" : "NONE"
+int sigNum = (bLongOk ? 1 : 0) + (bShortOk ? 1 : 0)
+
+string finalCode = f_finalCode(bDir, perLong, perShort, perWait, perExit, bBlock, bFlowShift)
+int finalNum = f_finalNum(finalCode)
+string finalNote = f_finalNote(bLongOk, bShortOk, bBlock, perWait, bFlowShift, bBarConf)
+string logCode = perExit ? "RISK" : bFlowShift != 0 ? "FLOW" : perWait ? "WAIT" : "RT"
+
+bool prevBlock = bar_index > 0 ? bBlock[1] : false
+bool prevPerLong = bar_index > 0 ? perLong[1] : false
+bool prevPerShort = bar_index > 0 ? perShort[1] : false
+bool prevCoreExit = bar_index > 0 ? coreExit[1] : false
+bool prevLinkIssue = bar_index > 0 ? linkIssue[1] : false
+int prevFinalNum = bar_index > 0 ? finalNum[1] : 0
+bool prevBlockSoftWarn = bar_index > 0 ? genutBlockSoftWarn[1] : false
+bool prevBlockPrewarnWarn = bar_index > 0 ? genutBlockPrewarnWarn[1] : false
+bool prevTrapFakeoutWarn = bar_index > 0 ? genutTrapFakeoutWarn[1] : false
+bool prevEntrySuppressWarn = bar_index > 0 ? genutEntrySuppressWarn[1] : false
+
+bool eventBlockOn = sourceConnected and bBlock and not prevBlock
+bool eventBlockOff = sourceConnected and (not bBlock) and prevBlock
+bool eventFlowShift = sourceConnected and bFlowShift != 0
+bool strongCoreExit = sourceConnected and (bState == 4 or (bExitOk and (genutExitStrong or genutHardExitOk or genutBlockHard or bRisk == 2)))
+bool prevStrongCoreExit = bar_index > 0 ? strongCoreExit[1] : false
+bool eventExit = sourceConnected and strongCoreExit and not prevStrongCoreExit and not eventBlockOn
+bool eventHold = sourceConnected and bState == 3 and nz(bState[1], 0) < 3
+bool eventLinkIssue = linkIssue and not prevLinkIssue
+bool finalShift = bar_index > 0 and finalNum != prevFinalNum
+bool eventBlockSoftWarn = sourceConnected and genutBlockSoftWarn and not prevBlockSoftWarn
+bool eventBlockPrewarnWarn = sourceConnected and genutBlockPrewarnWarn and not prevBlockPrewarnWarn
+bool eventTrapFakeoutWarn = sourceConnected and genutTrapFakeoutWarn and not prevTrapFakeoutWarn
+bool eventEntrySuppressWarn = sourceConnected and genutEntrySuppressWarn and not prevEntrySuppressWarn
+
+int eventCode =
+     eventBlockOn ? 1 :
+     eventLinkIssue ? 6 :
+     eventBlockOff ? 2 :
+     eventFlowShift ? 3 :
+     eventExit ? 4 :
+     eventHold ? 5 :
+     eventBlockPrewarnWarn ? 8 :
+     eventBlockSoftWarn ? 7 :
+     eventTrapFakeoutWarn ? 11 :
+     eventEntrySuppressWarn ? 12 : 0
+
+string eventText =
+     eventCode == 1 ? (genutHardExitOk ? "HARD_BLOCK_STATE" : genutBlockHard ? "HARD_BLOCK" : genutBlockPrewarnWarn ? "BLOCK_PREWARN" : genutBlockSoftWarn ? "BLOCK_SOFT_WARN" : "GATE_BLOCKED") :
+     eventCode == 6 ? "LINK_ISSUE" :
+     eventCode == 2 ? "BLOCK_OFF" :
+     eventCode == 3 ? (genutFlowShiftStrong ? "FLOW_SHIFT_STRONG" : "FLOW_SHIFT_WEAK") :
+     eventCode == 4 ? "RECOVERY_FAIL" :
+     eventCode == 5 ? "HOLD" :
+     eventCode == 8 ? "BLOCK_PREWARN" :
+     eventCode == 7 ? "BLOCK_SOFT_WARN" :
+     eventCode == 11 ? "TRAP_FAKEOUT_WARN" :
+     eventCode == 12 ? "GATE_SUPPRESS_WARN" :
+     genutBlockPrewarnWarn ? "BLOCK_PREWARN" :
+     genutBlockSoftWarn ? "BLOCK_SOFT_WARN" :
+     genutTrapFakeoutWarn ? "TRAP_FAKEOUT_WARN" :
+     genutEntrySuppressWarn ? "GATE_SUPPRESS_WARN" : "NONE"
+
+var int blockOnCount = 0
+var int blockOffCount = 0
+var int flowShiftCount = 0
+var int exitCount = 0
+var int holdCount = 0
+var int linkIssueCount = 0
+
+if eventBlockOn
+    blockOnCount += 1
+if eventBlockOff
+    blockOffCount += 1
+if eventFlowShift
+    flowShiftCount += 1
+if eventExit
+    exitCount += 1
+if eventHold
+    holdCount += 1
+if eventLinkIssue
+    linkIssueCount += 1
+
+bool strictEnterLong = perLong and not prevPerLong
+bool strictEnterShort = perShort and not prevPerShort
+bool pressureLongProbe = sourceConnected and bDir > 0 and bTotal >= probeTotalMin and (bLongOk or bFlowSlope > 0)
+bool pressureShortProbe = sourceConnected and bDir < 0 and bTotal >= probeTotalMin and (bShortOk or bFlowSlope < 0)
+bool flowLongProbe = sourceConnected and eventFlowShift and genutFlowShiftStrong and (bFlowShift > 0 or (bFlowShift == 2 and bDir > 0) or bFlowSlope >= probeFlowMin)
+bool flowShortProbe = sourceConnected and eventFlowShift and genutFlowShiftStrong and (bFlowShift < 0 or (bFlowShift == 2 and bDir < 0) or bFlowSlope <= -probeFlowMin)
+
+bool modePressure = tradeMode == "PRESSURE_PROBE"
+bool modeFlow = tradeMode == "FLOW_PROBE"
+bool modeHybrid = tradeMode == "HYBRID_PROBE"
+bool probeEntryActive = allowProbeEntries and (modePressure or modeFlow or modeHybrid)
+
+bool rawStrictLong = strictEnterLong
+bool rawStrictShort = strictEnterShort
+bool rawBalancedBase = defenseSourceConnected and not bBlock and bTotal >= 55 and bTriggerScore >= 10 and bBaseScore >= 10 and bStructScore >= 0 and bAlignScore >= 50 and bActiveCount >= 3 and bRisk <= 1 and bFailCount <= 0 and (not useBarConfirmedFilter or bBarConf)
+bool rawBalancedLong = rawBalancedBase and bDir > 0 and (bLongOk or bDirectionalNet > 0 or bFlowSlope > 0)
+bool rawBalancedShort = rawBalancedBase and bDir < 0 and (bShortOk or bDirectionalNet < 0 or bFlowSlope < 0)
+bool rawLooseBase = defenseSourceConnected and not bBlock and bTotal >= 45 and bActiveCount >= 2 and bDir != 0
+bool rawLooseLong = rawLooseBase and bDir > 0 and (bLongOk or bDirectionalNet > 0)
+bool rawLooseShort = rawLooseBase and bDir < 0 and (bShortOk or bDirectionalNet < 0)
+bool rawExitAuditBase = defenseSourceConnected and not bBlock and bDir != 0 and bTotal >= 45 and bActiveCount >= 2
+bool rawExitAuditLong = rawExitAuditBase and bDir > 0
+bool rawExitAuditShort = rawExitAuditBase and bDir < 0
+bool rawProbeLong = probeEntryActive ? (modePressure ? pressureLongProbe : modeFlow ? flowLongProbe : (pressureLongProbe or flowLongProbe)) : false
+bool rawProbeShort = probeEntryActive ? (modePressure ? pressureShortProbe : modeFlow ? flowShortProbe : (pressureShortProbe or flowShortProbe)) : false
+bool rawDefenseLong = defenseSensitivity == "STRICT" ? rawStrictLong : defenseSensitivity == "BALANCED" ? rawBalancedLong : defenseSensitivity == "LOOSE" ? rawLooseLong : rawExitAuditLong
+bool rawDefenseShort = defenseSensitivity == "STRICT" ? rawStrictShort : defenseSensitivity == "BALANCED" ? rawBalancedShort : defenseSensitivity == "LOOSE" ? rawLooseShort : rawExitAuditShort
+bool rawShadowLong = rawDefenseLong or rawProbeLong
+bool rawShadowShort = rawDefenseShort or rawProbeShort
+
+var int lastShadowEntryBar = na
+var int lastDefenseExitBar = na
+var int defenseEntryBar = na
+var float defenseHighSinceEntry = na
+var float defenseLowSinceEntry = na
+
+int positionSide = strategy.position_size > 0 ? 1 : strategy.position_size < 0 ? -1 : 0
+int prevPositionSide = bar_index > 0 ? positionSide[1] : 0
+bool positionStartedOrFlipped = positionSide != 0 and positionSide != prevPositionSide
+
+if positionSide == 0
+    defenseEntryBar := na
+    defenseHighSinceEntry := na
+    defenseLowSinceEntry := na
+else if positionStartedOrFlipped or na(defenseEntryBar)
+    defenseEntryBar := bar_index
+    defenseHighSinceEntry := high
+    defenseLowSinceEntry := low
+else
+    defenseHighSinceEntry := math.max(nz(defenseHighSinceEntry, high), high)
+    defenseLowSinceEntry := math.min(nz(defenseLowSinceEntry, low), low)
+
+int positionAge = not na(defenseEntryBar) ? bar_index - defenseEntryBar : 0
+float positionMfePct = 0.0
+if positionSide > 0 and strategy.position_avg_price > 0 and not na(defenseHighSinceEntry)
+    positionMfePct := (defenseHighSinceEntry / strategy.position_avg_price - 1.0) * 100.0
+else if positionSide < 0 and strategy.position_avg_price > 0 and not na(defenseLowSinceEntry)
+    positionMfePct := (strategy.position_avg_price / defenseLowSinceEntry - 1.0) * 100.0
+
+bool mfeReached = positionSide != 0 and positionMfePct >= breakEvenAfterPct
+bool profitProtectActive = positionSide != 0 and positionMfePct >= breakEvenAfterPct
+bool trailProtectActive = positionSide != 0 and positionMfePct >= trailAfterMfePct
+bool hardProfitProtectActive = positionSide != 0 and positionMfePct >= protectProfitAfterPct
+
+float totalDropNow = math.max(0.0, nz(bTotal[1], bTotal) - bTotal)
+int activeDropNow = int(math.max(0, nz(bActiveCount[1], bActiveCount) - bActiveCount))
+bool flowWeakeningStrong = totalDropNow >= math.max(flowTotalDropMin, 5.0) or activeDropNow >= math.max(flowActiveWeakeningMin + 1, 2)
+bool flowExitRiskConfirm = bRisk == 2 or genutRiskBlockScore >= 60 or genutMacroConflictScore >= 60 or genutLiquidityPressureScore >= 60 or genutTrapPressureScore >= 62 or genutFakeoutPressureScore >= 62 or genutRiskRising or genutMacroRising or genutLiquidityRising
+bool longOppositeConfirmed = positionSide > 0 and (bDir < 0 or bShortOk or bFlowShift < 0 or (genutFlowShiftStrong and bDir <= 0 and bFlowSlope < 0))
+bool shortOppositeConfirmed = positionSide < 0 and (bDir > 0 or bLongOk or bFlowShift > 0 or (genutFlowShiftStrong and bDir >= 0 and bFlowSlope > 0))
+bool longFlowDeteriorating = positionSide > 0 and (bFlowSlope <= -flowStrongOppositeMin or (nz(bFlowSlope[1], bFlowSlope) - bFlowSlope) >= flowSlopeDeteriorationMin)
+bool shortFlowDeteriorating = positionSide < 0 and (bFlowSlope >= flowStrongOppositeMin or (bFlowSlope - nz(bFlowSlope[1], bFlowSlope)) >= flowSlopeDeteriorationMin)
+bool genutFlowStrongUsed = positionSide != 0 and genutFlowShiftStrong
+bool genutFlowWeakDiagnostic = genutFlowShiftWeak and not genutFlowShiftStrong
+bool genutLongStrongOpposite = positionSide > 0 and genutFlowStrongUsed and longOppositeConfirmed and (longFlowDeteriorating or bFlowSlope < 0) and flowWeakeningStrong and flowExitRiskConfirm
+bool genutShortStrongOpposite = positionSide < 0 and genutFlowStrongUsed and shortOppositeConfirmed and (shortFlowDeteriorating or bFlowSlope > 0) and flowWeakeningStrong and flowExitRiskConfirm
+bool flowStrongOpposite = positionSide != 0 and genutFlowShiftStrong and (genutLongStrongOpposite or genutShortStrongOpposite)
+bool flowWeakIgnored = closeOnFlowShift and positionSide != 0 and ((eventFlowShift and not genutFlowShiftStrong) or genutFlowWeakDiagnostic) and not flowStrongOpposite
+
+bool genutPrewarnUsed = genutBlockPrewarn
+bool genutEntrySuppressUsed = genutEntrySuppress
+bool hardExitRiskConfirm = bRisk == 2 or genutRiskBlockScore >= 72 or genutMacroConflictScore >= 72 or genutLiquidityPressureScore >= 72 or genutTrapPressureScore >= 74 or genutFakeoutPressureScore >= 74
+bool hardExitTimingConfirm = bState == 4 or totalDropNow >= 5 or genutRiskRising or genutMacroRising or genutLiquidityRising or genutFlowShiftStrong
+bool blockHardExitConfirm = genutBlockHard and hardExitRiskConfirm and (genutHardExitOk or hardExitTimingConfirm)
+bool genutHardExitUsed = positionSide != 0 and genutHardExitOk and hardExitRiskConfirm and hardExitTimingConfirm
+bool defenseBlockExit = closeOnBlock and positionSide != 0 and blockHardExitConfirm
+bool defenseFlowExit = closeOnFlowShift and flowStrongOpposite
+bool defenseExitSignal = closeOnExit and positionSide != 0 and strongCoreExit
+bool defenseGenutHardExit = (closeOnBlock or closeOnExit) and genutHardExitUsed
+bool defenseLinkExit = closeOnLinkIssue and positionSide != 0 and (eventLinkIssue or linkIssue or not defenseSourceConnected)
+bool defenseTimeExit = maxBarsInTrade > 0 and positionSide != 0 and positionAge >= maxBarsInTrade
+bool defenseExitNow = defenseBlockExit or defenseFlowExit or defenseGenutHardExit or defenseExitSignal or defenseLinkExit or defenseTimeExit
+
+float longEmergencyStop = useStopLoss and strategy.position_size > 0 ? strategy.position_avg_price * (1.0 - stopLossPct * 0.01) : na
+float longBreakEvenStop = strategy.position_size > 0 and mfeReached ? strategy.position_avg_price : na
+float longProtectStop = strategy.position_size > 0 and hardProfitProtectActive ? strategy.position_avg_price * (1.0 + protectProfitAfterPct * 0.005) : na
+float longTrailStop = strategy.position_size > 0 and trailProtectActive and not na(defenseHighSinceEntry) ? defenseHighSinceEntry * (1.0 - trailGivebackPct * 0.01) : na
+float longStop = f_maxMaybe(f_maxMaybe(longEmergencyStop, longBreakEvenStop), f_maxMaybe(longProtectStop, longTrailStop))
+float longLimit = useTakeProfit and strategy.position_size > 0 ? strategy.position_avg_price * (1.0 + takeProfitPct * 0.01) : na
+
+float shortEmergencyStop = useStopLoss and strategy.position_size < 0 ? strategy.position_avg_price * (1.0 + stopLossPct * 0.01) : na
+float shortBreakEvenStop = strategy.position_size < 0 and mfeReached ? strategy.position_avg_price : na
+float shortProtectStop = strategy.position_size < 0 and hardProfitProtectActive ? strategy.position_avg_price * (1.0 - protectProfitAfterPct * 0.005) : na
+float shortTrailStop = strategy.position_size < 0 and trailProtectActive and not na(defenseLowSinceEntry) ? defenseLowSinceEntry * (1.0 + trailGivebackPct * 0.01) : na
+float shortStop = f_minMaybe(f_minMaybe(shortEmergencyStop, shortBreakEvenStop), f_minMaybe(shortProtectStop, shortTrailStop))
+float shortLimit = useTakeProfit and strategy.position_size < 0 ? strategy.position_avg_price * (1.0 - takeProfitPct * 0.01) : na
+
+bool defRiskStopHit = (strategy.position_size > 0 and not na(longStop) and low <= longStop) or (strategy.position_size < 0 and not na(shortStop) and high >= shortStop)
+
+if defenseExitNow or defRiskStopHit
+    lastDefenseExitBar := bar_index
+
+bool defenseCooldownActive = not na(lastDefenseExitBar) and bar_index - lastDefenseExitBar <= defenseCooldownBars
+bool shadowCooldownOK = na(lastShadowEntryBar) or (bar_index - lastShadowEntryBar > probeCooldownBars)
+bool blockAllowsProbe = allowProbeInBlock or not bBlock
+int tfModeCode = timeframeMode == "HTF_DEFENSE" ? 0 : timeframeMode == "LTF_AUDIT" ? 1 : 2
+bool ltfRiskBlockRising = optRiskBlockScoreOk and genutRiskBlockScore - nz(genutRiskBlockScore[1], genutRiskBlockScore) >= 8
+bool ltfMacroConflictRising = genutMacroRising or (optMacroConflictScoreOk and genutMacroConflictScore - nz(genutMacroConflictScore[1], genutMacroConflictScore) >= 8)
+bool ltfLiquidityPressureRising = genutLiquidityRising or (optLiquidityPressureScoreOk and genutLiquidityPressureScore - nz(genutLiquidityPressureScore[1], genutLiquidityPressureScore) >= 8)
+bool ltfTrapFakeoutRare = genutTrapRising or genutFakeoutRising
+bool ltfRareEvent = genutBlockPrewarn or genutBlockHard or genutHardExitOk or genutFlowShiftStrong or genutRiskRising or ltfRiskBlockRising or ltfMacroConflictRising or ltfLiquidityPressureRising or ltfTrapFakeoutRare
+bool defenseEntryAllowed = defenseSourceConnected and blockAllowsProbe and not genutBlockHard and not genutEntrySuppressUsed and shadowCooldownOK and not defenseCooldownActive and not linkIssue
+bool enterLong = rawShadowLong and defenseEntryAllowed and strategy.position_size <= 0
+bool enterShort = rawShadowShort and defenseEntryAllowed and strategy.position_size >= 0
+
+float selectedTotalMin = defenseSensitivity == "STRICT" ? 55.0 : defenseSensitivity == "BALANCED" ? 55.0 : 45.0
+int selectedActiveMin = defenseSensitivity == "STRICT" ? 3 : defenseSensitivity == "BALANCED" ? 3 : 2
+bool selectedTotalTooLow = bTotal < selectedTotalMin
+bool selectedSubscoreTooLow = defenseSensitivity == "STRICT" ? (bTriggerScore < 10 or bBaseScore < 10 or bAlignScore < 50) : defenseSensitivity == "BALANCED" ? (bTriggerScore < 10 or bBaseScore < 10 or bStructScore < 0 or bAlignScore < 50) : false
+bool selectedActiveTooLow = bActiveCount < selectedActiveMin
+bool selectedBarMissing = defenseSensitivity == "BALANCED" and useBarConfirmedFilter and not bBarConf
+bool selectedRiskFailBlocked = defenseSensitivity == "STRICT" ? (bRisk > 1 or bFailCount > 0) : defenseSensitivity == "BALANCED" ? (bRisk > 1 or bFailCount > 0) : false
+bool selectedDirectionMismatch = defenseSourceConnected and not selectedTotalTooLow and not selectedSubscoreTooLow and not selectedActiveTooLow and not selectedBarMissing and not selectedRiskFailBlocked and not (rawDefenseLong or rawDefenseShort)
+int entryRejectCode =
+     (not defenseSourceConnected or linkIssue) ? 1 :
+     bBlock ? 2 :
+     genutBlockHard ? 12 :
+     genutEntrySuppressUsed ? 11 :
+     (defenseCooldownActive or not shadowCooldownOK) ? 4 :
+     selectedTotalTooLow ? 5 :
+     selectedSubscoreTooLow ? 6 :
+     selectedActiveTooLow ? 7 :
+     selectedDirectionMismatch ? 8 :
+     selectedBarMissing ? 9 :
+     selectedRiskFailBlocked ? 10 : 0
+
+int defenseReasonCode =
+     defenseBlockExit ? 1 :
+     defenseFlowExit ? 2 :
+     defenseExitSignal ? 3 :
+     defenseLinkExit ? 4 :
+     profitProtectActive ? 5 :
+     defenseTimeExit ? 6 :
+     defenseCooldownActive ? 7 :
+     not defenseSourceConnected ? 8 :
+     bBlock ? 9 : 0
+
+string longEntryComment = defenseSensitivity == "STRICT" ? "STATE_UP" : defenseSensitivity == "BALANCED" ? "PRESSURE_UP" : defenseSensitivity == "LOOSE" ? "AUDIT_UP" : "RISK_AUDIT_UP"
+string shortEntryComment = defenseSensitivity == "STRICT" ? "STATE_DOWN" : defenseSensitivity == "BALANCED" ? "PRESSURE_DOWN" : defenseSensitivity == "LOOSE" ? "AUDIT_DOWN" : "RISK_AUDIT_DOWN"
+string defenseCloseComment =
+     defenseBlockExit ? "HARD_BLOCK" :
+     defenseGenutHardExit ? "HARD_BLOCK_STATE" :
+     defenseFlowExit ? "FLOW_SHIFT_STRONG" :
+     defenseExitSignal ? "RECOVERY_FAIL" :
+     defenseLinkExit ? "LINK_ISSUE" :
+     defenseTimeExit ? "TIME_GUARD" : eventText
+
+string defenseCloseReason =
+     defenseBlockExit ? "GATE_BLOCKED" :
+     defenseGenutHardExit or defenseExitSignal ? "RECOVERY_BLOCK" :
+     defenseFlowExit ? "OPP_FLOW" :
+     defenseLinkExit ? "LINK_ISSUE" :
+     defRiskStopHit and strategy.position_size > 0 ? "UP_RISK" :
+     defRiskStopHit and strategy.position_size < 0 ? "DOWN_RISK" :
+     defenseTimeExit ? "TIME_GUARD" : "NONE"
+
+int perBWarningLevel = 0
+string perBWarningType = "WARN_NONE"
+string perBWarningSide = f_sideText(positionSide != 0 ? positionSide : bDir)
+if eventLinkIssue or linkIssue
+    perBWarningType := "WARN_LINK_ISSUE"
+    perBWarningLevel := 2
+else if defRiskStopHit and strategy.position_size > 0
+    perBWarningType := "WARN_B_L_RISK"
+    perBWarningSide := "UP"
+    perBWarningLevel := 2
+else if defRiskStopHit and strategy.position_size < 0
+    perBWarningType := "WARN_B_S_RISK"
+    perBWarningSide := "DOWN"
+    perBWarningLevel := 2
+else if eventBlockOn or genutBlockHard
+    perBWarningType := genutBlockHard or genutHardExitOk ? "WARN_BLOCK_HARD" : genutBlockSoftWarn ? "WARN_BLOCK_SOFT" : genutBlockPrewarnWarn ? "WARN_BLOCK_PREWARN" : "WARN_BLOCK_ON"
+    perBWarningLevel := genutBlockHard or genutHardExitOk ? 2 : 1
+else if eventBlockPrewarnWarn
+    perBWarningType := "WARN_BLOCK_PREWARN"
+    perBWarningLevel := 1
+else if eventBlockSoftWarn
+    perBWarningType := "WARN_BLOCK_SOFT"
+    perBWarningLevel := 1
+else if genutMacroRising or genutMacroConflictScore >= 60
+    perBWarningType := "WARN_MACRO_CONFLICT"
+    perBWarningLevel := genutMacroConflictScore >= 72 ? 2 : 1
+else if genutLiquidityRising or genutLiquidityPressureScore >= 60
+    perBWarningType := "WARN_LIQUIDITY_PRESSURE"
+    perBWarningLevel := genutLiquidityPressureScore >= 72 ? 2 : 1
+else if genutTrapRising or genutTrapPressureScore >= 60
+    perBWarningType := "WARN_TRAP"
+    perBWarningLevel := genutTrapPressureScore >= 72 ? 2 : 1
+else if genutFakeoutRising or genutFakeoutPressureScore >= 60
+    perBWarningType := "WARN_FAKEOUT"
+    perBWarningLevel := genutFakeoutPressureScore >= 72 ? 2 : 1
+else if eventFlowShift and genutFlowShiftStrong
+    perBWarningType := "WARN_FLOW_SHIFT_STRONG"
+    perBWarningLevel := 2
+else if genutFlowWeakDiagnostic or genutExitWeak
+    perBWarningType := "WARN_FLOW_FATIGUE"
+    perBWarningLevel := 1
+else if eventEntrySuppressWarn
+    perBWarningType := "WARN_GATE_SUPPRESS"
+    perBWarningLevel := 1
+
+string hetemBlockText = f_hetemBlockText(genutBlockHard or genutHardExitOk, genutBlockPrewarn or genutBlockSoft, bBlock)
+string hetemFlowText = f_hetemFlowText(bFlowShift, bFlowSlope)
+float hetemEventSeverity = f_clamp(math.max(math.max(hetemPressureIndex, genutRiskBlockScore), math.max(genutMacroConflictScore, math.max(genutTrapPressureScore, genutFakeoutPressureScore))) + (genutBlockHard or bBlock ? 8.0 : genutBlockPrewarn or genutBlockSoft ? 4.0 : 0.0), 0, 100)
+string hetemEc = f_gawEvent(hetemEventText)
+bool gawPolicyBlockPB = genutBlockHard or bBlock or hetemGateState == "BLOCKED" or genutRiskBlockScore >= 78
+bool gawPolicyCheckPB = eventBlockOff or eventFlowShift or eventBlockPrewarnWarn or hetemGateState == "CLEARING" or hetemEventText == "STRUCTURE_SHIFT" or hetemEventText == "RECOVERY_FAIL"
+bool gawPolicyWaitPB = perWait or genutMacroConflictScore >= 58 or genutLiquidityPressureScore >= 58 or hetemGateState == "CONGESTED" or hetemEventText == "TRAP_FAKEOUT_WAIT"
+string gawPolicyPB = gawPolicyBlockPB ? "GP:BK" : gawPolicyCheckPB ? "GP:CK" : gawPolicyWaitPB ? "GP:WT" : "GP:ON"
+string gawSchemaVersionPB = "GV3"
+string gawCodePB = gawSchemaVersionPB + "|TF:" + timeframe.period + "|EC:" + hetemEc + "|ES:" + f_numTxt(hetemEventSeverity) + "|" + gawPolicyPB + "|G:" + f_gawGate(hetemGateState) + "|P:" + f_gawBand(f_hetemBand(hetemPressureIndex)) + f_numTxt(hetemPressureIndex) + "|B:" + f_gawBlock(hetemBlockText)
+string gawLinePB = "GAW_V3; TF=" + timeframe.period + "; EC=" + hetemEc + "; ES=" + f_numTxt(hetemEventSeverity) + "; " + gawPolicyPB + "; GATE=" + hetemGateState + "; PRESSURE=" + f_hetemBand(hetemPressureIndex) + "_" + f_numTxt(hetemPressureIndex) + "; BLOCK=" + hetemBlockText
+
+string perBEventState = eventText
+string perBRiskLevel = f_riskText(bRisk)
+string perBPowerFlow = f_powerFlowText(bFlowSlope, bFlowDelta)
+string perBBlockSourceMaskText = str.tostring(genutBlockSourceMask)
+string perBBriefingMode = f_briefingModeText(genutBriefingModeCode)
+string perBJsonKemiScore = f_numTxt(perKemiScore)
+string perBJsonKemiCode = str.tostring(perKemiCode)
+string perBJsonKheperScore = f_numTxt(perKheperScore)
+string perBJsonKheperCode = str.tostring(perKheperCode)
+string perBJsonKheperBridge = str.tostring(perKheperBridge)
+string perBJsonKheperHandoff = str.tostring(perKheperHandoff)
+string perBJsonSensorMaskCode = str.tostring(perSensorMaskCode)
+string perBAlertMessage = f_perBAlertJson(perBEventState, perBWarningType, perBWarningSide, perBRiskLevel, perBPowerFlow, perBBlockSourceMaskText, perBBriefingMode, defenseCloseReason, hetemEc, f_numTxt(hetemEventSeverity), gawPolicyPB, gawCodePB, gawLinePB, perBJsonKemiScore, perBJsonKemiCode, perBJsonKheperScore, perBJsonKheperCode, perBJsonKheperBridge, perBJsonKheperHandoff, perBJsonSensorMaskCode)
+string perBOrderCloseAlertMessage = f_perBAlertJson(perBEventState, perBWarningType, perBWarningSide, perBRiskLevel, perBPowerFlow, perBBlockSourceMaskText, perBBriefingMode, defenseCloseReason, hetemEc, f_numTxt(hetemEventSeverity), gawPolicyPB, gawCodePB, gawLinePB, perBJsonKemiScore, perBJsonKemiCode, perBJsonKheperScore, perBJsonKheperCode, perBJsonKheperBridge, perBJsonKheperHandoff, perBJsonSensorMaskCode)
+string perBLongRiskAlertMessage = f_perBAlertJson("RISK_CHECK", "WARN_B_L_RISK", "UP", perBRiskLevel, perBPowerFlow, perBBlockSourceMaskText, perBBriefingMode, "CLOSE_BY_B_L_RISK", hetemEc, f_numTxt(hetemEventSeverity), gawPolicyPB, gawCodePB, gawLinePB, perBJsonKemiScore, perBJsonKemiCode, perBJsonKheperScore, perBJsonKheperCode, perBJsonKheperBridge, perBJsonKheperHandoff, perBJsonSensorMaskCode)
+string perBShortRiskAlertMessage = f_perBAlertJson("RISK_CHECK", "WARN_B_S_RISK", "DOWN", perBRiskLevel, perBPowerFlow, perBBlockSourceMaskText, perBBriefingMode, "CLOSE_BY_B_S_RISK", hetemEc, f_numTxt(hetemEventSeverity), gawPolicyPB, gawCodePB, gawLinePB, perBJsonKemiScore, perBJsonKemiCode, perBJsonKheperScore, perBJsonKheperCode, perBJsonKheperBridge, perBJsonKheperHandoff, perBJsonSensorMaskCode)
+string perBLongOpenAlertMessage = f_perBAlertJson("OBS_START", perBWarningType, "UP", perBRiskLevel, perBPowerFlow, perBBlockSourceMaskText, perBBriefingMode, "NONE", hetemEc, f_numTxt(hetemEventSeverity), gawPolicyPB, gawCodePB, gawLinePB, perBJsonKemiScore, perBJsonKemiCode, perBJsonKheperScore, perBJsonKheperCode, perBJsonKheperBridge, perBJsonKheperHandoff, perBJsonSensorMaskCode)
+string perBShortOpenAlertMessage = f_perBAlertJson("OBS_START", perBWarningType, "DOWN", perBRiskLevel, perBPowerFlow, perBBlockSourceMaskText, perBBriefingMode, "NONE", hetemEc, f_numTxt(hetemEventSeverity), gawPolicyPB, gawCodePB, gawLinePB, perBJsonKemiScore, perBJsonKemiCode, perBJsonKheperScore, perBJsonKheperCode, perBJsonKheperBridge, perBJsonKheperHandoff, perBJsonSensorMaskCode)
+var int lastPerBAlertBar = na
+bool perBAlertCooldownOk = perBAlertCooldownBars <= 0 or na(lastPerBAlertBar) or bar_index - lastPerBAlertBar > perBAlertCooldownBars
+bool perBAlertReady = perLegacyAlertsOn and enablePerBAlertExperiment and perBWarningType != "WARN_NONE" and perBWarningLevel >= perBAlertMinWarningLevel and (not perBAlertConfirmedOnly or barstate.isconfirmed) and perBAlertCooldownOk
+if perBAlertReady
+    if perBAlertFrequencyMode == "ONCE_PER_BAR"
+        alert(perBAlertMessage, alert.freq_once_per_bar)
+    else
+        alert(perBAlertMessage, alert.freq_once_per_bar_close)
+    lastPerBAlertBar := bar_index
+
+if enableShadowTrades and defenseBacktestMode
+    if defenseExitNow
+        strategy.close("B-LONG", comment=defenseCloseComment, alert_message=perBOrderCloseAlertMessage)
+        strategy.close("B-SHORT", comment=defenseCloseComment, alert_message=perBOrderCloseAlertMessage)
+    if strategy.position_size > 0 and (not na(longStop) or not na(longLimit))
+        strategy.exit("B-L-RISK", from_entry="B-LONG", stop=longStop, limit=longLimit, alert_message=perBLongRiskAlertMessage)
+    if strategy.position_size < 0 and (not na(shortStop) or not na(shortLimit))
+        strategy.exit("B-S-RISK", from_entry="B-SHORT", stop=shortStop, limit=shortLimit, alert_message=perBShortRiskAlertMessage)
+    if allowLongProbe and enterLong
+        strategy.entry("B-LONG", strategy.long, comment=longEntryComment, alert_message=perBLongOpenAlertMessage)
+        lastShadowEntryBar := bar_index
+    if allowShortProbe and enterShort
+        strategy.entry("B-SHORT", strategy.short, comment=shortEntryComment, alert_message=perBShortOpenAlertMessage)
+        lastShadowEntryBar := bar_index
+
+color dirColor = bDir > 0 ? colGood : bDir < 0 ? colBad : colWarn
+color stateColor = bState == 4 ? colBad : bState >= 2 ? colGood : bState == 1 ? colWarn : colSoft
+color riskColor = bRisk == 0 ? colGood : bRisk == 1 ? colWarn : colBad
+color scoreColor = bTotal >= 65 ? colGood : bTotal >= 35 ? colWarn : colBad
+color blockColor = bBlock ? colBad : colGood
+color eventColor = eventCode == 6 ? colBad : eventCode == 5 ? colGood : eventCode == 4 ? colAccent : eventCode == 3 ? colWarn : eventCode == 2 ? colGood : eventCode == 1 ? colBad : colSoft
+string hetemNote = f_hetemNoteB(hetemGateState, hetemEventText, hetemPressureIndex)
+color gateColor = hetemGateState == "OPEN" or hetemGateState == "CLEARING" ? colGood : hetemGateState == "WAIT" ? colWarn : colBad
+color pressureColor = hetemPressureIndex >= 80 ? colBad : hetemPressureIndex >= 60 ? colWarn : colGood
+color severityColor = hetemEventSeverity >= 75 ? colBad : hetemEventSeverity >= 45 ? colWarn : colGood
+color policyColor = gawPolicyPB == "GP:BK" ? colBad : gawPolicyPB == "GP:WT" ? colWarn : gawPolicyPB == "GP:CK" ? colAccent : colGood
+
+var table t = na
+var string lastTableLayoutKey = ""
+int frameW = showTableBorder ? tableFrameWidth : 0
+int borderW = showTableBorder ? tableBorderWidth : 0
+color tableBgColor = color.new(colBg, tableBgTransp)
+string tableLayoutKey = str.tostring(tableScale) + "|" + tablePosOpt + "|" + (showTableBorder ? "1" : "0") + "|" + str.tostring(tableFrameWidth) + "|" + str.tostring(tableBorderWidth) + "|" + str.tostring(tableBgTransp)
+txtSize = f_textSizeFromScale(tableScale)
+bodySz = txtSize
+numSz = txtSize
+headSz = txtSize
+
+if barstate.islast
+    if showTable
+        if na(t) or tableLayoutKey != lastTableLayoutKey
+            if not na(t)
+                table.delete(t)
+            t := table.new(f_tablePos(tablePosOpt), 4, 16, bgcolor=tableBgColor, frame_color=tableFrameColor, frame_width=frameW, border_color=tableBorderColor, border_width=borderW)
+            lastTableLayoutKey := tableLayoutKey
+        table.clear(t, 0, 0, 3, 15)
+    else
+        if not na(t)
+            table.delete(t)
+            t := na
+            lastTableLayoutKey := ""
+
+if barstate.islast and showTable and not na(t)
+    string gawGatePB = f_gawGate(hetemGateState)
+    string gawPressPB = f_gawBand(f_hetemBand(hetemPressureIndex))
+    string gawRiskPB = f_gawRisk(f_riskText(bRisk))
+    string gawBlockPB = f_gawBlock(hetemBlockText)
+    string gawFlowPB = f_gawFlow(hetemFlowText)
+    string gawEventPB = f_gawEvent(hetemEventText)
+    string gawNextPB = f_gawNextText(hetemNextTfCode)
+
+    table.cell(t, 0, 0, "PB", text_color=colHead, text_size=headSz)
+    table.cell(t, 1, 0, "SM", text_color=colAccent, text_size=headSz)
+    table.cell(t, 2, 0, "TF", text_color=colHead, text_size=headSz)
+    table.cell(t, 3, 0, timeframe.period, text_color=colNum, text_size=headSz)
+
+    table.cell(t, 0, 1, "GW", text_color=colHead, text_size=bodySz)
+    table.cell(t, 1, 1, "EC:" + gawEventPB, text_color=eventColor, text_size=bodySz)
+    table.cell(t, 2, 1, "ES:" + f_numTxt(hetemEventSeverity), text_color=severityColor, text_size=bodySz)
+    table.cell(t, 3, 1, gawPolicyPB, text_color=policyColor, text_size=bodySz)
+
+    table.cell(t, 0, 2, "G1", text_color=colHead, text_size=bodySz)
+    table.cell(t, 1, 2, sourceConnected ? "SRC:OK" : "SRC:CK", text_color=sourceConnected ? colGood : colBad, text_size=bodySz)
+    table.cell(t, 2, 2, "R:" + gawRiskPB, text_color=riskColor, text_size=bodySz)
+    table.cell(t, 3, 2, "B:" + gawBlockPB, text_color=blockColor, text_size=bodySz)
+
+    table.cell(t, 0, 3, "G2", text_color=colHead, text_size=bodySz)
+    table.cell(t, 1, 3, "EC:" + gawEventPB, text_color=eventColor, text_size=bodySz)
+    table.cell(t, 2, 3, "N:" + gawNextPB, text_color=colNum, text_size=bodySz)
+    table.cell(t, 3, 3, "MON", text_color=colWarn, text_size=bodySz)
+
+    table.cell(t, 0, 4, "PR", text_color=colText, text_size=bodySz)
+    table.cell(t, 1, 4, gawPressPB, text_color=pressureColor, text_size=bodySz)
+    table.cell(t, 2, 4, "PI", text_color=colSoft, text_size=bodySz)
+    table.cell(t, 3, 4, f_numTxt(hetemPressureIndex), text_color=colNum, text_size=numSz)
+
+    table.cell(t, 0, 5, "EC", text_color=colText, text_size=bodySz)
+    table.cell(t, 1, 5, gawEventPB, text_color=eventColor, text_size=bodySz)
+    table.cell(t, 2, 5, "ES", text_color=colSoft, text_size=bodySz)
+    table.cell(t, 3, 5, f_numTxt(hetemEventSeverity), text_color=severityColor, text_size=numSz)
+
+    table.cell(t, 0, 6, "MD", text_color=colText, text_size=bodySz)
+    table.cell(t, 1, 6, str.tostring(int(math.round(hetemModeCode))), text_color=colNum, text_size=numSz)
+    table.cell(t, 2, 6, "RL", text_color=colText, text_size=bodySz)
+    table.cell(t, 3, 6, str.tostring(int(math.round(hetemTfRoleCode))), text_color=colNum, text_size=numSz)
+
+    table.cell(t, 0, 7, "NX", text_color=colText, text_size=bodySz)
+    table.cell(t, 1, 7, str.tostring(int(math.round(hetemNextTfCode))), text_color=colNum, text_size=numSz)
+    table.cell(t, 2, 7, "DR", text_color=colText, text_size=bodySz)
+    table.cell(t, 3, 7, f_gawFlow(f_dirText(bDir)), text_color=dirColor, text_size=bodySz)
+
+    table.cell(t, 0, 8, "ST", text_color=colText, text_size=bodySz)
+    table.cell(t, 1, 8, f_gawState(f_stateText(bState)), text_color=stateColor, text_size=bodySz)
+    table.cell(t, 2, 8, "SC", text_color=colSoft, text_size=bodySz)
+    table.cell(t, 3, 8, str.tostring(bState), text_color=colNum, text_size=numSz)
+
+    table.cell(t, 0, 9, "RK", text_color=colText, text_size=bodySz)
+    table.cell(t, 1, 9, gawRiskPB, text_color=riskColor, text_size=bodySz)
+    table.cell(t, 2, 9, "SP", text_color=colSoft, text_size=bodySz)
+    table.cell(t, 3, 9, f_gawBand(f_hetemBand(hetemStructurePressureScore)), text_color=pressureColor, text_size=bodySz)
+
+    table.cell(t, 0, 10, "B", text_color=colText, text_size=bodySz)
+    table.cell(t, 1, 10, gawBlockPB, text_color=blockColor, text_size=bodySz)
+    table.cell(t, 2, 10, "RS", text_color=colSoft, text_size=bodySz)
+    table.cell(t, 3, 10, f_reasonText(bBlockRsn), text_color=colSoft, text_size=bodySz)
+
+    table.cell(t, 0, 11, "FL", text_color=colText, text_size=bodySz)
+    table.cell(t, 1, 11, gawFlowPB, text_color=colAccent, text_size=bodySz)
+    table.cell(t, 2, 11, "SL", text_color=colSoft, text_size=bodySz)
+    table.cell(t, 3, 11, f_numTxt(bFlowSlope), text_color=colNum, text_size=numSz)
+
+    table.cell(t, 0, 12, "SU", text_color=colText, text_size=bodySz)
+    table.cell(t, 1, 12, bLongOk ? "1" : "0", text_color=bLongOk ? colGood : colSoft, text_size=bodySz)
+    table.cell(t, 2, 12, "SD", text_color=colText, text_size=bodySz)
+    table.cell(t, 3, 12, bShortOk ? "1" : "0", text_color=bShortOk ? colBad : colSoft, text_size=bodySz)
+
+    table.cell(t, 0, 13, "SS", text_color=colText, text_size=bodySz)
+    table.cell(t, 1, 13, f_gawBand(f_hetemBand(hetemStructureScore)), text_color=scoreColor, text_size=bodySz)
+    table.cell(t, 2, 13, "SV", text_color=colSoft, text_size=bodySz)
+    table.cell(t, 3, 13, f_numTxt(hetemStructureScore), text_color=colNum, text_size=numSz)
+
+    string tableKemiPB = perKemiLinked ? "KM" + f_numTxt(perKemiScore) + " C" + str.tostring(perKemiCode) : "KM:NA C0"
+    string tableKheperPB = perKheperLinked ? "KP" + f_numTxt(perKheperScore) + " K" + str.tostring(perKheperCode) : "KP:NA K0"
+    string tableSensorMaskPB = "SM" + str.tostring(perSensorMaskCode)
+    color tableKemiColorPB = perKemiLinked and perKemiCode > 0 ? colAccent : colSoft
+    color tableKheperColorPB = perKheperLinked and perKheperCode > 0 ? colAccent : colSoft
+    color tableSensorMaskColorPB = perSensorMaskCode < 0 or perSensorMaskCode >= 4 ? colWarn : perSensorMaskCode == 0 ? colSoft : colGood
+    table.cell(t, 0, 14, "KS", text_color=colText, text_size=bodySz)
+    table.cell(t, 1, 14, tableKemiPB, text_color=tableKemiColorPB, text_size=bodySz)
+    table.cell(t, 2, 14, tableKheperPB, text_color=tableKheperColorPB, text_size=bodySz)
+    table.cell(t, 3, 14, tableSensorMaskPB, text_color=tableSensorMaskColorPB, text_size=bodySz)
+
+    table.cell(t, 0, 15, "END", text_color=colSoft, text_size=bodySz)
+    table.cell(t, 1, 15, "GAW", text_color=colAccent, text_size=bodySz)
+    table.cell(t, 2, 15, gawSchemaVersionPB, text_color=colGood, text_size=bodySz)
+    table.cell(t, 3, 15, "PB", text_color=colAccent, text_size=bodySz)
+
+
+plot(hetemGateScore, title="AL_PER_B_HETEM_GATE_SCORE", display=display.none)
+plot(hetemPressureIndex, title="AL_PER_B_HETEM_PRESSURE_INDEX", display=display.none)
+plot(hetemGateStateCode, title="AL_PER_B_HETEM_GATE_STATE_CODE", display=display.none)
+plot(hetemEventCode, title="AL_PER_B_HETEM_EVENT_CODE", display=display.none)
+plot(hetemModeCode, title="AL_PER_B_HETEM_MODE_CODE", display=display.none)
+plot(hetemTfRoleCode, title="AL_PER_B_HETEM_TF_ROLE_CODE", display=display.none)
+plot(hetemNextTfCode, title="AL_PER_B_HETEM_NEXT_TF_CODE", display=display.none)
+plot(sourceConnected ? 1.0 : 0.0, title="AL_PER_B_SOURCE_OK", display=display.none)
+plot(monitorOnlyMode ? 1.0 : 0.0, title="AL_PER_B_MONITOR_ONLY", display=display.none)
+plot(float(bDir), title="PER_B_DIRECTION", display=display.none)
+plot(float(bState), title="PER_B_STATE", display=display.none)
+plot(float(bRisk), title="PER_B_RISK", display=display.none)
+plot(bTotal, title="PER_B_TOTAL", display=display.none)
+plot(bBlock ? 1.0 : 0.0, title="PER_B_BLOCK", display=display.none)
+plot(float(bBlockRsn), title="PER_B_BLOCK_REASON", display=display.none)
+plot(perLong ? 1.0 : 0.0, title="PER_B_LONG", display=display.none)
+plot(perShort ? 1.0 : 0.0, title="PER_B_SHORT", display=display.none)
+plot(perWait ? 1.0 : 0.0, title="PER_B_WAIT", display=display.none)
+plot(perExit ? 1.0 : 0.0, title="PER_B_EXIT", display=display.none)
+plot(bFlowDelta, title="PER_B_FLOW_DELTA", display=display.none)
+plot(bFlowSlope, title="PER_B_FLOW_SLOPE", display=display.none)
+plot(float(bFlowShift), title="PER_B_FLOW_SHIFT", display=display.none)
+plot(float(finalNum), title="PER_B_FINAL_NUM", display=display.none)
+plot(float(readyCount), title="PER_B_LINK_READY_COUNT", display=display.none)
+plot(float(issueCount), title="PER_B_LINK_ISSUE_COUNT", display=display.none)
+plot(float(eventCode), title="PER_B_EVENT_CODE", display=display.none)
+plot(genutRiskBlockScore, title="PER_B_RISK_BLOCK_SCORE", display=display.none)
+plot(genutMacroConflictScore, title="PER_B_MACRO_CONFLICT_SCORE", display=display.none)
+plot(genutLiquidityPressureScore, title="PER_B_LIQUIDITY_PRESSURE_SCORE", display=display.none)
+plot(genutTrapPressureScore, title="PER_B_TRAP_PRESSURE_SCORE", display=display.none)
+plot(genutFakeoutPressureScore, title="PER_B_FAKEOUT_PRESSURE_SCORE", display=display.none)
+plot(float(genutBriefingModeCode), title="PER_B_BRIEFING_MODE_CODE", display=display.none)
+plot(genutBlockHard ? 1.0 : 0.0, title="PER_B_BLOCK_HARD", display=display.none)
+plot(genutBlockSoft ? 1.0 : 0.0, title="PER_B_BLOCK_SOFT", display=display.none)
+plot(genutBlockPrewarn ? 1.0 : 0.0, title="PER_B_BLOCK_PREWARN", display=display.none)
+plot(genutEntrySuppress ? 1.0 : 0.0, title="PER_B_ENTRY_SUPPRESS", display=display.none)
+plot(genutHardExitOk ? 1.0 : 0.0, title="PER_B_HARD_EXIT_OK", display=display.none)
+plot(genutFlowShiftStrong ? 1.0 : 0.0, title="PER_B_FLOW_SHIFT_STRONG", display=display.none)
+plot(genutFlowShiftWeak ? 1.0 : 0.0, title="PER_B_FLOW_SHIFT_WEAK", display=display.none)
+plot(genutRiskRising ? 1.0 : 0.0, title="PER_B_RISK_RISING", display=display.none)
+plot(genutMacroRising ? 1.0 : 0.0, title="PER_B_MACRO_RISING", display=display.none)
+plot(genutLiquidityRising ? 1.0 : 0.0, title="PER_B_LIQUIDITY_RISING", display=display.none)
+plot(genutTrapRising ? 1.0 : 0.0, title="PER_B_TRAP_RISING", display=display.none)
+plot(genutFakeoutRising ? 1.0 : 0.0, title="PER_B_FAKEOUT_RISING", display=display.none)
+plot(float(entryRejectCode), title="ENTRY_REJECT_CODE", display=display.none)
+plot(float(tfModeCode), title="TF_MODE_CODE", display=display.none)
+plot(ltfRareEvent ? 1.0 : 0.0, title="LTF_RARE_EVENT", display=display.none)
+plot(ltfMacroConflictRising ? 1.0 : 0.0, title="LTF_MACRO_RISING_EVENT", display=display.none)
+plot(ltfLiquidityPressureRising ? 1.0 : 0.0, title="LTF_LIQUIDITY_RISING_EVENT", display=display.none)
+plot(ltfTrapFakeoutRare ? 1.0 : 0.0, title="LTF_TRAP_FAKEOUT_EVENT", display=display.none)
+plot(genutPrewarnUsed ? 1.0 : 0.0, title="GENUT_PREWARN_USED", display=display.none)
+plot(genutEntrySuppressUsed ? 1.0 : 0.0, title="GENUT_ENTRY_SUPPRESS_USED", display=display.none)
+plot(genutHardExitUsed ? 1.0 : 0.0, title="GENUT_HARD_EXIT_USED", display=display.none)
+plot(genutFlowStrongUsed ? 1.0 : 0.0, title="GENUT_FLOW_STRONG_USED", display=display.none)
+plot(genutFlowWeakDiagnostic ? 1.0 : 0.0, title="GENUT_FLOW_WEAK_DIAGNOSTIC", display=display.none)
+// PLOT_LIMIT_FIX_REMOVED: plot(defenseEntryAllowed ? 1.0 : 0.0, title="DEF_ENTRY_ALLOWED", display=display.none)
+// PLOT_LIMIT_FIX_REMOVED: plot(defenseFlowExit ? 1.0 : 0.0, title="DEF_FLOW_EXIT", display=display.none)
+// PLOT_LIMIT_FIX_REMOVED: plot(defenseLinkExit ? 1.0 : 0.0, title="DEF_LINK_EXIT", display=display.none)
+// PLOT_LIMIT_FIX_REMOVED: plot(defenseCooldownActive ? 1.0 : 0.0, title="DEF_COOLDOWN", display=display.none)
+// PLOT_LIMIT_FIX_REMOVED: plot(defenseBlockExit ? 1.0 : 0.0, title="DEF_BLOCK_EXIT_TRUE", display=display.none)
+// PLOT_LIMIT_FIX_REMOVED: plot(defenseExitSignal ? 1.0 : 0.0, title="DEF_EXIT_SIGNAL_TRUE", display=display.none)
+// PLOT_LIMIT_FIX_REMOVED: plot(flowStrongOpposite ? 1.0 : 0.0, title="DEF_FLOW_STRONG_EXIT", display=display.none)
+// PLOT_LIMIT_FIX_REMOVED: plot(flowWeakIgnored ? 1.0 : 0.0, title="DEF_FLOW_WEAK_IGNORED", display=display.none)
+// PLOT_LIMIT_FIX_REMOVED: plot(defRiskStopHit ? 1.0 : 0.0, title="DEF_RISK_STOP_HIT", display=display.none)
+// PLOT_LIMIT_FIX_REMOVED: plot(profitProtectActive ? 1.0 : 0.0, title="DEF_PROFIT_PROTECT_ACTIVE", display=display.none)
+// PLOT_LIMIT_FIX_REMOVED: plot(mfeReached ? 1.0 : 0.0, title="MFE_REACHED", display=display.none)
+plot(float(positionSide), title="POSITION_SIDE", display=display.none)
+plot(float(positionAge), title="POSITION_AGE", display=display.none)
+plot(float(defenseReasonCode), title="DEFENSE_REASON_CODE", display=display.none)
+
+if perLegacyAlertsOn and perLong and not prevPerLong
+    alert("AL_PER_B_MONITOR,STRUCTURE_UP", alert.freq_once_per_bar)
+if perLegacyAlertsOn and perShort and not prevPerShort
+    alert("AL_PER_B_MONITOR,STRUCTURE_DOWN", alert.freq_once_per_bar)
+if perLegacyAlertsOn and eventBlockOn
+    alert("AL_PER_B_MONITOR,GATE_BLOCKED", alert.freq_once_per_bar)
+if perLegacyAlertsOn and eventBlockOff
+    alert("AL_PER_B_MONITOR,GATE_CLEARING", alert.freq_once_per_bar)
+if perLegacyAlertsOn and eventExit
+    alert("AL_PER_B_MONITOR,RECOVERY_FAIL", alert.freq_once_per_bar)
+if perLegacyAlertsOn and eventFlowShift
+    alert("AL_PER_B_MONITOR,STRUCTURE_SHIFT", alert.freq_once_per_bar)
+if perLegacyAlertsOn and eventHold
+    alert("AL_PER_B_MONITOR,HOLD", alert.freq_once_per_bar)
+if perLegacyAlertsOn and eventLinkIssue
+    alert("AL_PER_B_MONITOR,LINK_ISSUE", alert.freq_once_per_bar)
+if perLegacyAlertsOn and finalShift
+    alert("AL_PER_B_MONITOR,STRUCTURE_SHIFT", alert.freq_once_per_bar)
+if perLegacyAlertsOn and eventBlockPrewarnWarn
+    alert("AL_PER_B_MONITOR,BLOCK_PREWARN", alert.freq_once_per_bar)
+if perLegacyAlertsOn and eventBlockSoftWarn
+    alert("AL_PER_B_MONITOR,GATE_CONGESTED", alert.freq_once_per_bar)
+if perLegacyAlertsOn and eventTrapFakeoutWarn
+    alert("AL_PER_B_MONITOR,TRAP_FAKEOUT_WAIT", alert.freq_once_per_bar)
+if perLegacyAlertsOn and eventEntrySuppressWarn
+    alert("AL_PER_B_MONITOR,GATE_SUPPRESS", alert.freq_once_per_bar)

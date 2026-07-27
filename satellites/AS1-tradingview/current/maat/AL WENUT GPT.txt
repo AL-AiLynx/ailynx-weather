@@ -1,0 +1,1074 @@
+//@version=6
+indicator("AL WENUT GPT", shorttitle="WENUT GPT", overlay=true, max_bars_back=5000, max_labels_count=20)
+
+// TradingView compile anchor.
+// display.none을 쓰면 모바일/TV 컴파일러가 출력 없음으로 오인할 수 있어,
+// 실제 plot은 유지하되 색상을 100% 투명하게 처리합니다.
+plot(close, title="AL_WENUT_GPT_COMPILE_ANCHOR", color=color.new(color.white, 100), linewidth=1)
+
+//==================================================
+// AL WENUT GPT - CUSTOM TABLE SETTINGS FIX
+// - GPT 전용 TIME_LIQUIDITY 레이어
+// - 항상 60분(1H) 기준 뉴욕 시간대 통계를 계산
+// - 방향 신호/매수/매도/진입/청산 목적이 아니라 시간대 유동성 창 브리핑 목적
+//==================================================
+
+//==================================================
+// 입력 : 소스
+//==================================================
+groupSource = "01 소스 설정"
+useChartSymbol = input.bool(true, "현재 차트 심볼 사용", group=groupSource)
+fixedSymbol = input.symbol("BINANCE:BTCUSDT.P", "고정 심볼", group=groupSource)
+
+//==================================================
+// 입력 : 계산
+//==================================================
+groupCalc = "02 계산 설정"
+lookbackDays = input.int(30, "통계 일수", minval=7, maxval=90, group=groupCalc)
+strongThreshold = input.float(70.0, "강한 시간창 기준", minval=50.0, maxval=95.0, step=1.0, group=groupCalc)
+leadMargin = input.float(8.0, "우세 판정 간격", minval=1.0, maxval=30.0, step=1.0, group=groupCalc)
+effVolFloor = input.float(20.0, "효율 계산 거래량 바닥", minval=5.0, maxval=50.0, group=groupCalc)
+quietThreshold = input.float(35.0, "조용한 시간창 기준", minval=5.0, maxval=60.0, step=1.0, group=groupCalc)
+weekdayDeltaStrong = input.float(15.0, "요일 차이 강함 기준", minval=5.0, maxval=50.0, step=1.0, group=groupCalc)
+nextHotNearHours = input.int(2, "다음 강한 시간 근접 기준", minval=1, maxval=12, group=groupCalc)
+scoreScaleMode = input.string("LOG", "점수 정규화 방식", options=["LINEAR", "LOG"], group=groupCalc)
+comboEffWeight = input.float(0.20, "COMBO 효율 가중치", minval=0.0, maxval=0.50, step=0.05, group=groupCalc)
+
+//==================================================
+// 입력 : 요일 비교
+//==================================================
+groupWeek = "03 요일 비교 설정"
+weekdayMode = input.string("Auto Today", "요일 비교 모드", options=["Off", "Auto Today", "Select Day"], group=groupWeek)
+selectedWeekday = input.string("Mon", "선택 요일", options=["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], group=groupWeek)
+minWeekSamples = input.int(2, "최소 요일 표본 수", minval=1, maxval=20, group=groupWeek)
+applyWeekdayBg = input.bool(true, "요일 차이를 배경에 반영", group=groupWeek)
+weekdayBgSensitivity = input.float(0.8, "요일 배경 반영 강도", minval=0.1, maxval=2.0, step=0.1, group=groupWeek)
+
+//==================================================
+// 입력 : GPT 표 / 시각화
+//==================================================
+groupTable = "04 표 설정 / GPT 화면"
+showTable = input.bool(true, "표 표시", group=groupTable, display=display.none)
+showWenutTable = showTable
+wenutTableMode = input.string("COMPACT", "열 표시 모드", options=["MINI", "COMPACT", "DETAIL"], group=groupTable, display=display.none)
+wenutTablePosOpt = input.string("우측 상단", "표 위치", options=["좌측 상단", "중앙 상단", "우측 상단", "좌측 중앙", "정중앙", "우측 중앙", "좌측 하단", "중앙 하단", "우측 하단"], group=groupTable, display=display.none)
+tableSizeScale = input.int(4, "표 크기 1~10", minval=1, maxval=10, group=groupTable, display=display.none)
+string wenutTableSizeOpt = "SCALE"
+cellWidthOpt = input.int(0, "셀 너비 (0 = 자동)", minval=0, maxval=40, group=groupTable, display=display.none)
+cellHeightOpt = input.int(0, "셀 높이 (0 = 자동)", minval=0, maxval=20, group=groupTable, display=display.none)
+// WENUT 표는 0 입력 시 자동 크기를 유지하고, 1 이상 입력 시 셀 폭/높이를 적용한다.
+showTableFrame = input.bool(true, "표 외곽선 표시", group=groupTable, display=display.none)
+showTableGrid = input.bool(true, "표 내부 그리드 표시", group=groupTable, display=display.none)
+frameWidthOpt = input.int(1, "외곽선 두께", minval=0, maxval=5, group=groupTable, display=display.none)
+gridWidthOpt = input.int(1, "그리드 두께", minval=0, maxval=5, group=groupTable, display=display.none)
+frameColorOpt = input.color(color.new(color.white, 70), "표 외곽선 색상", group=groupTable, display=display.none)
+gridColorOpt = input.color(color.new(color.white, 85), "표 테두리 색상", group=groupTable, display=display.none)
+tableBgTransp = input.int(20, "표 배경 투명도", minval=0, maxval=100, group=groupTable, display=display.none)
+headerBgTransp = input.int(35, "헤더 배경 투명도", minval=0, maxval=100, group=groupTable, display=display.none)
+riskBgTransp = input.int(35, "위험/경고 배경 투명도", minval=0, maxval=100, group=groupTable, display=display.none)
+langMode = input.string("CODE", "상태 언어", options=["KR", "EN", "CODE"], group=groupTable, display=display.none)
+columnMode = input.string("NORMAL", "열 표시 모드 V2", options=["COMPACT", "NORMAL", "DEBUG"], group=groupTable, display=display.none)
+debugMode = input.bool(false, "디버그 모드", group=groupTable, display=display.none)
+compactRows = input.bool(true, "행 간격 압축", group=groupTable, display=display.none)
+showHeatCells = input.bool(true, "점수별 셀 색상", group=groupTable, display=display.none)
+forceVisibleTable = input.bool(true, "표 강제 선명 표시", group=groupTable, display=display.none)
+showStateRow = input.bool(true, "STATE 행 표시", group=groupTable, display=display.none)
+showVolRow = input.bool(true, "VOL 행 표시", group=groupTable, display=display.none)
+showRangeRow = input.bool(true, "RANGE 행 표시", group=groupTable, display=display.none)
+showWindowRow = input.bool(true, "WINDOW 행 표시", group=groupTable, display=display.none)
+showTimeRow = input.bool(true, "TIME 행 표시", group=groupTable, display=display.none)
+showEventRow = input.bool(true, "EVENT 행 표시", group=groupTable, display=display.none)
+showBusRow = input.bool(true, "BUS 행 표시", group=groupTable, display=display.none)
+// 모바일에서 설정을 찾기 쉽도록 표 위치/크기/색상 옵션은 04~06 그룹에 모아두었습니다.
+
+// 배경과 라벨은 GPT 대시보드 방해를 줄이기 위해 기본 OFF
+groupVisual = "05 선택 시각화"
+showBackground = input.bool(false, "배경 표시", group=groupVisual, display=display.none)
+bgMode = input.string("Balanced", "배경 모드", options=["Strong", "Balanced", "Core Only"], group=groupVisual, display=display.none)
+heatBaseTransp = input.int(86, "배경 기본 투명도", minval=50, maxval=98, group=groupVisual, display=display.none)
+showTop3Label = input.bool(false, "TOP3 라벨 표시", group=groupVisual, display=display.none)
+top3AtrMult = input.float(2.5, "TOP3 라벨 높이", minval=0.5, maxval=10.0, step=0.5, group=groupVisual, display=display.none)
+
+// 색상 조절
+groupColors = "06 표 색상 설정"
+wenutHeaderBg = input.color(color.new(color.teal, 35), "헤더 배경색", group=groupColors, display=display.none)
+wenutBodyBg = input.color(color.new(color.black, 20), "본문 배경색", group=groupColors, display=display.none)
+wenutFinalBg = input.color(color.new(color.black, 15), "종합 행 배경색", group=groupColors, display=display.none)
+wenutHeaderText = input.color(color.white, "기본 글자색", group=groupColors, display=display.none)
+wenutBodyText = input.color(color.white, "본문 글자색", group=groupColors, display=display.none)
+wenutHotColor = input.color(color.orange, "HOT/콤보 색상", group=groupColors, display=display.none)
+wenutVolColor = input.color(color.blue, "UP 글자색", group=groupColors, display=display.none)
+wenutRngColor = input.color(color.red, "DOWN 글자색", group=groupColors, display=display.none)
+wenutEffColor = input.color(color.purple, "경고 글자색", group=groupColors, display=display.none)
+wenutCoreColor = input.color(color.purple, "CORE 시간창 색상", group=groupColors, display=display.none)
+wenutQuietColor = input.color(color.gray, "중립 글자색", group=groupColors, display=display.none)
+wenutGoodColor = input.color(color.lime, "요일 플러스 색상", group=groupColors, display=display.none)
+wenutWeakColor = input.color(color.maroon, "요일 마이너스 색상", group=groupColors, display=display.none)
+
+//==================================================
+// 상수
+//==================================================
+string TZ = "America/New_York"
+string HTF = "60"
+symbolToUse = useChartSymbol ? syminfo.tickerid : fixedSymbol
+int lookbackHours = lookbackDays * 24
+
+//==================================================
+// 헬퍼
+//==================================================
+f_posFromOpt(string opt) =>
+    out = position.top_right
+    if opt == "좌측 상단"
+        out := position.top_left
+    else if opt == "중앙 상단"
+        out := position.top_center
+    else if opt == "우측 상단"
+        out := position.top_right
+    else if opt == "좌측 중앙"
+        out := position.middle_left
+    else if opt == "정중앙"
+        out := position.middle_center
+    else if opt == "우측 중앙"
+        out := position.middle_right
+    else if opt == "좌측 하단"
+        out := position.bottom_left
+    else if opt == "중앙 하단"
+        out := position.bottom_center
+    else if opt == "우측 하단"
+        out := position.bottom_right
+    out
+
+f_sizeFromScale(int scale) =>
+    out = size.small
+    if scale <= 2
+        out := size.tiny
+    else if scale <= 5
+        out := size.small
+    else if scale <= 7
+        out := size.normal
+    else if scale <= 9
+        out := size.large
+    else
+        out := size.huge
+    out
+
+f_sizeFromOpt(string opt) =>
+    f_sizeFromScale(tableSizeScale)
+
+f_hourLabel(int h) =>
+    int hhClean = math.max(0, math.min(23, h))
+    string hh = ""
+    if hhClean < 10
+        hh := "0" + str.tostring(hhClean)
+    else
+        hh := str.tostring(hhClean)
+    hh + ":00"
+
+f_hourShort(int h) =>
+    int hhClean = math.max(0, math.min(23, h))
+    string hh = ""
+    if hhClean < 10
+        hh := "0" + str.tostring(hhClean)
+    else
+        hh := str.tostring(hhClean)
+    hh
+
+f_dayOptToIdx(string opt) =>
+    int out = 1
+    if opt == "Sun"
+        out := 0
+    else if opt == "Mon"
+        out := 1
+    else if opt == "Tue"
+        out := 2
+    else if opt == "Wed"
+        out := 3
+    else if opt == "Thu"
+        out := 4
+    else if opt == "Fri"
+        out := 5
+    else
+        out := 6
+    out
+
+f_dayIdxToText(int idx) =>
+    string out = "Mon"
+    if idx == 0
+        out := "Sun"
+    else if idx == 1
+        out := "Mon"
+    else if idx == 2
+        out := "Tue"
+    else if idx == 3
+        out := "Wed"
+    else if idx == 4
+        out := "Thu"
+    else if idx == 5
+        out := "Fri"
+    else
+        out := "Sat"
+    out
+
+f_norm100(float v, float lo, float hi) =>
+    na(v) or na(lo) or na(hi) ? na : hi > lo ? math.max(0.0, math.min(100.0, (v - lo) / (hi - lo) * 100.0)) : 50.0
+
+f_norm100Log(float v, float lo, float hi) =>
+    float out = na
+    if not na(v) and not na(lo) and not na(hi)
+        float vLog = math.log(math.max(v, 1.0))
+        float loLog = math.log(math.max(lo, 1.0))
+        float hiLog = math.log(math.max(hi, 1.0))
+        if hiLog > loLog
+            out := math.max(0.0, math.min(100.0, (vLog - loLog) / (hiLog - loLog) * 100.0))
+        else
+            out := 50.0
+    out
+
+f_normScore(float v, float lo, float hi) =>
+    scoreScaleMode == "LOG" ? f_norm100Log(v, lo, hi) : f_norm100(v, lo, hi)
+
+f_arrMin(array<float> arr) =>
+    float out = na
+    for i = 0 to array.size(arr) - 1
+        float v = array.get(arr, i)
+        if not na(v)
+            if na(out) or v < out
+                out := v
+    out
+
+f_arrMax(array<float> arr) =>
+    float out = na
+    for i = 0 to array.size(arr) - 1
+        float v = array.get(arr, i)
+        if not na(v)
+            if na(out) or v > out
+                out := v
+    out
+
+f_topIndex(array<float> arr) =>
+    int idx = 0
+    float best = na
+    for i = 0 to array.size(arr) - 1
+        float v = array.get(arr, i)
+        if not na(v)
+            if na(best) or v > best
+                best := v
+                idx := i
+    idx
+f_topIndexEx(array<float> arr, int ex1, int ex2) =>
+    int idx = 0
+    float best = na
+    for i = 0 to array.size(arr) - 1
+        if i != ex1 and i != ex2
+            float v = array.get(arr, i)
+            if not na(v)
+                if na(best) or v > best
+                    best := v
+                    idx := i
+    idx
+
+f_heatColor(color baseColor, float score) =>
+    float s = math.max(0.0, math.min(100.0, nz(score, 0.0)))
+    int tr = 100 - int(math.round(s * 0.72))
+    color.new(baseColor, math.max(18, math.min(94, tr)))
+
+f_cellBg(color baseColor, float score) =>
+    showHeatCells ? f_heatColor(baseColor, score) : color.new(wenutBodyBg, 82)
+
+f_statusNum(float volScore, float rngScore, bool bothStrong, float leadGap) =>
+    int out = 0
+    if bothStrong
+        out := 2
+    else if volScore > rngScore + leadGap
+        out := 1
+    else if rngScore > volScore + leadGap
+        out := -1
+    else
+        out := 0
+    out
+
+f_statusText(int st) =>
+    string out = "BAL"
+    if st == 2
+        out := "CORE"
+    else if st == 1
+        out := "VOL"
+    else if st == -1
+        out := "RNG"
+    else
+        out := "BAL"
+    out
+
+f_roleText(int code) =>
+    string out = "NONE"
+    if code == 1
+        out := "QUIET"
+    else if code == 2
+        out := "VOL_LEAD"
+    else if code == 3
+        out := "RNG_LEAD"
+    else if code == 4
+        out := "CORE_WIN"
+    else if code == 5
+        out := "EFF_WIN"
+    else if code == 6
+        out := "PRE_HOT"
+    else if code == 7
+        out := "POST_COOL"
+    else if code == 8
+        out := "WK_STRONG"
+    else if code == 9
+        out := "WK_WEAK"
+    else
+        out := "NONE"
+    out
+
+f_eventText(int code) =>
+    string out = "SNAPSHOT"
+    if code == 110
+        out := "CORE_ON"
+    else if code == 111
+        out := "CORE_OFF"
+    else if code == 120
+        out := "VOL_ON"
+    else if code == 130
+        out := "RNG_ON"
+    else if code == 140
+        out := "NEXT_NEAR"
+    else if code == 150
+        out := "WK_DELTA"
+    else
+        out := "SNAPSHOT"
+    out
+
+f_relText(int code) =>
+    string out = "REL ?"
+    if code == 1
+        out := "REL OK"
+    else if code == 2
+        out := "REL REF"
+    else if code == 3
+        out := "REL 1H?"
+    else
+        out := "REL ?"
+    out
+
+f_statusTextLang(int st, string lang) =>
+    string out = f_statusText(st)
+    if lang == "KR"
+        if st == 2
+            out := "핵심"
+        else if st == 1
+            out := "거래량"
+        else if st == -1
+            out := "범위"
+        else
+            out := "균형"
+    else if lang == "EN"
+        if st == 2
+            out := "CORE"
+        else if st == 1
+            out := "VOL LEAD"
+        else if st == -1
+            out := "RANGE LEAD"
+        else
+            out := "BALANCE"
+    out
+
+f_roleTextLang(int code, string lang) =>
+    string out = f_roleText(code)
+    if lang == "KR"
+        if code == 1
+            out := "조용"
+        else if code == 2
+            out := "거래량선행"
+        else if code == 3
+            out := "범위선행"
+        else if code == 4
+            out := "핵심창"
+        else if code == 5
+            out := "효율창"
+        else if code == 6
+            out := "예열"
+        else if code == 8
+            out := "요일강"
+        else if code == 9
+            out := "요일약"
+        else
+            out := "없음"
+    else if lang == "EN"
+        if code == 1
+            out := "QUIET"
+        else if code == 2
+            out := "VOL LEAD"
+        else if code == 3
+            out := "RANGE LEAD"
+        else if code == 4
+            out := "CORE WINDOW"
+        else if code == 5
+            out := "EFF WINDOW"
+        else if code == 6
+            out := "PRE HOT"
+        else if code == 8
+            out := "WEEK STRONG"
+        else if code == 9
+            out := "WEEK WEAK"
+        else
+            out := "NONE"
+    out
+
+f_eventTextLang(int code, string lang) =>
+    string out = f_eventText(code)
+    if lang == "KR"
+        if code == 110
+            out := "핵심진입"
+        else if code == 111
+            out := "핵심이탈"
+        else if code == 120
+            out := "거래량ON"
+        else if code == 130
+            out := "범위ON"
+        else if code == 140
+            out := "다음핫"
+        else if code == 150
+            out := "요일차"
+        else
+            out := "스냅샷"
+    else if lang == "EN"
+        if code == 110
+            out := "CORE ON"
+        else if code == 111
+            out := "CORE OFF"
+        else if code == 120
+            out := "VOL ON"
+        else if code == 130
+            out := "RANGE ON"
+        else if code == 140
+            out := "NEXT NEAR"
+        else if code == 150
+            out := "WEEK DELTA"
+        else
+            out := "SNAPSHOT"
+    out
+
+f_relTextLang(int code, string lang) =>
+    string out = f_relText(code)
+    if lang == "KR"
+        if code == 1
+            out := "신뢰OK"
+        else if code == 2
+            out := "참조"
+        else if code == 3
+            out := "1H확인"
+        else
+            out := "신뢰?"
+    else if lang == "EN"
+        if code == 1
+            out := "REL OK"
+        else if code == 2
+            out := "REL REF"
+        else if code == 3
+            out := "REL 1H?"
+        else
+            out := "REL ?"
+    out
+
+f_clamp(float x, float lo, float hi) =>
+    math.max(lo, math.min(hi, x))
+
+f_signedText(float v) =>
+    na(v) ? "-" : (v > 0 ? "+" : "") + str.tostring(v, "#.0")
+
+f_scoreText(float v) =>
+    na(v) ? "-" : str.tostring(v, "#")
+
+f_wenCell(t, int col, int row, string txt, color txtColor, color bgColor, txtSize) =>
+    if cellWidthOpt > 0 and cellHeightOpt > 0
+        table.cell(t, col, row, txt, width=cellWidthOpt, height=cellHeightOpt, text_color=txtColor, bgcolor=bgColor, text_size=txtSize)
+    else if cellWidthOpt > 0
+        table.cell(t, col, row, txt, width=cellWidthOpt, text_color=txtColor, bgcolor=bgColor, text_size=txtSize)
+    else if cellHeightOpt > 0
+        table.cell(t, col, row, txt, height=cellHeightOpt, text_color=txtColor, bgcolor=bgColor, text_size=txtSize)
+    else
+        table.cell(t, col, row, txt, text_color=txtColor, bgcolor=bgColor, text_size=txtSize)
+
+f_wenRow5(t, int row, string c0, string c1, string c2, string c3, string c4, color txtColor, color bgColor, txtSize) =>
+    f_wenCell(t, 0, row, c0, txtColor, bgColor, txtSize)
+    f_wenCell(t, 1, row, c1, txtColor, bgColor, txtSize)
+    f_wenCell(t, 2, row, c2, txtColor, bgColor, txtSize)
+    f_wenCell(t, 3, row, c3, txtColor, bgColor, txtSize)
+    f_wenCell(t, 4, row, c4, txtColor, bgColor, txtSize)
+
+//==================================================
+// HTF 데이터 : 1H 기준
+//==================================================
+wen_time60 = request.security(symbolToUse, HTF, time, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+wen_vol60 = request.security(symbolToUse, HTF, volume, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+wen_rng60 = request.security(symbolToUse, HTF, high - low, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+wen_slot60 = request.security(symbolToUse, HTF, hour(time, TZ), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+wen_dow60 = request.security(symbolToUse, HTF, dayofweek(time, TZ), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+
+//==================================================
+// 롤링 저장소
+//==================================================
+var array<float> totalVolSumBySlot = array.new_float(24, 0.0)
+var array<float> totalRngSumBySlot = array.new_float(24, 0.0)
+var array<int> totalCntBySlot = array.new_int(24, 0)
+
+var array<float> wkVolSumByFlat = array.new_float(168, 0.0)
+var array<float> wkRngSumByFlat = array.new_float(168, 0.0)
+var array<int> wkCntByFlat = array.new_int(168, 0)
+
+var array<int> slotBuf = array.new_int()
+var array<int> wkFlatBuf = array.new_int()
+var array<float> volBuf = array.new_float()
+var array<float> rngBuf = array.new_float()
+
+bool newHourBySecurityTime = bar_index > 0 and not na(wen_time60) and not na(wen_time60[1]) and wen_time60 != wen_time60[1]
+bool newHourByChart = timeframe.change("60")
+bool newHourConfirmed = newHourBySecurityTime or (useChartSymbol and newHourByChart)
+
+if newHourConfirmed
+    int prevSlot = int(nz(wen_slot60[1], 0))
+    int prevDowIdxRaw = int(nz(wen_dow60[1], 1)) - 1
+    int prevDowIdx = math.max(0, math.min(6, prevDowIdxRaw))
+    int prevFlat = prevDowIdx * 24 + prevSlot
+
+    float prevVol = nz(wen_vol60[1], 0.0)
+    float prevRng = nz(wen_rng60[1], 0.0)
+
+    array.push(slotBuf, prevSlot)
+    array.push(wkFlatBuf, prevFlat)
+    array.push(volBuf, prevVol)
+    array.push(rngBuf, prevRng)
+
+    array.set(totalVolSumBySlot, prevSlot, array.get(totalVolSumBySlot, prevSlot) + prevVol)
+    array.set(totalRngSumBySlot, prevSlot, array.get(totalRngSumBySlot, prevSlot) + prevRng)
+    array.set(totalCntBySlot, prevSlot, array.get(totalCntBySlot, prevSlot) + 1)
+
+    array.set(wkVolSumByFlat, prevFlat, array.get(wkVolSumByFlat, prevFlat) + prevVol)
+    array.set(wkRngSumByFlat, prevFlat, array.get(wkRngSumByFlat, prevFlat) + prevRng)
+    array.set(wkCntByFlat, prevFlat, array.get(wkCntByFlat, prevFlat) + 1)
+
+    if array.size(slotBuf) > lookbackHours
+        int remSlot = array.shift(slotBuf)
+        int remFlat = array.shift(wkFlatBuf)
+        float remVol = array.shift(volBuf)
+        float remRng = array.shift(rngBuf)
+
+        array.set(totalVolSumBySlot, remSlot, array.get(totalVolSumBySlot, remSlot) - remVol)
+        array.set(totalRngSumBySlot, remSlot, array.get(totalRngSumBySlot, remSlot) - remRng)
+        array.set(totalCntBySlot, remSlot, math.max(array.get(totalCntBySlot, remSlot) - 1, 0))
+
+        array.set(wkVolSumByFlat, remFlat, array.get(wkVolSumByFlat, remFlat) - remVol)
+        array.set(wkRngSumByFlat, remFlat, array.get(wkRngSumByFlat, remFlat) - remRng)
+        array.set(wkCntByFlat, remFlat, math.max(array.get(wkCntByFlat, remFlat) - 1, 0))
+
+//==================================================
+// 현재 컨텍스트
+//==================================================
+int currentSlot = int(nz(wen_slot60, hour(time, TZ)))
+int currentDowIdxRaw = int(nz(wen_dow60, dayofweek(time, TZ))) - 1
+int currentDowIdx = math.max(0, math.min(6, currentDowIdxRaw))
+
+bool compareActive = weekdayMode != "Off"
+int compareDayIdx = weekdayMode == "Auto Today" ? currentDowIdx : f_dayOptToIdx(selectedWeekday)
+string compareDayName = f_dayIdxToText(compareDayIdx)
+
+//==================================================
+// 시간대 평균 배열
+//==================================================
+var array<float> totalVolAvgArr = array.new_float(24, na)
+var array<float> totalRngAvgArr = array.new_float(24, na)
+var array<float> weekVolAvgArr = array.new_float(24, na)
+var array<float> weekRngAvgArr = array.new_float(24, na)
+var array<float> totalVolScoreArr = array.new_float(24, na)
+var array<float> totalRngScoreArr = array.new_float(24, na)
+var array<float> weekVolScoreArr = array.new_float(24, na)
+var array<float> weekRngScoreArr = array.new_float(24, na)
+var array<float> effRawArr = array.new_float(24, na)
+var array<float> effScoreArr = array.new_float(24, na)
+var array<float> comboArr = array.new_float(24, na)
+
+for i = 0 to 23
+    int cT = array.get(totalCntBySlot, i)
+    float tV = cT > 0 ? array.get(totalVolSumBySlot, i) / cT : na
+    float tR = cT > 0 ? array.get(totalRngSumBySlot, i) / cT : na
+    array.set(totalVolAvgArr, i, tV)
+    array.set(totalRngAvgArr, i, tR)
+
+    int flatIdx = compareDayIdx * 24 + i
+    int cW = compareActive ? array.get(wkCntByFlat, flatIdx) : 0
+    float wV = compareActive and cW >= minWeekSamples ? array.get(wkVolSumByFlat, flatIdx) / cW : na
+    float wR = compareActive and cW >= minWeekSamples ? array.get(wkRngSumByFlat, flatIdx) / cW : na
+    array.set(weekVolAvgArr, i, wV)
+    array.set(weekRngAvgArr, i, wR)
+float totalVolMin = f_arrMin(totalVolAvgArr)
+float totalVolMax = f_arrMax(totalVolAvgArr)
+float totalRngMin = f_arrMin(totalRngAvgArr)
+float totalRngMax = f_arrMax(totalRngAvgArr)
+
+float weekVolMin = compareActive ? f_arrMin(weekVolAvgArr) : na
+float weekVolMax = compareActive ? f_arrMax(weekVolAvgArr) : na
+float weekRngMin = compareActive ? f_arrMin(weekRngAvgArr) : na
+float weekRngMax = compareActive ? f_arrMax(weekRngAvgArr) : na
+
+float volScaleMin = na(weekVolMin) ? totalVolMin : math.min(totalVolMin, weekVolMin)
+float volScaleMax = na(weekVolMax) ? totalVolMax : math.max(totalVolMax, weekVolMax)
+float rngScaleMin = na(weekRngMin) ? totalRngMin : math.min(totalRngMin, weekRngMin)
+float rngScaleMax = na(weekRngMax) ? totalRngMax : math.max(totalRngMax, weekRngMax)
+
+for i = 0 to 23
+    float vSc = f_normScore(array.get(totalVolAvgArr, i), volScaleMin, volScaleMax)
+    float rSc = f_normScore(array.get(totalRngAvgArr, i), rngScaleMin, rngScaleMax)
+    array.set(totalVolScoreArr, i, vSc)
+    array.set(totalRngScoreArr, i, rSc)
+    float wVSc = compareActive ? f_normScore(array.get(weekVolAvgArr, i), volScaleMin, volScaleMax) : na
+    float wRSc = compareActive ? f_normScore(array.get(weekRngAvgArr, i), rngScaleMin, rngScaleMax) : na
+    array.set(weekVolScoreArr, i, wVSc)
+    array.set(weekRngScoreArr, i, wRSc)
+
+    float effBase = not na(vSc) and not na(rSc) ? rSc / math.max(vSc, effVolFloor) : na
+    float effDamp = not na(vSc) ? math.min(1.0, vSc / effVolFloor) : na
+    float effAdj = not na(effBase) and not na(effDamp) ? effBase * effDamp : na
+    array.set(effRawArr, i, effAdj)
+
+float effMin = f_arrMin(effRawArr)
+float effMax = f_arrMax(effRawArr)
+
+for i = 0 to 23
+    array.set(effScoreArr, i, f_norm100(array.get(effRawArr, i), effMin, effMax))
+
+for i = 0 to 23
+    float vSc2 = array.get(totalVolScoreArr, i)
+    float rSc2 = array.get(totalRngScoreArr, i)
+    float eSc2 = array.get(effScoreArr, i)
+    float baseWeight = math.max(0.0, 1.0 - comboEffWeight)
+    float comboV = not na(vSc2) and not na(rSc2) and not na(eSc2) ? (vSc2 * 0.5 * baseWeight + rSc2 * 0.5 * baseWeight + eSc2 * comboEffWeight) : na
+    array.set(comboArr, i, comboV)
+
+//==================================================
+// 현재 점수 / 상태
+//==================================================
+float currVolScore = nz(array.get(totalVolScoreArr, currentSlot), 50.0)
+float currRngScore = nz(array.get(totalRngScoreArr, currentSlot), 50.0)
+float currEffScore = nz(array.get(effScoreArr, currentSlot), 50.0)
+float currCombo = nz(array.get(comboArr, currentSlot), 50.0)
+
+int currFlat = compareDayIdx * 24 + currentSlot
+int currWeekCnt = compareActive ? array.get(wkCntByFlat, currFlat) : 0
+bool compareUsable = compareActive and currWeekCnt >= minWeekSamples
+
+float currWeekVolScore = compareUsable ? array.get(weekVolScoreArr, currentSlot) : na
+float currWeekRngScore = compareUsable ? array.get(weekRngScoreArr, currentSlot) : na
+float currWeekCombo = compareUsable and not na(currWeekVolScore) and not na(currWeekRngScore) ? (currWeekVolScore + currWeekRngScore) * 0.5 : na
+float currDeltaCombo = compareUsable and not na(currWeekVolScore) and not na(currWeekRngScore) ? ((currVolScore - currWeekVolScore) + (currRngScore - currWeekRngScore)) * 0.5 : na
+
+bool volStrong = currVolScore >= strongThreshold
+bool rngStrong = currRngScore >= strongThreshold
+bool bothStrong = volStrong and rngStrong
+
+int currStateNum = f_statusNum(currVolScore, currRngScore, bothStrong, leadMargin)
+string currStatus = f_statusText(currStateNum)
+int prevStateNum = nz(currStateNum[1], 0)
+//==================================================
+// 상위 시간 / NEXT HOT
+//==================================================
+int topVolHour = f_topIndex(totalVolScoreArr)
+int topRngHour = f_topIndex(totalRngScoreArr)
+int topEffHour = f_topIndex(effScoreArr)
+
+int top1Hour = f_topIndex(comboArr)
+int top2Hour = f_topIndexEx(comboArr, top1Hour, -1)
+int top3Hour = f_topIndexEx(comboArr, top1Hour, top2Hour)
+
+float top1Combo = nz(array.get(comboArr, top1Hour), 0.0)
+float top2Combo = nz(array.get(comboArr, top2Hour), 0.0)
+float top3Combo = nz(array.get(comboArr, top3Hour), 0.0)
+float topEffScore = nz(array.get(effScoreArr, topEffHour), 0.0)
+
+int nextHotHour = top1Hour
+int nextHotDistance = 24
+for step = 1 to 24
+    int h = (currentSlot + step) % 24
+    float cSc = nz(array.get(comboArr, h), 0.0)
+    bool isTopHour = h == top1Hour or h == top2Hour or h == top3Hour
+    bool isHotCandidate = cSc >= strongThreshold or isTopHour
+    if isHotCandidate and nextHotDistance == 24
+        nextHotHour := h
+        nextHotDistance := step
+
+bool hotNowFlag = currCombo >= strongThreshold or currentSlot == top1Hour or currentSlot == top2Hour or currentSlot == top3Hour
+bool nextHotNear = not hotNowFlag and nextHotDistance <= nextHotNearHours
+
+//==================================================
+// ROLE / EVENT / RELIABILITY 코드
+//==================================================
+int chartSec = timeframe.in_seconds(timeframe.period)
+int tfReliabilityCode = 0
+if not na(chartSec)
+    if chartSec <= 3600
+        tfReliabilityCode := 1
+    else
+        tfReliabilityCode := 2
+else
+    tfReliabilityCode := 0
+bool weekdayStrongNow = compareUsable and not na(currDeltaCombo) and currDeltaCombo >= weekdayDeltaStrong
+bool weekdayWeakNow = compareUsable and not na(currDeltaCombo) and currDeltaCombo <= -weekdayDeltaStrong
+bool quietNow = currCombo <= quietThreshold and currVolScore <= quietThreshold and currRngScore <= quietThreshold
+bool effWindow = currEffScore >= strongThreshold and currVolScore >= effVolFloor
+
+int windowRoleCode = 0
+if bothStrong
+    windowRoleCode := 4
+else if weekdayStrongNow
+    windowRoleCode := 8
+else if weekdayWeakNow
+    windowRoleCode := 9
+else if effWindow
+    windowRoleCode := 5
+else if currStateNum == 1
+    windowRoleCode := 2
+else if currStateNum == -1
+    windowRoleCode := 3
+else if nextHotNear
+    windowRoleCode := 6
+else if quietNow
+    windowRoleCode := 1
+else
+    windowRoleCode := 0
+
+bool coreOn = currStateNum == 2 and prevStateNum != 2
+bool coreOff = currStateNum != 2 and prevStateNum == 2
+bool volLeadOn = currStateNum == 1 and prevStateNum != 1
+bool rngLeadOn = currStateNum == -1 and prevStateNum != -1
+bool timeSnapshot = newHourConfirmed
+
+int timeEventCode = 100
+if coreOn
+    timeEventCode := 110
+else if coreOff
+    timeEventCode := 111
+else if volLeadOn
+    timeEventCode := 120
+else if rngLeadOn
+    timeEventCode := 130
+else if nextHotNear
+    timeEventCode := 140
+else if weekdayStrongNow or weekdayWeakNow
+    timeEventCode := 150
+else
+    timeEventCode := 100
+
+int tableModeCode = 2
+if wenutTableMode == "MINI"
+    tableModeCode := 1
+else if wenutTableMode == "COMPACT"
+    tableModeCode := 2
+else
+    tableModeCode := 3
+
+string roleTxt = f_roleText(windowRoleCode)
+string eventTxt = f_eventText(timeEventCode)
+string relTxt = f_relText(tfReliabilityCode)
+
+int wenutDirCode = 0
+if currStateNum == 1 or currStateNum == 2
+    wenutDirCode := 1
+else if currStateNum == -1
+    wenutDirCode := -1
+float wenutScore = math.max(0.0, math.min(100.0, currCombo))
+int wenutRiskCode = 0
+if tfReliabilityCode == 0
+    wenutRiskCode := 2
+else if quietNow
+    wenutRiskCode := 2
+else if weekdayWeakNow
+    wenutRiskCode := 3
+else if nextHotDistance > 6 and not hotNowFlag
+    wenutRiskCode := 1
+int wenutEventCode = 0
+if hotNowFlag or bothStrong
+    wenutEventCode := 9
+else if quietNow
+    wenutEventCode := 3
+else if nextHotNear
+    wenutEventCode := 4
+else if weekdayWeakNow
+    wenutEventCode := 2
+else if volLeadOn or rngLeadOn
+    wenutEventCode := 1
+
+//==================================================
+// 배경 : 기본 OFF
+//==================================================
+color bgCol = na
+int deltaAdj = 0
+if applyWeekdayBg and compareUsable and not na(currDeltaCombo)
+    deltaAdj := int(math.round(f_clamp(currDeltaCombo * weekdayBgSensitivity, -18.0, 18.0)))
+
+if bgMode == "Core Only"
+    if bothStrong
+        int coreTr = math.max(10, math.min(95, 88 - deltaAdj))
+        bgCol := color.new(wenutCoreColor, coreTr)
+else
+    int baseTr = bgMode == "Strong" ? heatBaseTransp : math.min(98, heatBaseTransp + 6)
+    float scoreRef = bothStrong ? currCombo : math.max(currVolScore, currRngScore)
+    int dynTr = bgMode == "Strong" ? baseTr - int(math.round(scoreRef * 0.30)) : baseTr - int(math.round(scoreRef * 0.12))
+    dynTr := dynTr - deltaAdj
+    dynTr := math.max(8, math.min(98, dynTr))
+
+    if bothStrong
+        bgCol := color.new(wenutCoreColor, math.max(20, dynTr))
+    else if currStateNum == -1
+        bgCol := color.new(wenutRngColor, math.max(35, dynTr))
+    else if currStateNum == 1
+        bgCol := color.new(wenutVolColor, math.max(35, dynTr))
+    else
+        bgCol := bgMode == "Strong" ? color.new(currRngScore >= currVolScore ? wenutRngColor : wenutVolColor, math.max(55, dynTr + 10)) : na
+
+bgcolor(showBackground ? bgCol : na, title="AL WENUT GPT Background")
+
+//==================================================
+// GPT 표
+//==================================================
+int T_LAST_COL = 4
+int T_LAST_ROW = 29
+int tableFrameWidth = showTableFrame ? frameWidthOpt : 0
+int tableGridWidth = showTableGrid ? gridWidthOpt : 0
+var table t = table.new(f_posFromOpt(wenutTablePosOpt), T_LAST_COL + 1, T_LAST_ROW + 1, frame_color=frameColorOpt, frame_width=tableFrameWidth, border_color=gridColorOpt, border_width=tableGridWidth)
+
+if barstate.islast
+    table.clear(t, 0, 0, T_LAST_COL, T_LAST_ROW)
+    if showWenutTable
+        table.set_position(t, f_posFromOpt(wenutTablePosOpt))
+        txtSize = f_sizeFromOpt(wenutTableSizeOpt)
+        string activeMode = debugMode ? "DEBUG" : columnMode
+        string drawMode = activeMode
+        if activeMode == "NORMAL"
+            if wenutTableMode == "MINI"
+                drawMode := "COMPACT"
+            else if wenutTableMode == "DETAIL"
+                drawMode := "DEBUG"
+        bool compactTable = drawMode == "COMPACT"
+        color bodyBg = color.new(wenutBodyBg, forceVisibleTable ? 35 : tableBgTransp)
+        color titleBg = color.new(wenutHeaderBg, 0)
+        color summaryBg = color.new(wenutHeaderBg, forceVisibleTable ? 8 : headerBgTransp)
+        color currentBg = color.new(wenutHotColor, 68)
+        color warnBg = color.new(wenutWeakColor, riskBgTransp)
+        color roleBg = windowRoleCode == 4 ? color.new(wenutCoreColor, 55) : windowRoleCode == 3 ? color.new(wenutRngColor, 60) : windowRoleCode == 2 ? color.new(wenutVolColor, 60) : windowRoleCode == 1 ? color.new(wenutQuietColor, 65) : color.new(wenutHeaderBg, 35)
+        string titleText = compactTable ? "WEN" : "AL WENUT"
+        string statusDisplay = f_statusTextLang(currStateNum, langMode)
+        string roleDisplay = f_roleTextLang(windowRoleCode, langMode)
+        string eventDisplay = f_eventTextLang(timeEventCode, langMode)
+        string relDisplay = f_relTextLang(tfReliabilityCode, langMode)
+        string busText = "D" + str.tostring(wenutDirCode) + " S" + f_scoreText(wenutScore) + " R" + str.tostring(wenutRiskCode) + " E" + str.tostring(wenutEventCode)
+        f_wenRow5(t, 0, titleText, "NY " + f_hourShort(currentSlot), statusDisplay, roleDisplay, relDisplay, wenutHeaderText, titleBg, txtSize)
+
+        int row = 1
+        if showStateRow
+            f_wenRow5(t, row, "STATE", statusDisplay, "C " + f_scoreText(currCombo), "DIR " + str.tostring(wenutDirCode), relDisplay, wenutBodyText, roleBg, txtSize)
+            row := row + 1
+        if showVolRow
+            f_wenRow5(t, row, compactTable ? "VOL" : "VOL SCORE", f_scoreText(currVolScore), "TOP", f_hourShort(topVolHour), compareUsable ? f_signedText(currDeltaCombo) : "WK -", wenutBodyText, f_cellBg(wenutVolColor, currVolScore), txtSize)
+            row := row + 1
+        if showRangeRow
+            f_wenRow5(t, row, compactTable ? "RNG" : "RANGE/EFF", f_scoreText(currRngScore), "EFF " + f_scoreText(currEffScore), "C " + f_scoreText(currCombo), hotNowFlag ? "HOT" : "WAIT", wenutBodyText, f_cellBg(wenutRngColor, currRngScore), txtSize)
+            row := row + 1
+        if showWindowRow
+            f_wenRow5(t, row, "TOP3", f_hourShort(top1Hour) + "/" + f_hourShort(top2Hour) + "/" + f_hourShort(top3Hour), "NX " + f_hourShort(nextHotHour), "+" + str.tostring(nextHotDistance), "N " + str.tostring(currWeekCnt), wenutBodyText, currentBg, txtSize)
+            row := row + 1
+        if showTimeRow
+            f_wenRow5(t, row, "TIME", f_hourLabel(currentSlot), "ROLE", roleDisplay, compareActive ? compareDayName : "WK OFF", wenutBodyText, summaryBg, txtSize)
+            row := row + 1
+        if showEventRow
+            f_wenRow5(t, row, "EVENT", eventDisplay, "EV " + str.tostring(timeEventCode), "R " + str.tostring(windowRoleCode), "TF " + str.tostring(tfReliabilityCode), wenutBodyText, wenutRiskCode >= 3 ? warnBg : summaryBg, txtSize)
+            row := row + 1
+        if showBusRow
+            f_wenRow5(t, row, "BUS", busText, "RAW " + str.tostring(timeEventCode), "MODE " + drawMode, "TB " + str.tostring(tableModeCode), wenutBodyText, bodyBg, txtSize)
+            row := row + 1
+        if drawMode == "DEBUG"
+            f_wenRow5(t, row, "DBG", "VOL " + f_scoreText(currVolScore), "RNG " + f_scoreText(currRngScore), "EFF " + f_scoreText(currEffScore), "COM " + f_scoreText(currCombo), wenutBodyText, summaryBg, txtSize)
+    else
+        table.clear(t, 0, 0, T_LAST_COL, T_LAST_ROW)
+
+//==================================================
+// 상위 3시간 라벨 : 기본 OFF
+//==================================================
+var label top3Label = na
+float atrV = ta.atr(14)
+float yPad = math.max(nz(atrV, 0.0), close * 0.003)
+float yTop = high + yPad * top3AtrMult
+int lblX = bar_index > 1 ? bar_index - 1 : bar_index
+
+if barstate.islast
+    if showTop3Label
+        if not na(top3Label)
+            label.delete(top3Label)
+
+        string topTxt = "AL WENUT GPT · TIME_LIQ"
+        topTxt := topTxt + "\nTOP1 " + f_hourLabel(top1Hour) + " C " + f_scoreText(top1Combo)
+        topTxt := topTxt + "\nTOP2 " + f_hourLabel(top2Hour) + " C " + f_scoreText(top2Combo)
+        topTxt := topTxt + "\nTOP3 " + f_hourLabel(top3Hour) + " C " + f_scoreText(top3Combo)
+        topTxt := topTxt + "\nNOW " + f_hourLabel(currentSlot) + " " + currStatus + " C " + f_scoreText(currCombo)
+        topTxt := topTxt + "\nNEXT " + f_hourLabel(nextHotHour) + " +" + str.tostring(nextHotDistance) + "h"
+
+        top3Label := label.new(lblX, yTop, topTxt, style=label.style_label_right, textcolor=color.white, color=color.new(color.black, 15))
+    else
+        if not na(top3Label)
+            label.delete(top3Label)
+        top3Label := na
+
+//==================================================
+// 얼러트 : GPT / GAS / Sheet 친화 JSON
+//==================================================
+alertcondition(coreOn, title="AL WENUT GPT CORE ON", message="{\"source\":\"TradingView\",\"system\":\"AiLynx\",\"engine\":\"WENUT\",\"observer\":\"HORUS\",\"layer\":\"TIME_LIQUIDITY\",\"event\":\"CORE_ON\",\"trigger\":\"CORE_ON\",\"symbol\":\"{{exchange}}:{{ticker}}\",\"tf\":\"{{interval}}\",\"time\":\"{{time}}\",\"open\":\"{{open}}\",\"high\":\"{{high}}\",\"low\":\"{{low}}\",\"close\":\"{{close}}\",\"volume\":\"{{volume}}\",\"ny_hour\":\"{{plot(\"WENUT_A_NY_HOUR\")}}\",\"state_num\":\"{{plot(\"WENUT_A_STATE_NUM\")}}\",\"vol_score\":\"{{plot(\"WENUT_A_VOL_SCORE\")}}\",\"range_score\":\"{{plot(\"WENUT_A_RANGE_SCORE\")}}\",\"eff_score\":\"{{plot(\"WENUT_A_EFF_SCORE\")}}\",\"combo_score\":\"{{plot(\"WENUT_A_COMBO_SCORE\")}}\",\"top1_hour\":\"{{plot(\"WENUT_A_TOP1_HOUR\")}}\",\"top2_hour\":\"{{plot(\"WENUT_A_TOP2_HOUR\")}}\",\"top3_hour\":\"{{plot(\"WENUT_A_TOP3_HOUR\")}}\",\"next_hot_hour\":\"{{plot(\"WENUT_A_NEXT_HOT_HOUR\")}}\",\"next_hot_distance\":\"{{plot(\"WENUT_A_NEXT_HOT_DISTANCE\")}}\",\"hot_now_flag\":\"{{plot(\"WENUT_A_HOT_NOW_FLAG\")}}\",\"window_role_code\":\"{{plot(\"WENUT_A_WINDOW_ROLE_CODE\")}}\",\"time_event_code\":\"{{plot(\"WENUT_A_TIME_EVENT_CODE\")}}\",\"tf_reliability_code\":\"{{plot(\"WENUT_A_TF_RELIABILITY_CODE\")}}\",\"purpose\":\"GPT_BRIEFING_TIME_WINDOW\"}")
+alertcondition(coreOff, title="AL WENUT GPT CORE OFF", message="{\"source\":\"TradingView\",\"system\":\"AiLynx\",\"engine\":\"WENUT\",\"observer\":\"HORUS\",\"layer\":\"TIME_LIQUIDITY\",\"event\":\"CORE_OFF\",\"trigger\":\"CORE_OFF\",\"symbol\":\"{{exchange}}:{{ticker}}\",\"tf\":\"{{interval}}\",\"time\":\"{{time}}\",\"open\":\"{{open}}\",\"high\":\"{{high}}\",\"low\":\"{{low}}\",\"close\":\"{{close}}\",\"volume\":\"{{volume}}\",\"ny_hour\":\"{{plot(\"WENUT_A_NY_HOUR\")}}\",\"state_num\":\"{{plot(\"WENUT_A_STATE_NUM\")}}\",\"vol_score\":\"{{plot(\"WENUT_A_VOL_SCORE\")}}\",\"range_score\":\"{{plot(\"WENUT_A_RANGE_SCORE\")}}\",\"eff_score\":\"{{plot(\"WENUT_A_EFF_SCORE\")}}\",\"combo_score\":\"{{plot(\"WENUT_A_COMBO_SCORE\")}}\",\"top1_hour\":\"{{plot(\"WENUT_A_TOP1_HOUR\")}}\",\"top2_hour\":\"{{plot(\"WENUT_A_TOP2_HOUR\")}}\",\"top3_hour\":\"{{plot(\"WENUT_A_TOP3_HOUR\")}}\",\"next_hot_hour\":\"{{plot(\"WENUT_A_NEXT_HOT_HOUR\")}}\",\"next_hot_distance\":\"{{plot(\"WENUT_A_NEXT_HOT_DISTANCE\")}}\",\"hot_now_flag\":\"{{plot(\"WENUT_A_HOT_NOW_FLAG\")}}\",\"window_role_code\":\"{{plot(\"WENUT_A_WINDOW_ROLE_CODE\")}}\",\"time_event_code\":\"{{plot(\"WENUT_A_TIME_EVENT_CODE\")}}\",\"tf_reliability_code\":\"{{plot(\"WENUT_A_TF_RELIABILITY_CODE\")}}\",\"purpose\":\"GPT_BRIEFING_TIME_WINDOW\"}")
+alertcondition(volLeadOn, title="AL WENUT GPT VOL LEAD ON", message="{\"source\":\"TradingView\",\"system\":\"AiLynx\",\"engine\":\"WENUT\",\"observer\":\"HORUS\",\"layer\":\"TIME_LIQUIDITY\",\"event\":\"VOL_LEAD_ON\",\"trigger\":\"VOL_LEAD_ON\",\"symbol\":\"{{exchange}}:{{ticker}}\",\"tf\":\"{{interval}}\",\"time\":\"{{time}}\",\"open\":\"{{open}}\",\"high\":\"{{high}}\",\"low\":\"{{low}}\",\"close\":\"{{close}}\",\"volume\":\"{{volume}}\",\"ny_hour\":\"{{plot(\"WENUT_A_NY_HOUR\")}}\",\"state_num\":\"{{plot(\"WENUT_A_STATE_NUM\")}}\",\"vol_score\":\"{{plot(\"WENUT_A_VOL_SCORE\")}}\",\"range_score\":\"{{plot(\"WENUT_A_RANGE_SCORE\")}}\",\"eff_score\":\"{{plot(\"WENUT_A_EFF_SCORE\")}}\",\"combo_score\":\"{{plot(\"WENUT_A_COMBO_SCORE\")}}\",\"top1_hour\":\"{{plot(\"WENUT_A_TOP1_HOUR\")}}\",\"top2_hour\":\"{{plot(\"WENUT_A_TOP2_HOUR\")}}\",\"top3_hour\":\"{{plot(\"WENUT_A_TOP3_HOUR\")}}\",\"next_hot_hour\":\"{{plot(\"WENUT_A_NEXT_HOT_HOUR\")}}\",\"next_hot_distance\":\"{{plot(\"WENUT_A_NEXT_HOT_DISTANCE\")}}\",\"hot_now_flag\":\"{{plot(\"WENUT_A_HOT_NOW_FLAG\")}}\",\"window_role_code\":\"{{plot(\"WENUT_A_WINDOW_ROLE_CODE\")}}\",\"time_event_code\":\"{{plot(\"WENUT_A_TIME_EVENT_CODE\")}}\",\"tf_reliability_code\":\"{{plot(\"WENUT_A_TF_RELIABILITY_CODE\")}}\",\"purpose\":\"GPT_BRIEFING_TIME_WINDOW\"}")
+alertcondition(rngLeadOn, title="AL WENUT GPT RANGE LEAD ON", message="{\"source\":\"TradingView\",\"system\":\"AiLynx\",\"engine\":\"WENUT\",\"observer\":\"HORUS\",\"layer\":\"TIME_LIQUIDITY\",\"event\":\"RANGE_LEAD_ON\",\"trigger\":\"RANGE_LEAD_ON\",\"symbol\":\"{{exchange}}:{{ticker}}\",\"tf\":\"{{interval}}\",\"time\":\"{{time}}\",\"open\":\"{{open}}\",\"high\":\"{{high}}\",\"low\":\"{{low}}\",\"close\":\"{{close}}\",\"volume\":\"{{volume}}\",\"ny_hour\":\"{{plot(\"WENUT_A_NY_HOUR\")}}\",\"state_num\":\"{{plot(\"WENUT_A_STATE_NUM\")}}\",\"vol_score\":\"{{plot(\"WENUT_A_VOL_SCORE\")}}\",\"range_score\":\"{{plot(\"WENUT_A_RANGE_SCORE\")}}\",\"eff_score\":\"{{plot(\"WENUT_A_EFF_SCORE\")}}\",\"combo_score\":\"{{plot(\"WENUT_A_COMBO_SCORE\")}}\",\"top1_hour\":\"{{plot(\"WENUT_A_TOP1_HOUR\")}}\",\"top2_hour\":\"{{plot(\"WENUT_A_TOP2_HOUR\")}}\",\"top3_hour\":\"{{plot(\"WENUT_A_TOP3_HOUR\")}}\",\"next_hot_hour\":\"{{plot(\"WENUT_A_NEXT_HOT_HOUR\")}}\",\"next_hot_distance\":\"{{plot(\"WENUT_A_NEXT_HOT_DISTANCE\")}}\",\"hot_now_flag\":\"{{plot(\"WENUT_A_HOT_NOW_FLAG\")}}\",\"window_role_code\":\"{{plot(\"WENUT_A_WINDOW_ROLE_CODE\")}}\",\"time_event_code\":\"{{plot(\"WENUT_A_TIME_EVENT_CODE\")}}\",\"tf_reliability_code\":\"{{plot(\"WENUT_A_TF_RELIABILITY_CODE\")}}\",\"purpose\":\"GPT_BRIEFING_TIME_WINDOW\"}")
+alertcondition(timeSnapshot, title="AL WENUT GPT TIME SNAPSHOT", message="{\"source\":\"TradingView\",\"system\":\"AiLynx\",\"engine\":\"WENUT\",\"observer\":\"HORUS\",\"layer\":\"TIME_LIQUIDITY\",\"event\":\"TIME_SNAPSHOT\",\"trigger\":\"SNAPSHOT_CLOSED\",\"symbol\":\"{{exchange}}:{{ticker}}\",\"tf\":\"{{interval}}\",\"time\":\"{{time}}\",\"open\":\"{{open}}\",\"high\":\"{{high}}\",\"low\":\"{{low}}\",\"close\":\"{{close}}\",\"volume\":\"{{volume}}\",\"ny_hour\":\"{{plot(\"WENUT_A_NY_HOUR\")}}\",\"state_num\":\"{{plot(\"WENUT_A_STATE_NUM\")}}\",\"vol_score\":\"{{plot(\"WENUT_A_VOL_SCORE\")}}\",\"range_score\":\"{{plot(\"WENUT_A_RANGE_SCORE\")}}\",\"eff_score\":\"{{plot(\"WENUT_A_EFF_SCORE\")}}\",\"combo_score\":\"{{plot(\"WENUT_A_COMBO_SCORE\")}}\",\"top1_hour\":\"{{plot(\"WENUT_A_TOP1_HOUR\")}}\",\"top2_hour\":\"{{plot(\"WENUT_A_TOP2_HOUR\")}}\",\"top3_hour\":\"{{plot(\"WENUT_A_TOP3_HOUR\")}}\",\"next_hot_hour\":\"{{plot(\"WENUT_A_NEXT_HOT_HOUR\")}}\",\"next_hot_distance\":\"{{plot(\"WENUT_A_NEXT_HOT_DISTANCE\")}}\",\"hot_now_flag\":\"{{plot(\"WENUT_A_HOT_NOW_FLAG\")}}\",\"window_role_code\":\"{{plot(\"WENUT_A_WINDOW_ROLE_CODE\")}}\",\"time_event_code\":\"{{plot(\"WENUT_A_TIME_EVENT_CODE\")}}\",\"tf_reliability_code\":\"{{plot(\"WENUT_A_TF_RELIABILITY_CODE\")}}\",\"purpose\":\"GPT_BRIEFING_TIME_WINDOW\"}")
+
+//==================================================
+// WENUT | Dynamic alert() JSON
+// 목적: TradingView {{plot(...)}} 치환 실패를 피하고 Pine 내부 값을 직접 JSON으로 전송
+// 사용법: TradingView Alert에서 "Any alert() function call" 선택
+//==================================================
+groupWenutFuncAlert = "07 WENUT | Function Alerts"
+useWenutFuncAlerts = input.bool(true, "Use Function alert()", group=groupWenutFuncAlert, display=display.none)
+
+f_wenJsonPair(string k, string v) =>
+    "\"" + k + "\":\"" + v + "\""
+
+f_wenJsonNum(string k, float v) =>
+    "\"" + k + "\":\"" + str.tostring(v) + "\""
+
+f_wenJsonInt(string k, int v) =>
+    "\"" + k + "\":\"" + str.tostring(v) + "\""
+
+f_wenSymbol() =>
+    syminfo.prefix == "" ? syminfo.ticker : syminfo.prefix + ":" + syminfo.ticker
+
+f_wenutJson(string ev, string trg, string defenseType) =>
+    string s = "{"
+    s += f_wenJsonPair("source", "TradingView")
+    s += "," + f_wenJsonPair("system", "AiLynx")
+    s += "," + f_wenJsonPair("engine", "WENUT")
+    s += "," + f_wenJsonPair("observer", "HORUS")
+    s += "," + f_wenJsonPair("layer", "TIME_LIQUIDITY")
+    s += "," + f_wenJsonPair("event", ev)
+    s += "," + f_wenJsonPair("event_type", ev)
+    s += "," + f_wenJsonPair("warning_type", defenseType)
+    s += "," + f_wenJsonPair("defense_type", defenseType)
+    s += "," + f_wenJsonPair("trigger", trg)
+    s += "," + f_wenJsonPair("symbol", f_wenSymbol())
+    s += "," + f_wenJsonPair("tf", timeframe.period)
+    s += "," + f_wenJsonPair("timeframe", timeframe.period)
+    s += "," + f_wenJsonPair("time", str.tostring(time))
+    s += "," + f_wenJsonNum("open", open)
+    s += "," + f_wenJsonNum("high", high)
+    s += "," + f_wenJsonNum("low", low)
+    s += "," + f_wenJsonNum("close", close)
+    s += "," + f_wenJsonNum("volume", volume)
+    s += "," + f_wenJsonPair("bar_status", barstate.isconfirmed ? "CLOSED" : "OPEN")
+    s += "," + f_wenJsonInt("ny_hour", currentSlot)
+    s += "," + f_wenJsonInt("state_num", currStateNum)
+    s += "," + f_wenJsonPair("state_text", currStatus)
+    s += "," + f_wenJsonInt("window_role_code", windowRoleCode)
+    s += "," + f_wenJsonPair("window_role", roleTxt)
+    s += "," + f_wenJsonInt("time_event_code", timeEventCode)
+    s += "," + f_wenJsonPair("time_event", eventTxt)
+    s += "," + f_wenJsonInt("tf_reliability_code", tfReliabilityCode)
+    s += "," + f_wenJsonPair("tf_reliability", relTxt)
+    s += "," + f_wenJsonNum("vol_score", currVolScore)
+    s += "," + f_wenJsonNum("range_score", currRngScore)
+    s += "," + f_wenJsonNum("eff_score", currEffScore)
+    s += "," + f_wenJsonNum("combo_score", currCombo)
+    s += "," + f_wenJsonPair("combo_formula", "VOL40_RNG40_EFF20_DEFAULT")
+    s += "," + f_wenJsonNum("combo_eff_weight", comboEffWeight)
+    s += "," + f_wenJsonPair("score_scale_mode", scoreScaleMode)
+    s += "," + f_wenJsonInt("top1_hour", top1Hour)
+    s += "," + f_wenJsonInt("top2_hour", top2Hour)
+    s += "," + f_wenJsonInt("top3_hour", top3Hour)
+    s += "," + f_wenJsonNum("top1_combo", top1Combo)
+    s += "," + f_wenJsonNum("top2_combo", top2Combo)
+    s += "," + f_wenJsonNum("top3_combo", top3Combo)
+    s += "," + f_wenJsonInt("top_vol_hour", topVolHour)
+    s += "," + f_wenJsonInt("top_rng_hour", topRngHour)
+    s += "," + f_wenJsonInt("top_eff_hour", topEffHour)
+    s += "," + f_wenJsonNum("top_eff_score", topEffScore)
+    s += "," + f_wenJsonInt("next_hot_hour", nextHotHour)
+    s += "," + f_wenJsonInt("next_hot_distance", nextHotDistance)
+    s += "," + f_wenJsonPair("hot_now_flag", hotNowFlag ? "1" : "0")
+    s += "," + f_wenJsonPair("next_hot_near", nextHotNear ? "1" : "0")
+    s += "," + f_wenJsonPair("weekday_compare", compareActive ? compareDayName : "OFF")
+    s += "," + f_wenJsonPair("weekday_usable", compareUsable ? "1" : "0")
+    s += "," + f_wenJsonInt("weekday_sample_count", currWeekCnt)
+    s += "," + f_wenJsonNum("weekday_delta_combo", nz(currDeltaCombo, 0.0))
+    s += "," + f_wenJsonPair("weekday_strong", weekdayStrongNow ? "1" : "0")
+    s += "," + f_wenJsonPair("weekday_weak", weekdayWeakNow ? "1" : "0")
+    s += "," + f_wenJsonPair("quiet_now", quietNow ? "1" : "0")
+    s += "," + f_wenJsonPair("eff_window", effWindow ? "1" : "0")
+    s += "," + f_wenJsonPair("core_window", bothStrong ? "1" : "0")
+    s += "," + f_wenJsonPair("defense_rule_version", "TIME_LIQUIDITY_VALIDATION_V1_2026_05_14")
+    s += "," + f_wenJsonPair("defense_eval_status", "PENDING")
+    s += "," + f_wenJsonNum("base_price", close)
+    s += "," + f_wenJsonPair("base_time", str.tostring(time))
+    s += "," + f_wenJsonPair("eval_horizons", "1h,4h,1d")
+    s += "," + f_wenJsonPair("price_source", "TRADINGVIEW_SNAPSHOT_ONLY")
+    s += "," + f_wenJsonPair("purpose", "GPT_BRIEFING_TIME_WINDOW")
+    s += "," + f_wenJsonPair("cross_layer", "COMBINE_WITH_HERU365_ENGINE_IN_BACKEND")
+    s += "," + f_wenJsonPair("rule", "STATE_ONLY_NO_BUY_SELL_ENTRY_EXIT_TARGET_STOP")
+    s += "}"
+    s
+
+if useWenutFuncAlerts and timeSnapshot
+    alert(f_wenutJson("WENUT_SNAPSHOT", "SNAPSHOT_CLOSED", "TIME_LIQUIDITY_SNAPSHOT"), alert.freq_once_per_bar_close)
+
+if useWenutFuncAlerts and coreOn
+    alert(f_wenutJson("CORE_ON", "EDGE_CLOSED", "TIME_CORE_WINDOW_ON"), alert.freq_once_per_bar_close)
+
+if useWenutFuncAlerts and coreOff
+    alert(f_wenutJson("CORE_OFF", "EDGE_CLOSED", "TIME_CORE_WINDOW_OFF"), alert.freq_once_per_bar_close)
+
+if useWenutFuncAlerts and volLeadOn
+    alert(f_wenutJson("VOL_ON", "EDGE_CLOSED", "TIME_VOLUME_LEAD"), alert.freq_once_per_bar_close)
+
+if useWenutFuncAlerts and rngLeadOn
+    alert(f_wenutJson("RNG_ON", "EDGE_CLOSED", "TIME_RANGE_LEAD"), alert.freq_once_per_bar_close)
+
+if useWenutFuncAlerts and nextHotNear
+    alert(f_wenutJson("NEXT_HOT_NEAR", "EDGE_CLOSED", "NEXT_HOT_WINDOW_NEAR"), alert.freq_once_per_bar_close)
+
+if useWenutFuncAlerts and (weekdayStrongNow or weekdayWeakNow)
+    alert(f_wenutJson("WEEKDAY_DELTA", "EDGE_CLOSED", "WEEKDAY_LIQUIDITY_DELTA"), alert.freq_once_per_bar_close)
+    
+//==================================================
+// 숨김 출력 : 기존 title 유지 + GPT 브리핑 확장
+//==================================================
+plot(currVolScore, "WENUT_A_VOL_SCORE", display=display.none)
+plot(currRngScore, "WENUT_A_RANGE_SCORE", display=display.none)
+plot(currEffScore, "WENUT_A_EFF_SCORE", display=display.none)
+plot(currCombo, "WENUT_A_COMBO_SCORE", display=display.none)
+plot(float(currentSlot), "WENUT_A_NY_HOUR", display=display.none)
+plot(float(currStateNum), "WENUT_A_STATE_NUM", display=display.none)
+plot(compareUsable and not na(currDeltaCombo) ? currDeltaCombo : na, "WENUT_A_WEEKDAY_DELTA", display=display.none)
+plot(compareUsable ? currWeekCombo : na, "WENUT_A_WEEKDAY_COMBO", display=display.none)
+plot(compareUsable ? currWeekCnt : 0, "WENUT_A_WEEKDAY_SAMPLE_COUNT", display=display.none)
+plot(compareUsable ? 1 : 0, "WENUT_A_COMPARE_USABLE", display=display.none)
+plot(float(top1Hour), "WENUT_A_TOP1_HOUR", display=display.none)
+plot(float(top2Hour), "WENUT_A_TOP2_HOUR", display=display.none)
+plot(float(top3Hour), "WENUT_A_TOP3_HOUR", display=display.none)
+plot(topEffScore, "WENUT_A_TOP_EFF_SCORE", display=display.none)
+plot(newHourConfirmed ? 1 : 0, "WENUT_A_NEW_HOUR_CONFIRMED", display=display.none)
+
+plot(float(nextHotHour), "WENUT_A_NEXT_HOT_HOUR", display=display.none)
+plot(float(nextHotDistance), "WENUT_A_NEXT_HOT_DISTANCE", display=display.none)
+plot(hotNowFlag ? 1 : 0, "WENUT_A_HOT_NOW_FLAG", display=display.none)
+plot(float(windowRoleCode), "WENUT_A_WINDOW_ROLE_CODE", display=display.none)
+plot(float(timeEventCode), "WENUT_A_TIME_EVENT_CODE", display=display.none)
+plot(float(tableModeCode), "WENUT_A_TABLE_MODE_CODE", display=display.none)
+plot(float(tfReliabilityCode), "WENUT_A_TF_RELIABILITY_CODE", display=display.none)
+plot(float(wenutDirCode), title="AL_WENUT_DIR_CODE", display=display.none)
+plot(wenutScore, title="AL_WENUT_SCORE", display=display.none)
+plot(float(wenutRiskCode), title="AL_WENUT_RISK_CODE", display=display.none)
+plot(float(wenutEventCode), title="AL_WENUT_EVENT_CODE", display=display.none)

@@ -1,0 +1,485 @@
+//@version=6
+indicator("AL NECKLACE GPT", overlay=true, max_bars_back=3000, max_labels_count=0)
+
+//==================================================
+// [0] GPT 표
+//==================================================
+string GROUP_PANEL = "목걸이 G | 표"
+
+bool   showTable      = input.bool(false, "GPT 표 표시", group=GROUP_PANEL, display=display.none)
+string tablePosOpt    = input.string("TR", "표 위치", options=["TL","TC","TR","ML","MC","MR","BL","BC","BR"], group=GROUP_PANEL, display=display.none)
+string tableSizeOpt   = input.string("SMALL", "표 크기", options=["TINY","SMALL","NORMAL","LARGE"], group=GROUP_PANEL, display=display.none)
+color  headerBg       = input.color(color.new(color.black, 0), "헤더 배경", group=GROUP_PANEL, display=display.none)
+color  cellBg         = input.color(color.new(color.black, 8), "셀 배경", group=GROUP_PANEL, display=display.none)
+color  headerText     = input.color(color.white, "헤더 글자색", group=GROUP_PANEL, display=display.none)
+color  keyTextColor   = input.color(color.silver, "KEY 글자색", group=GROUP_PANEL, display=display.none)
+color  codeTextColor  = input.color(color.white, "CODE 글자색", group=GROUP_PANEL, display=display.none)
+color  numTextColor   = input.color(color.aqua, "NUM 글자색", group=GROUP_PANEL, display=display.none)
+color  noteTextColor  = input.color(color.orange, "NOTE 글자색", group=GROUP_PANEL, display=display.none)
+
+//==================================================
+// [1] 핵심
+//==================================================
+string GROUP_CORE  = "목걸이 G | 핵심"
+string GROUP_SPIKE = "목걸이 G | 스파이크"
+string GROUP_FADE  = "목걸이 G | 감쇠"
+string GROUP_TF    = "목걸이 G | 타임프레임"
+string GROUP_ALERT = "목걸이 G | 얼러트"
+
+int   baseLen         = input.int(50, "기준 SMA 길이", minval=5, group=GROUP_CORE, display=display.none)
+int   mfiLen          = input.int(14, "MFI 길이", minval=2, group=GROUP_CORE, display=display.none)
+int   flowLen         = input.int(21, "흐름 길이", minval=3, group=GROUP_CORE, display=display.none)
+float spikeMult       = input.float(2.2, "스파이크 배수", minval=1.1, step=0.1, group=GROUP_SPIKE, display=display.none)
+int   spikeHiLB       = input.int(30, "신고 거래량 탐색", minval=5, group=GROUP_SPIKE, display=display.none)
+int   cooldownBars    = input.int(6, "쿨다운 봉 수", minval=0, maxval=100, group=GROUP_SPIKE, display=display.none)
+float fadeMult        = input.float(1.15, "감쇠 종료 배수", step=0.05, group=GROUP_FADE, display=display.none)
+bool  useAutoFadeBars = input.bool(true, "감쇠 구간 자동", group=GROUP_FADE, display=display.none)
+int   fadeBarsManual  = input.int(8, "감쇠 구간 수동", minval=1, group=GROUP_FADE, display=display.none)
+bool  useAutoTFAdjust = input.bool(true, "타임프레임 자동 보정", group=GROUP_TF, display=display.none)
+bool  useAlertConditions = input.bool(true, "얼러트 사용", group=GROUP_ALERT, display=display.none)
+
+//==================================================
+// [2] 헬퍼
+//==================================================
+f_clamp01(x) =>
+    math.max(0.0, math.min(1.0, x))
+
+f_tablePos(opt) =>
+    pos = position.top_right
+    if opt == "TL"
+        pos := position.top_left
+    else if opt == "TC"
+        pos := position.top_center
+    else if opt == "TR"
+        pos := position.top_right
+    else if opt == "ML"
+        pos := position.middle_left
+    else if opt == "MC"
+        pos := position.middle_center
+    else if opt == "MR"
+        pos := position.middle_right
+    else if opt == "BL"
+        pos := position.bottom_left
+    else if opt == "BC"
+        pos := position.bottom_center
+    else
+        pos := position.bottom_right
+    pos
+
+f_textSize(opt) =>
+    sz = size.small
+    if opt == "TINY"
+        sz := size.tiny
+    else if opt == "SMALL"
+        sz := size.small
+    else if opt == "NORMAL"
+        sz := size.normal
+    else
+        sz := size.large
+    sz
+
+f_stateCode(state) =>
+    out = "IDLE"
+    if state == 1
+        out := "SET"
+    else if state == 2
+        out := "TRIG"
+    else if state == 3
+        out := "HOLD"
+    else if state == 4
+        out := "FAIL"
+    else
+        out := "IDLE"
+    out
+
+f_scoreCode(k) =>
+    out = "LOW"
+    if k >= 80
+        out := "STR"
+    else if k >= 55
+        out := "MID"
+    else
+        out := "LOW"
+    out
+
+f_dirCode(dir) =>
+    out = "FLAT"
+    if dir > 0
+        out := "UP"
+    else if dir < 0
+        out := "DOWN"
+    else
+        out := "FLAT"
+    out
+
+f_evtCode(evt) =>
+    out = "NONE"
+    if evt == 1
+        out := "ON"
+    else if evt == 2
+        out := "OFF"
+    else if evt == 3
+        out := "UPD"
+    else if evt == 4
+        out := "SPIKE"
+    else if evt == 5
+        out := "FADE"
+    else if evt == 6
+        out := "SOFT"
+    else if evt == 7
+        out := "EXHAUST"
+    else if evt == 8
+        out := "FAKE_PWR"
+    else if evt == 9
+        out := "CHASE"
+    else if evt == 10
+        out := "FAIL_FUEL"
+    else
+        out := "NONE"
+    out
+
+f_riskCode(risk) =>
+    out = "SAFE"
+    if risk == 2
+        out := "RISK"
+    else if risk == 1
+        out := "MID"
+    else
+        out := "SAFE"
+    out
+
+f_note(state, evt, res, tfTag) =>
+    out = "WAIT"
+    if evt == 8
+        out := "FAKE POWER"
+    else if evt == 10
+        out := "FAILED FUEL"
+    else if evt == 9
+        out := "CHASE RISK"
+    else if evt == 7
+        out := "FUEL EXHAUSTION"
+    else if evt == 4
+        out := "HARD VOL SPIKE"
+    else if evt == 5
+        out := "POST SPIKE FADE"
+    else if evt == 6
+        out := "SOFT WATCH"
+    else if state == 3
+        out := "FUEL COOLING"
+    else if state == 1
+        out := "VOLUME WATCH"
+    else if res >= 4
+        out := "STRONG RES"
+    else
+        out := tfTag
+    out
+
+//==================================================
+// [3] 타임프레임 자동 보정
+//==================================================
+int sec = timeframe.in_seconds()
+float tfAdj = 1.0
+if useAutoTFAdjust
+    if sec <= 300
+        tfAdj := 1.00
+    else if sec <= 900
+        tfAdj := 1.08
+    else if sec <= 3600
+        tfAdj := 1.18
+    else if sec <= 14400
+        tfAdj := 1.32
+    else
+        tfAdj := 1.48
+
+float spikeMultEff = spikeMult * tfAdj
+float fadeMultEff  = fadeMult + (tfAdj - 1.0) * 0.08
+int fadeBars = fadeBarsManual
+if useAutoFadeBars
+    int autoBars = int(math.round(5400.0 / math.max(sec, 1)))
+    fadeBars := math.max(2, autoBars)
+
+string tfTag = "AUTO TF"
+if sec <= 300
+    tfTag := "TF 5M"
+else if sec <= 900
+    tfTag := "TF 15M"
+else if sec <= 3600
+    tfTag := "TF 1H"
+else if sec <= 14400
+    tfTag := "TF 4H"
+else
+    tfTag := "TF 1D+"
+
+//==================================================
+// [4] 기본 계산
+//==================================================
+float volBase  = ta.sma(volume, baseLen)
+float volBaseN = math.max(nz(volBase, volume), 1.0)
+float volRatio = volume / volBaseN
+float hiPrev   = ta.highest(volume[1], spikeHiLB)
+float hiPrevN  = math.max(nz(hiPrev, volume), 1.0)
+
+float tp = hlc3
+float rmf = tp * volume
+float tpDelta = tp - tp[1]
+float posMF = tpDelta > 0 ? rmf : 0.0
+float negMF = tpDelta < 0 ? rmf : 0.0
+float posMFSum = ta.sma(posMF, mfiLen) * mfiLen
+float negMFSum = ta.sma(negMF, mfiLen) * mfiLen
+float moneyRatio = negMFSum <= 0 ? 1000000.0 : (posMFSum / negMFSum)
+float mfiValue = 100.0 - (100.0 / (1.0 + moneyRatio))
+
+float obv = ta.cum(close > close[1] ? volume : close < close[1] ? -volume : 0.0)
+float obvEma = ta.ema(obv, flowLen)
+float obvGap = obv - obvEma
+
+float hlRange = high - low
+float mfm = hlRange > 0 ? (((close - low) - (high - close)) / hlRange) : 0.0
+float adl = ta.cum(mfm * volume)
+float adlEma = ta.ema(adl, flowLen)
+float adlGap = adl - adlEma
+
+float bodyAbs = math.abs(close - open)
+float atr14 = ta.atr(14)
+
+bool spikeByMult    = volRatio >= spikeMultEff
+bool spikeByNewHigh = (not na(hiPrev)) and (volume > hiPrev)
+bool spikeSoftRaw   = spikeByMult or spikeByNewHigh
+bool spikeHardRaw   = spikeByMult and spikeByNewHigh
+
+bool flowWeak = (mfiValue < 45 and obvGap < 0) or (mfiValue < 40 and adlGap < 0)
+bool flowHard = (mfiValue < 35 and obvGap < 0 and adlGap < 0)
+
+var int lastHardBar = na
+bool cdOK = cooldownBars <= 0 ? true : (na(lastHardBar) or (bar_index - lastHardBar >= cooldownBars))
+bool spikeHard = spikeHardRaw and cdOK and (flowHard or bodyAbs >= atr14 * 0.6)
+if spikeHard
+    lastHardBar := bar_index
+
+int bsHard = ta.barssince(spikeHard)
+bool inFadeWindow = (bsHard >= 0) and (bsHard <= fadeBars)
+bool isFade = inFadeWindow and (volRatio <= fadeMultEff) and flowWeak
+bool spikeSoft = spikeSoftRaw and (not spikeHard)
+
+float kSpikeA = f_clamp01((volRatio - 1.0) / math.max(1e-6, spikeMultEff - 1.0))
+float kSpikeB = f_clamp01(volume / hiPrevN)
+float kFlowA  = f_clamp01((50.0 - mfiValue) / 30.0)
+float kFlowB  = f_clamp01((-obvGap) / math.max(1e-6, math.abs(obvEma)))
+float kFlowC  = f_clamp01((-adlGap) / math.max(1e-6, math.abs(adlEma)))
+float kSpikeF = 100.0 * (0.45 * math.max(kSpikeA, kSpikeB) + 0.30 * kFlowA + 0.15 * kFlowB + 0.10 * kFlowC)
+int kSpike = int(math.round(math.max(0.0, math.min(100.0, kSpikeF))))
+
+float fadeDepth = f_clamp01((fadeMultEff - volRatio) / math.max(1e-6, fadeMultEff - 1.0))
+float fadeFresh = 0.0
+if inFadeWindow
+    fadeFresh := f_clamp01(1.0 - (float(bsHard) / math.max(1.0, float(fadeBars))))
+float kFadeF = 100.0 * (0.45 * fadeDepth + 0.25 * fadeFresh + 0.20 * kFlowA + 0.10 * math.max(kFlowB, kFlowC))
+int kFade = int(math.round(math.max(0.0, math.min(100.0, kFadeF))))
+
+float hlSafe = math.max(high - low, syminfo.mintick)
+float closePos = f_clamp01((close - low) / hlSafe)
+float bodyPart = atr14 > 0 ? f_clamp01(bodyAbs / math.max(atr14 * 0.85, syminfo.mintick)) : 0.0
+float priorClose = nz(close[1], close)
+float pushUpPart = f_clamp01((close - priorClose) / math.max(atr14 * 0.70, syminfo.mintick))
+float pushDnPart = f_clamp01((priorClose - close) / math.max(atr14 * 0.70, syminfo.mintick))
+float pushPart = math.max(pushUpPart, pushDnPart)
+float closeStressPart = math.max(f_clamp01((closePos - 0.70) / 0.30), f_clamp01((0.30 - closePos) / 0.30))
+float volumeDecayPart = f_clamp01((1.0 - volRatio) / 0.55)
+float weakContinuationPart = pushPart > 0.25 ? f_clamp01(0.44 * volumeDecayPart + 0.36 * kFlowA + 0.20 * math.max(kFlowB, kFlowC)) : 0.0
+
+float afterSpikeCooling = inFadeWindow ? 100.0 * f_clamp01(0.44 * fadeFresh + 0.34 * fadeDepth + 0.22 * kFlowA) : 0.0
+float volumeDecayScore = 100.0 * f_clamp01(0.54 * volumeDecayPart + 0.26 * kFlowA + 0.20 * math.max(kFlowB, kFlowC))
+float fuelFadeScore = math.max(float(kFade), 100.0 * f_clamp01(0.40 * volumeDecayPart + 0.30 * weakContinuationPart + 0.20 * kFlowA + 0.10 * fadeFresh))
+float exhaustScore = spikeHard ? math.max(float(kSpike), 100.0 * f_clamp01(0.42 * math.max(kSpikeA, kSpikeB) + 0.25 * closeStressPart + 0.20 * bodyPart + 0.13 * kFlowA)) : 0.0
+float fakePowerScore = 100.0 * f_clamp01(0.36 * weakContinuationPart + 0.26 * bodyPart + 0.22 * volumeDecayPart + 0.16 * kFlowA)
+float chaseRiskScore = 100.0 * f_clamp01(0.34 * pushPart + 0.24 * closeStressPart + 0.22 * math.max(volumeDecayPart, math.max(kSpikeA, kSpikeB)) + 0.20 * kFlowA)
+float failedContinuationFuelScore = inFadeWindow and pushPart < 0.18 and flowWeak ? 100.0 * f_clamp01(0.42 * fadeFresh + 0.30 * kFlowA + 0.28 * volumeDecayPart) : 0.0
+
+float neckScoreF = math.max(math.max(exhaustScore, fakePowerScore), math.max(fuelFadeScore, math.max(volumeDecayScore, math.max(chaseRiskScore, failedContinuationFuelScore))))
+int neckK = int(math.round(neckScoreF))
+neckK := math.max(0, math.min(100, neckK))
+
+bool fuelExhaustion = exhaustScore >= 65.0
+bool fakePower = fakePowerScore >= 62.0 and weakContinuationPart >= 0.35
+bool chaseRisk = chaseRiskScore >= 58.0
+bool failedFuel = failedContinuationFuelScore >= 58.0
+bool fuelFade = fuelFadeScore >= 48.0 or afterSpikeCooling >= 45.0
+bool volumeWatch = spikeSoft or volumeDecayScore >= 45.0 or chaseRisk
+
+int neckState = 0
+if fakePower or failedFuel
+    neckState := 4
+else if fuelExhaustion or spikeHard
+    neckState := 2
+else if fuelFade
+    neckState := 3
+else if volumeWatch
+    neckState := 1
+else
+    neckState := 0
+
+int neckRes = 0
+if fuelExhaustion or fakePower
+    neckRes += 3
+if failedFuel or fuelFade
+    neckRes += 2
+if chaseRisk and neckK >= 60
+    neckRes += 1
+if neckK >= 85
+    neckRes += 1
+else if neckK >= 65 and neckRes > 0
+    neckRes += 1
+neckRes := math.max(0, math.min(5, neckRes))
+
+bool pushUp = close >= open and close >= priorClose
+bool pushDn = close <= open and close <= priorClose
+int neckDir = 0
+if (fuelExhaustion or fakePower) and neckK >= 72
+    if pushUp
+        neckDir := -1
+    else if pushDn
+        neckDir := 1
+    else
+        neckDir := 0
+else
+    neckDir := 0
+
+int EVT_NONE  = 0
+int EVT_ON    = 1
+int EVT_OFF   = 2
+int EVT_UPD   = 3
+int EVT_SPIKE = 4
+int EVT_FADE  = 5
+int EVT_SOFT  = 6
+int EVT_EXHAUST = 7
+int EVT_FAKE_POWER = 8
+int EVT_CHASE = 9
+int EVT_FAILED_FUEL = 10
+
+int prevState = bar_index > 0 ? neckState[1] : 0
+int prevK     = bar_index > 0 ? neckK[1] : 0
+int prevRes   = bar_index > 0 ? neckRes[1] : 0
+
+bool onEdge   = (prevState == 0) and (neckState != 0)
+bool offEdge  = (prevState != 0) and (neckState == 0)
+bool updEdge  = (neckState != 0) and (prevState != 0) and (neckK != prevK)
+
+int neckEvt = EVT_NONE
+if fakePower
+    neckEvt := EVT_FAKE_POWER
+else if failedFuel
+    neckEvt := EVT_FAILED_FUEL
+else if fuelExhaustion
+    neckEvt := EVT_EXHAUST
+else if chaseRisk
+    neckEvt := EVT_CHASE
+else if spikeHard
+    neckEvt := EVT_SPIKE
+else if fuelFade
+    neckEvt := EVT_FADE
+else if spikeSoft
+    neckEvt := EVT_SOFT
+else if onEdge
+    neckEvt := EVT_ON
+else if offEdge
+    neckEvt := EVT_OFF
+else if updEdge
+    neckEvt := EVT_UPD
+else
+    neckEvt := EVT_NONE
+
+int neckActiveFlag = (neckState != 0 or neckK >= 35 or neckEvt != 0 or volumeWatch) ? 1 : 0
+int neckRisk = (neckState == 2 or neckState == 4) ? 2 : ((neckState == 3 or chaseRisk) ? 1 : 0)
+
+//==================================================
+// [5] GPT 표
+//==================================================
+var table neckTable = na
+
+if barstate.islast and showTable
+    if na(neckTable)
+        neckTable := table.new(f_tablePos(tablePosOpt), 4, 10, border_width=1)
+    table.cell(neckTable, 0, 0, "KEY",  text_color=headerText, bgcolor=headerBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(neckTable, 1, 0, "CODE", text_color=headerText, bgcolor=headerBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(neckTable, 2, 0, "NUM",  text_color=numTextColor, bgcolor=headerBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(neckTable, 3, 0, "NOTE", text_color=headerText, bgcolor=headerBg, text_size=f_textSize(tableSizeOpt))
+
+    table.cell(neckTable, 0, 1, "DIR", text_color=keyTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(neckTable, 1, 1, f_dirCode(neckDir), text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(neckTable, 2, 1, str.tostring(neckDir), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(neckTable, 3, 1, neckDir == 0 ? "mostly flat" : "exhaustion bias", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+
+    table.cell(neckTable, 0, 2, "STATE", text_color=keyTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(neckTable, 1, 2, f_stateCode(neckState), text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(neckTable, 2, 2, str.tostring(neckState), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(neckTable, 3, 2, f_note(neckState, neckEvt, neckRes, tfTag), text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+
+    table.cell(neckTable, 0, 3, "SCORE", text_color=keyTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(neckTable, 1, 3, f_scoreCode(neckK), text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(neckTable, 2, 3, str.tostring(neckK), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(neckTable, 3, 3, "volume drain k", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+
+    table.cell(neckTable, 0, 4, "RES", text_color=keyTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(neckTable, 1, 4, neckRes >= 4 ? "HARD" : neckRes >= 2 ? "MID" : "LOW", text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(neckTable, 2, 4, str.tostring(neckRes), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(neckTable, 3, 4, "0-5", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+
+    table.cell(neckTable, 0, 5, "SPIKE", text_color=keyTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(neckTable, 1, 5, spikeHard ? "HARD" : spikeSoft ? "SOFT" : "NONE", text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(neckTable, 2, 5, spikeHard ? "1" : spikeSoft ? "0.5" : "0", text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(neckTable, 3, 5, "volume burst", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+
+    table.cell(neckTable, 0, 6, "FADE", text_color=keyTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(neckTable, 1, 6, isFade ? "ON" : "OFF", text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(neckTable, 2, 6, isFade ? "1" : "0", text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(neckTable, 3, 6, "cooling window", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+
+    table.cell(neckTable, 0, 7, "FLOW", text_color=keyTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(neckTable, 1, 7, flowHard ? "HARD" : flowWeak ? "WEAK" : "NEU", text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(neckTable, 2, 7, str.tostring(int(math.round(mfiValue))), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(neckTable, 3, 7, "mfi / obv / adl", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+
+    table.cell(neckTable, 0, 8, "ACTIVE", text_color=keyTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(neckTable, 1, 8, neckActiveFlag == 1 ? "ON" : "OFF", text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(neckTable, 2, 8, str.tostring(neckActiveFlag), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(neckTable, 3, 8, "accessory live", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+
+    table.cell(neckTable, 0, 9, "EVENT", text_color=keyTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(neckTable, 1, 9, f_evtCode(neckEvt), text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(neckTable, 2, 9, str.tostring(neckEvt), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(neckTable, 3, 9, f_riskCode(neckRisk), text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+if barstate.islast and not showTable
+    if not na(neckTable)
+        table.delete(neckTable)
+        neckTable := na
+
+//==================================================
+// [6] GPT 얼러트
+//==================================================
+bool neckSpikeStart      = useAlertConditions and (spikeHard or fuelExhaustion) and prevState != 2
+bool neckFadeStart       = useAlertConditions and fuelFade and prevState != 3
+bool neckOnStart         = useAlertConditions and onEdge
+bool neckOffStart        = useAlertConditions and offEdge
+bool neckStrongResStart  = useAlertConditions and neckRes >= 4 and prevRes < 4
+bool neckSoftWatchStart  = useAlertConditions and volumeWatch and neckState == 1
+bool neckFakePowerStart  = useAlertConditions and fakePower and prevState != 4
+bool neckChaseRiskStart  = useAlertConditions and chaseRisk and neckEvt == EVT_CHASE
+
+alertcondition(neckSpikeStart,     title="AL NECKLACE G | SPIKE",      message="AL_NECKLACE_G,SPIKE")
+alertcondition(neckFadeStart,      title="AL NECKLACE G | FADE",       message="AL_NECKLACE_G,FADE")
+alertcondition(neckOnStart,        title="AL NECKLACE G | ACTIVE ON",  message="AL_NECKLACE_G,ACTIVE_ON")
+alertcondition(neckOffStart,       title="AL NECKLACE G | ACTIVE OFF", message="AL_NECKLACE_G,ACTIVE_OFF")
+alertcondition(neckStrongResStart, title="AL NECKLACE G | STRONG RES", message="AL_NECKLACE_G,STRONG_RES")
+alertcondition(neckSoftWatchStart, title="AL NECKLACE G | SOFT WATCH", message="AL_NECKLACE_G,SOFT_WATCH")
+alertcondition(neckFakePowerStart, title="AL NECKLACE G | FAKE POWER", message="AL_NECKLACE_G,FAKE_POWER")
+alertcondition(neckChaseRiskStart, title="AL NECKLACE G | CHASE RISK", message="AL_NECKLACE_G,CHASE_RISK")
+
+//==================================================
+// 숨김 출력 (A 링크 경량)
+//==================================================
+plot(float(neckDir),        title="AL_NECKLACE_DIRECTION",   display=display.none)
+plot(float(neckState),      title="AL_NECKLACE_STATE",       display=display.none)
+plot(float(neckK),          title="AL_NECKLACE_SCORE",       display=display.none)
+plot(float(neckRes),        title="AL_NECKLACE_RESISTANCE",  display=display.none)
+plot(float(neckEvt),        title="AL_NECKLACE_EVENT",       display=display.none)
+plot(float(neckActiveFlag), title="AL_NECKLACE_ACTIVE_FLAG", display=display.none)

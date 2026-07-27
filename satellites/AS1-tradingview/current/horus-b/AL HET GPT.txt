@@ -1,0 +1,201 @@
+//@version=6
+indicator("AL HET GPT", overlay=true, max_labels_count=0, max_bars_back=3000, format=format.volume)
+
+string G_CORE = "HET B | Core"
+int   lenMin      = input.int(21, "Minimum Baseline Length", minval=5, maxval=200, group=G_CORE, display=display.none)
+float minMult     = input.float(1.2, "Minimum Pressure Multiple", step=0.1, group=G_CORE, display=display.none)
+float hetScaleCap = input.float(1000000.0, "OI Scale Cap", step=1000.0, group=G_CORE, display=display.none)
+float conflictPct = input.float(0.40, "Exchange Conflict Ratio", minval=0.05, maxval=0.95, step=0.05, group=G_CORE, display=display.none)
+int priceConfirmLen = input.int(14, "Price Confirm Length", minval=3, maxval=100, group=G_CORE, display=display.none)
+float priceAtrMin = input.float(0.12, "Price Confirm ATR", minval=0.0, maxval=5.0, step=0.01, group=G_CORE, display=display.none)
+float strongOiMult = input.float(1.8, "Strong OI Multiple", minval=0.5, maxval=10.0, step=0.1, group=G_CORE, display=display.none)
+
+string G_AUTO = "HET B | Auto OI"
+bool useAuto = input.bool(true, "Use Auto OI", group=G_AUTO, display=display.none)
+bool useBnU  = input.bool(true,  "Binance USDT OI", group=G_AUTO, display=display.none)
+bool useBnC  = input.bool(false, "Binance USDC OI", group=G_AUTO, display=display.none)
+bool useByb  = input.bool(true,  "Bybit OI", group=G_AUTO, display=display.none)
+bool useOkx  = input.bool(true,  "OKX OI", group=G_AUTO, display=display.none)
+bool useBtg  = input.bool(false, "Bitget OI", group=G_AUTO, display=display.none)
+
+string G_CUS = "HET B | Custom OI"
+bool   cus1On = input.bool(false, "Use Custom 1", group=G_CUS, display=display.none)
+string cus1Sy = input.string("",  "Custom 1 Symbol", group=G_CUS, display=display.none)
+bool   cus2On = input.bool(false, "Use Custom 2", group=G_CUS, display=display.none)
+string cus2Sy = input.string("",  "Custom 2 Symbol", group=G_CUS, display=display.none)
+
+string G_ALERT = "HET B | Alerts"
+bool useAlerts = input.bool(true, "Use Alerts", group=G_ALERT, display=display.none)
+
+string baseCur = syminfo.basecurrency
+if baseCur == "" or na(baseCur)
+    baseCur := "BTC"
+
+string sBnU = "BINANCE:" + baseCur + "USDT.P_OI"
+string sBnC = "BINANCE:" + baseCur + "USDC.P_OI"
+string sByb = "BYBIT:"   + baseCur + "USDT.P_OI"
+string sOkx = "OKX:"     + baseCur + "USDT.P_OI"
+string sBtg = "BITGET:"  + baseCur + "USDT.P_OI"
+
+f_isValid(float x) =>
+    not na(x) and x > 0
+
+f_oi(string sym) =>
+    request.security(sym, timeframe.period, close, ignore_invalid_symbol=true)
+
+f_sign(float x) =>
+    x > 0 ? 1 : x < 0 ? -1 : 0
+
+f_clamp(float x, float lo, float hi) =>
+    math.max(lo, math.min(hi, x))
+
+float oi1 = (useAuto and useBnU) ? f_oi(sBnU) : na
+float oi2 = (useAuto and useBnC) ? f_oi(sBnC) : na
+float oi3 = (useAuto and useByb) ? f_oi(sByb) : na
+float oi4 = (useAuto and useOkx) ? f_oi(sOkx) : na
+float oi5 = (useAuto and useBtg) ? f_oi(sBtg) : na
+float oi6 = (cus1On and cus1Sy != "") ? f_oi(cus1Sy) : na
+float oi7 = (cus2On and cus2Sy != "") ? f_oi(cus2Sy) : na
+
+bool v1 = f_isValid(oi1)
+bool v2 = f_isValid(oi2)
+bool v3 = f_isValid(oi3)
+bool v4 = f_isValid(oi4)
+bool v5 = f_isValid(oi5)
+bool v6 = f_isValid(oi6)
+bool v7 = f_isValid(oi7)
+
+int validN = 0
+validN += v1 ? 1 : 0
+validN += v2 ? 1 : 0
+validN += v3 ? 1 : 0
+validN += v4 ? 1 : 0
+validN += v5 ? 1 : 0
+validN += v6 ? 1 : 0
+validN += v7 ? 1 : 0
+
+float oiChg1 = ta.change(oi1)
+float oiChg2 = ta.change(oi2)
+float oiChg3 = ta.change(oi3)
+float oiChg4 = ta.change(oi4)
+float oiChg5 = ta.change(oi5)
+float oiChg6 = ta.change(oi6)
+float oiChg7 = ta.change(oi7)
+float d1 = v1 ? oiChg1 : na
+float d2 = v2 ? oiChg2 : na
+float d3 = v3 ? oiChg3 : na
+float d4 = v4 ? oiChg4 : na
+float d5 = v5 ? oiChg5 : na
+float d6 = v6 ? oiChg6 : na
+float d7 = v7 ? oiChg7 : na
+
+float hetRaw = nz(d1, 0) + nz(d2, 0) + nz(d3, 0) + nz(d4, 0) + nz(d5, 0) + nz(d6, 0) + nz(d7, 0)
+float absRaw = math.abs(hetRaw)
+float absAvg = ta.sma(absRaw, lenMin)
+float hetMin = nz(absAvg, absRaw) * minMult
+bool bigMove = absRaw > hetMin
+
+int sHet = f_sign(hetRaw)
+int sameSignN = 0
+sameSignN += (v1 and f_sign(d1) == sHet and sHet != 0) ? 1 : 0
+sameSignN += (v2 and f_sign(d2) == sHet and sHet != 0) ? 1 : 0
+sameSignN += (v3 and f_sign(d3) == sHet and sHet != 0) ? 1 : 0
+sameSignN += (v4 and f_sign(d4) == sHet and sHet != 0) ? 1 : 0
+sameSignN += (v5 and f_sign(d5) == sHet and sHet != 0) ? 1 : 0
+sameSignN += (v6 and f_sign(d6) == sHet and sHet != 0) ? 1 : 0
+sameSignN += (v7 and f_sign(d7) == sHet and sHet != 0) ? 1 : 0
+
+float conflictRatio = validN > 0 ? (1.0 - float(sameSignN) / float(validN)) : 1.0
+bool conflictOn = validN >= 3 and conflictRatio >= conflictPct
+
+int wBucket = 1 + math.min(3, int(math.floor(float(sameSignN) / 2.0)))
+float moveNorm = f_clamp(math.abs(hetRaw) / math.max(hetScaleCap, 1.0), 0.0, 1.0)
+float oiIntensity = absRaw / math.max(hetMin, 1.0)
+bool meaningfulOi = validN >= 2 and sHet != 0 and (sameSignN >= 2 or bigMove or oiIntensity >= 0.80)
+bool strongOi = meaningfulOi and (bigMove or oiIntensity >= strongOiMult)
+
+float emaFast = ta.ema(close, priceConfirmLen)
+float emaSlow = ta.ema(close, priceConfirmLen * 2)
+float atrNow = ta.atr(priceConfirmLen)
+float priceMoveAtr = math.abs(close - nz(close[1], close)) / math.max(atrNow, syminfo.mintick)
+bool structureUp = close > emaFast and emaFast >= emaSlow
+bool structureDown = close < emaFast and emaFast <= emaSlow
+bool priceUp = close > nz(close[1], close) and priceMoveAtr >= priceAtrMin
+bool priceDown = close < nz(close[1], close) and priceMoveAtr >= priceAtrMin
+int structureDir = structureUp ? 1 : structureDown ? -1 : 0
+int priceMoveDir = priceUp ? 1 : priceDown ? -1 : 0
+int confirmDir = priceMoveDir != 0 ? priceMoveDir : structureDir
+bool priceConfirmed = meaningfulOi and confirmDir != 0 and (priceMoveDir != 0 or math.abs(close - emaFast) >= atrNow * priceAtrMin)
+
+bool longBuild = meaningfulOi and sHet > 0 and confirmDir > 0
+bool shortBuild = meaningfulOi and sHet > 0 and confirmDir < 0
+bool shortCover = meaningfulOi and sHet < 0 and confirmDir > 0
+bool longFlush = meaningfulOi and sHet < 0 and confirmDir < 0
+int hetEventDir = (longBuild or shortCover) ? 1 : (shortBuild or longFlush) ? -1 : 0
+bool priceOpposed = meaningfulOi and hetEventDir != 0 and structureDir != 0 and hetEventDir != structureDir
+bool oiConflict = priceOpposed and (strongOi or conflictOn)
+bool unconfirmedOi = meaningfulOi and not priceConfirmed
+
+float consensusNorm = validN > 0 ? float(sameSignN) / float(validN) : 0.0
+float intensityNorm = f_clamp(oiIntensity / math.max(strongOiMult, 0.1), 0.0, 1.0)
+float confirmedBonus = priceConfirmed and not oiConflict ? 18.0 : 0.0
+float conflictBonus = oiConflict ? 14.0 : 0.0
+float hetScore = f_clamp(
+     10.0 * float(validN) / 7.0 +
+     20.0 * consensusNorm +
+     8.0 * float(wBucket) / 4.0 +
+     30.0 * intensityNorm +
+     10.0 * moveNorm +
+     8.0 * (strongOi ? 1.0 : 0.0) +
+     confirmedBonus +
+     conflictBonus,
+     0.0,
+     100.0
+)
+hetScore := oiConflict ? math.max(hetScore, 55.0) : unconfirmedOi ? math.max(hetScore, 40.0) : hetScore
+hetScore := f_clamp(hetScore, 0.0, 100.0)
+
+float directionalEventScore = priceConfirmed and not oiConflict ? hetScore : 0.0
+float longBuildScore = longBuild and not oiConflict ? directionalEventScore : 0.0
+float shortBuildScore = shortBuild and not oiConflict ? directionalEventScore : 0.0
+float shortCoverScore = shortCover and not oiConflict ? directionalEventScore * 0.85 : 0.0
+float longFlushScore = longFlush and not oiConflict ? directionalEventScore * 0.85 : 0.0
+float oiConflictScore = oiConflict ? hetScore : 0.0
+float unconfirmedOiScore = unconfirmedOi ? hetScore : 0.0
+float oiPressureScore = meaningfulOi ? hetScore * (strongOi ? 1.0 : 0.65) : 0.0
+float priceOpposedScore = priceOpposed ? hetScore : 0.0
+float neutralOiDiagnosticScore = unconfirmedOi ? hetScore : priceOpposed and not oiConflict ? hetScore * 0.55 : 0.0
+
+int hetDir = oiConflict or unconfirmedOi ? 0 : hetEventDir
+int hetState = oiConflict ? 4 : hetDir != 0 and strongOi ? 3 : hetDir != 0 ? 2 : meaningfulOi ? 1 : 0
+int hetActive = meaningfulOi ? 1 : 0
+float hetEvent = oiConflict ? 90.0 : longBuild and not oiConflict ? 10.0 : shortBuild and not oiConflict ? -10.0 : shortCover and not oiConflict ? 20.0 : longFlush and not oiConflict ? -20.0 : unconfirmedOi ? 40.0 : 0.0
+
+bool prevConflictOn = bar_index > 0 ? oiConflict[1] : false
+int prevHetDir = bar_index > 0 ? hetDir[1] : 0
+bool prevBigMove = bar_index > 0 ? bigMove[1] : false
+
+bool evtBigMove = bigMove and not prevBigMove
+bool evtConflictOn = oiConflict and not prevConflictOn
+bool evtConflictOff = (not oiConflict) and prevConflictOn
+bool evtLongFlow = hetDir > 0 and prevHetDir <= 0
+bool evtShortFlow = hetDir < 0 and prevHetDir >= 0
+
+plot(hetScore,             title="AL_HET_SCORE",       display=display.none)
+plot(float(hetDir),        title="AL_HET_DIRECTION",   display=display.none)
+plot(float(hetState),      title="AL_HET_STATE",       display=display.none)
+plot(float(hetActive),     title="AL_HET_ACTIVE_FLAG", display=display.none)
+plot(float(hetEvent),      title="AL_HET_EVENT",       display=display.none)
+plot(oiConflictScore,      title="AL_HET_OI_CONFLICT_SCORE", display=display.none)
+plot(unconfirmedOiScore,   title="AL_HET_UNCONFIRMED_OI_SCORE", display=display.none)
+plot(priceConfirmed ? 1.0 : 0.0, title="AL_HET_PRICE_CONFIRMED_FLAG", display=display.none)
+plot(oiPressureScore,      title="AL_HET_OI_PRESSURE_SCORE", display=display.none)
+plot(priceOpposed ? 1.0 : 0.0, title="AL_HET_PRICE_OPPOSED_FLAG", display=display.none)
+plot(priceOpposedScore,    title="AL_HET_PRICE_OPPOSED_SCORE", display=display.none)
+plot(neutralOiDiagnosticScore, title="AL_HET_NEUTRAL_OI_DIAGNOSTIC_SCORE", display=display.none)
+
+alertcondition(useAlerts and evtBigMove,      title="AL HET G | BIG MOVE",      message="AL_HET_G,BIG_MOVE")
+alertcondition(useAlerts and evtConflictOn,   title="AL HET G | CONFLICT ON",   message="AL_HET_G,CONFLICT_ON")
+alertcondition(useAlerts and evtConflictOff,  title="AL HET G | CONFLICT OFF",  message="AL_HET_G,CONFLICT_OFF")
+alertcondition(useAlerts and evtLongFlow,     title="AL HET G | LONG FLOW",     message="AL_HET_G,LONG_FLOW")
+alertcondition(useAlerts and evtShortFlow,    title="AL HET G | SHORT FLOW",    message="AL_HET_G,SHORT_FLOW")

@@ -1,0 +1,1250 @@
+//@version=6
+// AL PER A GPT HETEM MONITOR
+// DEFENSE version derived from AL PER A STRATEGY EVENT AUDIT.
+// Purpose: risk management and asset defense validation for AiLynx/Lynx briefings.
+// Research/validation script only. Not financial advice and not an aggressive profit system.
+strategy("AL PER A GPT HETEM MONITOR", overlay=true, max_bars_back=3000, max_labels_count=500, initial_capital=10000, default_qty_type=strategy.percent_of_equity, default_qty_value=25, commission_type=strategy.commission.percent, commission_value=0.04, slippage=1, pyramiding=0, calc_on_every_tick=true, process_orders_on_close=false)
+
+//==================================================
+// 고정값 | 보수형
+//==================================================
+int   CFG_MIN_TOTAL    = 72
+float CFG_MIN_TRIGGER  = 35.0
+float CFG_MIN_BASE     = 25.0
+float CFG_MIN_STRUCT   = 45.0
+float CFG_MIN_ALIGN    = 70.0
+int   CFG_MIN_ACTIVE   = 4
+float CFG_MIN_NET      = 10.0
+float CFG_MIN_EXEC     = 12.0
+int   CFG_MAX_FAIL     = 0
+int   CFG_MAX_RISK     = 1
+int   CFG_CONFIRM      = 2
+int   CFG_COOLDOWN     = 4
+float CFG_HOLD_SCORE   = 52.0
+int   CFG_EXIT_RISK    = 2
+float CFG_VIRTUAL_CASH = 1000.0
+
+//==================================================
+// GAW compact helpers (GPT_CODE table / alert digest)
+//==================================================
+f_gawLayer(string s) =>
+    string out = "L"
+    if s == "FORCE"
+        out := "F"
+    else if s == "STRUCTURE"
+        out := "S"
+    out
+
+f_gawGate(string s) =>
+    string out = "WT"
+    if s == "OPEN"
+        out := "GO"
+    else if s == "BLOCKED"
+        out := "GB"
+    else if s == "CONGESTED"
+        out := "GC"
+    else if s == "CLEARING"
+        out := "CL"
+    else if s == "RISK"
+        out := "RK"
+    out
+
+f_gawBand(string s) =>
+    string out = s
+    if s == "NONE"
+        out := "N"
+    else if s == "LOW"
+        out := "L"
+    else if s == "MID"
+        out := "M"
+    else if s == "HIGH"
+        out := "H"
+    else if s == "EXTREME"
+        out := "X"
+    else if s == "SAFE"
+        out := "N"
+    else if s == "RISK"
+        out := "RK"
+    out
+
+f_gawState(string s) =>
+    string out = s
+    if s == "IDLE"
+        out := "ID"
+    else if s == "SET"
+        out := "ST"
+    else if s == "TRIG"
+        out := "TR"
+    else if s == "HOLD"
+        out := "HD"
+    else if s == "FAIL"
+        out := "FL"
+    out
+
+f_gawRisk(string s) =>
+    string out = s
+    if s == "NONE" or s == "SAFE"
+        out := "N"
+    else if s == "LOW"
+        out := "L"
+    else if s == "MID"
+        out := "M"
+    else if s == "HIGH"
+        out := "H"
+    else if s == "EXTREME"
+        out := "X"
+    else if s == "RISK" or s == "RK"
+        out := "RK"
+    out
+
+f_gawBlock(string s) =>
+    string out = "C"
+    if s == "BLOCK"
+        out := "B"
+    else if s == "HARD_BLOCK"
+        out := "HB"
+    else if s == "SOFT_BLOCK"
+        out := "B"
+    else if s == "PREWARN"
+        out := "PW"
+    else if s == "CLEAR"
+        out := "C"
+    out
+
+f_gawFlow(string s) =>
+    string out = "FL"
+    if s == "UP"
+        out := "UP"
+    else if s == "DOWN"
+        out := "DN"
+    else if s == "DN"
+        out := "DN"
+    else if s == "FLAT"
+        out := "FL"
+    else if s == "SHIFT"
+        out := "SH"
+    else if s == "MIXED"
+        out := "MX"
+    out
+
+f_gawEvent(string s) =>
+    string out = s
+    if s == "TF_SNAPSHOT"
+        out := "TFS"
+    else if s == "FORCE_SHIFT"
+        out := "FS"
+    else if s == "FORCE_CONFIRM"
+        out := "FC"
+    else if s == "FORCE_FADE_BLOCK"
+        out := "FFB"
+    else if s == "PRESSURE_RISING"
+        out := "PR"
+    else if s == "TRAP_WAIT"
+        out := "TW"
+    else if s == "STRUCTURE_SHIFT"
+        out := "SS"
+    else if s == "GATE_BLOCKED"
+        out := "GB"
+    else if s == "GATE_CLEARING"
+        out := "GCL"
+    else if s == "BLOCK_PREWARN"
+        out := "BPW"
+    else if s == "RECOVERY_FAIL"
+        out := "RF"
+    else if s == "TRAP_FAKEOUT_WAIT"
+        out := "TFW"
+    else if s == "OBSERVE"
+        out := "OBS"
+    out
+
+f_gawNextText(float code) =>
+    int c = int(math.round(nz(code, 0)))
+    string txt = "NONE"
+    if c == 1
+        txt := "1M"
+    else if c == 16
+        txt := "3M"
+    else if c == 2
+        txt := "5M"
+    else if c == 3
+        txt := "15M"
+    else if c == 4
+        txt := "30M"
+    else if c == 17
+        txt := "45M"
+    else if c == 5
+        txt := "1H"
+    else if c == 6
+        txt := "2H"
+    else if c == 18
+        txt := "3H"
+    else if c == 7
+        txt := "4H"
+    else if c == 8
+        txt := "6H"
+    else if c == 9
+        txt := "8H"
+    else if c == 19
+        txt := "10H"
+    else if c == 10
+        txt := "12H"
+    else if c == 20
+        txt := "14H"
+    else if c == 11
+        txt := "16H"
+    else if c == 21
+        txt := "18H"
+    else if c == 12
+        txt := "20H"
+    else if c == 13
+        txt := "22H"
+    else if c == 14
+        txt := "1D"
+    else if c == 22
+        txt := "2D"
+    else if c == 23
+        txt := "3D"
+    else if c == 15
+        txt := "1W"
+    else if c == 24
+        txt := "1MO"
+    txt
+
+//==================================================
+// 입력 | 소스
+//==================================================
+string G_SRC = "PER A | 게누트 A 소스"
+float srcGenutDir         = input.source(close, "AL_GENUT_A_DIRECTION", group=G_SRC, display=display.none)
+float srcGenutState       = input.source(close, "AL_GENUT_A_STATE", group=G_SRC, display=display.none)
+float srcGenutRisk        = input.source(close, "AL_GENUT_A_RISK", group=G_SRC, display=display.none)
+float srcGenutTrigger     = input.source(close, "AL_GENUT_A_TRIGGER_SCORE", group=G_SRC, display=display.none)
+float srcGenutBase        = input.source(close, "AL_GENUT_A_BASE_SCORE", group=G_SRC, display=display.none)
+float srcGenutStruct      = input.source(close, "AL_GENUT_A_STRUCT_SCORE", group=G_SRC, display=display.none)
+float srcGenutAlign       = input.source(close, "AL_GENUT_A_ALIGN_SCORE", group=G_SRC, display=display.none)
+float srcGenutNet         = input.source(close, "AL_GENUT_A_NET_SCORE", group=G_SRC, display=display.none)
+float srcGenutExecBlend   = input.source(close, "AL_GENUT_A_EXEC_BLEND", group=G_SRC, display=display.none)
+float srcGenutActiveCnt   = input.source(close, "AL_GENUT_A_ACTIVE_COUNT", group=G_SRC, display=display.none)
+float srcGenutCoreActive  = input.source(close, "AL_GENUT_A_CORE_ACTIVE", group=G_SRC, display=display.none)
+float srcGenutAuxActive   = input.source(close, "AL_GENUT_A_AUX_ACTIVE", group=G_SRC, display=display.none)
+float srcGenutFailCnt     = input.source(close, "AL_GENUT_A_FAIL_COUNT", group=G_SRC, display=display.none)
+float srcGenutTotal       = input.source(close, "AL_GENUT_A_TOTAL_SCORE", group=G_SRC, display=display.none)
+float srcGenutLongOK      = input.source(close, "AL_GENUT_A_FORCE_UP_STATE", group=G_SRC, display=display.none)
+float srcGenutShortOK     = input.source(close, "AL_GENUT_A_FORCE_DOWN_STATE", group=G_SRC, display=display.none)
+float srcGenutWaitFlag    = input.source(close, "AL_GENUT_A_WAIT_FLAG", group=G_SRC, display=display.none)
+float srcGenutExitOK      = input.source(close, "AL_GENUT_A_RISK_FADE_STATE", group=G_SRC, display=display.none)
+float srcGenutBlockFlag   = input.source(close, "AL_GENUT_A_BLOCK_FLAG", group=G_SRC, display=display.none)
+float srcGenutBlockReason = input.source(close, "AL_GENUT_A_BLOCK_REASON_CODE", group=G_SRC, display=display.none)
+float srcGenutBarConf     = input.source(close, "AL_GENUT_A_BAR_CONFIRMED", group=G_SRC, display=display.none)
+float srcGenutFlowDelta   = input.source(close, "AL_GENUT_A_FLOW_DELTA", group=G_SRC, display=display.none)
+float srcGenutFlowSlope   = input.source(close, "AL_GENUT_A_FLOW_SLOPE", group=G_SRC, display=display.none)
+float srcGenutFlowUp      = input.source(close, "AL_GENUT_A_FLOW_UP_STREAK", group=G_SRC, display=display.none)
+float srcGenutFlowDn      = input.source(close, "AL_GENUT_A_FLOW_DN_STREAK", group=G_SRC, display=display.none)
+float srcGenutFlowShift   = input.source(close, "AL_GENUT_A_FLOW_SHIFT", group=G_SRC, display=display.none)
+float srcGenutRiskBlockScore = input.source(close, "AL_GENUT_A_RISK_BLOCK_SCORE", group=G_SRC, display=display.none)
+float srcGenutTrapPressureScore = input.source(close, "AL_GENUT_A_TRAP_PRESSURE_SCORE", group=G_SRC, display=display.none)
+float srcGenutFlowShiftStrong = input.source(close, "AL_GENUT_A_FLOW_SHIFT_STRONG", group=G_SRC, display=display.none)
+float srcGenutExitStrong = input.source(close, "AL_GENUT_A_FORCE_FADE_STRONG", group=G_SRC, display=display.none)
+float srcGenutEntrySuppress = input.source(close, "AL_GENUT_A_GATE_SUPPRESS", group=G_SRC, display=display.none)
+float srcGenutHardExitOk = input.source(close, "AL_GENUT_A_HARD_BLOCK_STATE", group=G_SRC, display=display.none)
+float srcGenutForceScore = input.source(close, "AL_GENUT_A_FORCE_SCORE", group=G_SRC, display=display.none)
+float srcGenutForceFadeScore = input.source(close, "AL_GENUT_A_FORCE_FADE_SCORE", group=G_SRC, display=display.none)
+float srcGenutHetemGateScore = input.source(close, "AL_GENUT_A_HETEM_GATE_SCORE", group=G_SRC, display=display.none)
+float srcGenutHetemPressureIndex = input.source(close, "AL_GENUT_A_HETEM_PRESSURE_INDEX", group=G_SRC, display=display.none)
+float srcGenutHetemGateStateCode = input.source(close, "AL_GENUT_A_HETEM_GATE_STATE_CODE", group=G_SRC, display=display.none)
+float srcGenutHetemEventCode = input.source(close, "AL_GENUT_A_HETEM_EVENT_CODE", group=G_SRC, display=display.none)
+float srcGenutTfRoleCode = input.source(close, "AL_GENUT_A_TF_ROLE_CODE", group=G_SRC, display=display.none)
+float srcGenutNextTfHintCode = input.source(close, "AL_GENUT_A_NEXT_TF_HINT_CODE", group=G_SRC, display=display.none)
+float srcGenutModeCode = input.source(close, "AL_GENUT_A_MODE_CODE", group=G_SRC, display=display.none)
+float srcGenutEventCode = input.source(close, "AL_GENUT_A_EVENT_CODE", group=G_SRC, display=display.none)
+float srcGenutFlowWeakOnly = input.source(close, "AL_GENUT_A_FLOW_WEAK_ONLY", group=G_SRC, display=display.none)
+float srcGenutCompatLiftAllowed = input.source(close, "AL_GENUT_A_COMPAT_LIFT_ALLOWED", group=G_SRC, display=display.none)
+
+//==================================================
+// 입력 | 표
+//==================================================
+string G_UI = "PER A | UI"
+bool showTable = input.bool(true, "표 표시", group=G_UI)
+string tablePosOpt = input.string("우하", "표 위치", options=["좌상","상중","우상","좌중","정중","우중","좌하","하중","우하"], group=G_UI)
+int tableScale = input.int(5, "표 크기 1~9", minval=1, maxval=9, group=G_UI)
+bool showTableBorder = input.bool(true, "표 테두리 표시", group=G_UI)
+color tableFrameColor = input.color(color.new(color.white, 10), "표 외곽선 색상", group=G_UI)
+color tableBorderColor = input.color(color.new(color.white, 45), "표 내부 테두리 색상", group=G_UI)
+int tableFrameWidth = input.int(1, "표 외곽선 두께", minval=0, maxval=3, group=G_UI)
+int tableBorderWidth = input.int(1, "표 내부 테두리 두께", minval=0, maxval=3, group=G_UI)
+int tableBgTransp = input.int(15, "표 배경 투명도", minval=0, maxval=100, group=G_UI)
+color colBg = input.color(color.new(color.rgb(18, 22, 31), 8), "배경", group=G_UI, display=display.none)
+color colGrid = input.color(color.new(color.silver, 86), "격자", group=G_UI, display=display.none)
+color colHead = input.color(color.rgb(215, 220, 228), "헤더", group=G_UI, display=display.none)
+color colText = input.color(color.rgb(245, 247, 250), "본문", group=G_UI, display=display.none)
+color colSoft = input.color(color.rgb(170, 176, 188), "보조", group=G_UI, display=display.none)
+color colGood = input.color(color.rgb(0, 234, 126), "좋음", group=G_UI, display=display.none)
+color colWarn = input.color(color.rgb(255, 166, 0), "경계", group=G_UI, display=display.none)
+color colBad = input.color(color.rgb(255, 60, 82), "위험", group=G_UI, display=display.none)
+color colAccent = input.color(color.rgb(32, 210, 255), "강조", group=G_UI, display=display.none)
+color colNum = input.color(color.rgb(235, 244, 255), "숫자", group=G_UI, display=display.none)
+
+//==================================================
+// 입력 | 알림
+//==================================================
+string G_ALERT = "PER A | 알림"
+bool useAlerts = input.bool(true, "알림 조건 사용", group=G_ALERT, display=display.none)
+bool enablePerAlerts = input.bool(false, "Enable PER legacy alerts", group=G_ALERT, display=display.none)
+bool enablePerAlertExperiment = input.bool(false, "Enable PER Alert Experiment", group=G_ALERT, display=display.none)
+bool perAlertConfirmedOnly = input.bool(true, "Alert On Confirmed Bar Only", group=G_ALERT, display=display.none)
+int perAlertMinWarningLevel = input.int(1, "Alert Minimum Warning Level", minval=0, maxval=2, group=G_ALERT, display=display.none)
+int perAlertCooldownBars = input.int(5, "Alert Cooldown Bars", minval=0, maxval=500, group=G_ALERT, display=display.none)
+string perAlertFrequencyMode = input.string("BAR_CLOSE", "PER Alert Frequency", options=["BAR_CLOSE","ONCE_PER_BAR"], group=G_ALERT, display=display.none)
+
+//==================================================
+// 입력 | 전략 검증
+//==================================================
+string G_STRAT = "PER A Strategy Defense | Events"
+string operationMode = input.string("MONITOR_ONLY", "Operation Mode", options=["MONITOR_ONLY","DEFENSE_BACKTEST"], group=G_STRAT, display=display.none)
+bool enableShadowTrades = input.bool(true, "섀도우 전략 주문 사용", group=G_STRAT, display=display.none)
+string defenseSensitivity = input.string("DEFENSE_PROTECT", "Defense Sensitivity", options=["STRICT","BALANCED","LOOSE","EXIT_AUDIT","DEFENSE_PROTECT"], group=G_STRAT, display=display.none)
+bool useBarConfirmedFilter = input.bool(false, "Use Bar Confirmed Filter", group=G_STRAT, display=display.none)
+string tradeMode        = input.string("STRICT_PER", "섀도우 진입 모드", options=["STRICT_PER","PRESSURE_PROBE","FLOW_PROBE","HYBRID_PROBE"], group=G_STRAT, display=display.none)
+bool allowProbeEntries  = input.bool(false, "프로브 진입 사용", group=G_STRAT, display=display.none)
+bool allowLongProbe     = input.bool(true, "상방 압력 추적", group=G_STRAT, display=display.none)
+bool allowShortProbe    = input.bool(true, "하방 압력 추적", group=G_STRAT, display=display.none)
+bool allowProbeInBlock  = input.bool(false, "BLOCK 중에도 프로브 진입", group=G_STRAT, display=display.none)
+float probeTotalMin     = input.float(55.0, "프로브 최소 총점", minval=0.0, maxval=100.0, step=1.0, group=G_STRAT, display=display.none)
+float probeFlowMin      = input.float(3.0, "Probe Flow Min", minval=0.0, maxval=100.0, step=0.5, group=G_STRAT, display=display.none)
+int probeCooldownBars   = input.int(20, "Defense Observe Cooldown", minval=0, maxval=300, group=G_STRAT, display=display.none)
+int defenseCooldownBars = input.int(12, "Defense Fade Cooldown", minval=0, maxval=300, group=G_STRAT, display=display.none)
+// Low timeframe modes are for audit/research and rare-event validation, not production trading.
+string timeframeMode = input.string("HTF_DEFENSE", "Timeframe Mode", options=["HTF_DEFENSE","LTF_AUDIT","LTF_RARE_ONLY"], group=G_STRAT, display=display.none)
+bool closeOnBlock       = input.bool(true, "BLOCK_ON 청산", group=G_STRAT, display=display.none)
+bool closeOnExit        = input.bool(true, "RISK_FADE guard", group=G_STRAT, display=display.none)
+bool closeOnFlowShift   = input.bool(true, "반대 FLOW_SHIFT 청산", group=G_STRAT, display=display.none)
+bool closeOnLinkIssue   = input.bool(true, "LINK_ISSUE 청산", group=G_STRAT, display=display.none)
+bool useStrictExitFilter = input.bool(true, "Use Strict Risk Fade Filter", group=G_STRAT, display=display.none)
+float exitTotalDropMin = input.float(8.0, "Risk Fade Total Drop Min", minval=0.0, maxval=100.0, step=0.5, group=G_STRAT, display=display.none)
+float exitFlowDeteriorationMin = input.float(3.0, "Risk Fade Flow Deterioration Min", minval=0.0, maxval=100.0, step=0.5, group=G_STRAT, display=display.none)
+int exitActiveWeakeningMin = input.int(1, "Risk Fade Active Weakening Min", minval=0, maxval=10, group=G_STRAT, display=display.none)
+float flowStrongOppositeMin = input.float(3.0, "Strong Opposite Flow Min", minval=0.0, maxval=100.0, step=0.5, group=G_STRAT, display=display.none)
+bool showEventMarks     = input.bool(false, "이벤트 마커 표시", group=G_STRAT, display=display.none)
+
+string G_RISK = "PER A Strategy Defense | Risk"
+bool useStopLoss    = input.bool(true, "Risk guard use", group=G_RISK, display=display.none)
+float stopLossPct   = input.float(1.2, "Risk guard %", minval=0.05, maxval=50.0, step=0.05, group=G_RISK, display=display.none)
+bool useTakeProfit  = input.bool(false, "Profit guard use", group=G_RISK, display=display.none)
+float takeProfitPct = input.float(2.4, "Profit guard %", minval=0.05, maxval=100.0, step=0.05, group=G_RISK, display=display.none)
+int maxBarsInTrade  = input.int(96, "Max Bars In Trade", minval=0, maxval=5000, group=G_RISK, display=display.none)
+float breakEvenAfterPct = input.float(0.5, "Break Even After MFE %", minval=0.0, maxval=20.0, step=0.05, group=G_RISK, display=display.none)
+float trailAfterMfePct = input.float(0.8, "Trail After MFE %", minval=0.0, maxval=20.0, step=0.05, group=G_RISK, display=display.none)
+float protectProfitAfterPct = input.float(0.8, "Protect Profit After MFE %", minval=0.0, maxval=20.0, step=0.05, group=G_RISK, display=display.none)
+float trailGivebackPct = input.float(0.35, "Trail Giveback %", minval=0.05, maxval=20.0, step=0.05, group=G_RISK, display=display.none)
+
+bool monitorOnlyMode = operationMode == "MONITOR_ONLY"
+bool defenseBacktestMode = operationMode == "DEFENSE_BACKTEST"
+bool perLegacyAlertsOn = enablePerAlerts and defenseBacktestMode and useAlerts
+
+//==================================================
+// 헬퍼
+//==================================================
+f_pos(string opt) =>
+    opt == "TL" ? position.top_left :
+     opt == "TC" ? position.top_center :
+     opt == "TR" ? position.top_right :
+     opt == "ML" ? position.middle_left :
+     opt == "MC" ? position.middle_center :
+     opt == "MR" ? position.middle_right :
+     opt == "BL" ? position.bottom_left :
+     opt == "BC" ? position.bottom_center : position.bottom_right
+
+f_tsize(string opt) =>
+    opt == "XS" ? size.tiny : opt == "S" ? size.small : opt == "M" ? size.normal : opt == "L" ? size.large : size.huge
+
+f_tablePos(string opt) =>
+    opt == "좌상" ? position.top_left :
+     opt == "상중" ? position.top_center :
+     opt == "우상" ? position.top_right :
+     opt == "좌중" ? position.middle_left :
+     opt == "정중" ? position.middle_center :
+     opt == "우중" ? position.middle_right :
+     opt == "좌하" ? position.bottom_left :
+     opt == "하중" ? position.bottom_center : position.bottom_right
+
+f_textSizeFromScale(int sc) =>
+    sz = size.normal
+    if sc <= 2
+        sz := size.tiny
+    else if sc <= 4
+        sz := size.small
+    else if sc <= 6
+        sz := size.normal
+    else if sc <= 8
+        sz := size.large
+    else
+        sz := size.huge
+    sz
+
+f_numTxt(float v) =>
+    str.tostring(int(math.round(v)))
+
+f_boolTxt(bool b) =>
+    b ? "YES" : "NO"
+
+f_maxMaybe(float a, float b) =>
+    na(a) ? b : na(b) ? a : math.max(a, b)
+
+f_minMaybe(float a, float b) =>
+    na(a) ? b : na(b) ? a : math.min(a, b)
+
+f_clamp(float x, float lo, float hi) =>
+    math.max(lo, math.min(hi, x))
+
+f_dirTxt(int d) =>
+    d > 0 ? "UP" : d < 0 ? "DOWN" : "FLAT"
+
+f_stateTxt(int s) =>
+    s == 4 ? "FAIL" : s == 3 ? "HOLD" : s == 2 ? "TRIG" : s == 1 ? "SET" : "IDLE"
+
+f_riskTxt(int r) =>
+    r == 0 ? "SAFE" : r == 1 ? "MID" : "RISK"
+
+f_scoreBand(float v) =>
+    v >= 85 ? "STR" : v >= 65 ? "POS" : v >= 35 ? "NEU" : v >= 15 ? "NEG" : "DNG"
+
+f_hetemBand(float v) =>
+    v >= 80 ? "EXTREME" : v >= 60 ? "HIGH" : v >= 40 ? "MID" : v >= 20 ? "LOW" : "NONE"
+
+f_gateStateText(float code) =>
+    int c = int(math.round(nz(code, 0)))
+    c == 1 ? "OPEN" : c == 2 ? "BLOCKED" : c == 3 ? "CONGESTED" : c == 4 ? "CLEARING" : c == 5 ? "RISK" : "WAIT"
+
+f_hetemEventTextA(float code) =>
+    int c = int(math.round(nz(code, 0)))
+    c == 110 ? "FORCE_SHIFT" : c == 115 ? "PRESSURE_RISING" : c == 120 ? "FORCE_CONFIRM" : c == 130 ? "FORCE_FADE_BLOCK" : c == 160 ? "TRAP_WAIT" : "OBSERVE"
+
+f_hetemBlockText(bool hardBlock, bool suppress, bool blockOn) =>
+    hardBlock ? "HARD_BLOCK" : suppress ? "PREWARN" : blockOn ? "BLOCK" : "CLEAR"
+
+f_hetemFlowText(int shift, float slope) =>
+    shift != 0 ? "SHIFT" : slope > 0 ? "UP" : slope < 0 ? "DOWN" : "FLAT"
+
+f_hetemNoteA(string gateTxt, string eventTxt, float pressure) =>
+    string out = "SAFE_DRIVE | FORCE WAIT | GATE " + gateTxt
+    if eventTxt == "FORCE_SHIFT"
+        out := "SAFE_DRIVE | FORCE_SHIFT | WATCH NEXT"
+    else if pressure >= 60
+        out := "SAFE_DRIVE | PRESSURE_RISING | NO TRADE INSTRUCTION"
+    else if gateTxt == "CLEARING"
+        out := "SAFE_DRIVE | FORCE CLEARING | WATCH NEXT"
+    out
+
+f_reasonTxt(int r) =>
+    r == 7 ? "MISS" :
+     r == 6 ? "WAIT" :
+     r == 5 ? "SETUP" :
+     r == 4 ? "BLOCK" :
+     r == 3 ? "RISK_FADE" :
+     r == 2 ? "RISK" :
+     r == 1 ? "FAIL" : "NONE"
+
+f_sideTxt(int d) =>
+    string txt = "NEUTRAL"
+    if d > 0
+        txt := "UP"
+    else if d < 0
+        txt := "DOWN"
+    txt
+
+f_powerFlowTxt(float slope, float delta) =>
+    string txt = "FLAT"
+    if slope > 0 and delta > 0
+        txt := "UP_ACCEL"
+    else if slope > 0
+        txt := "UP"
+    else if slope < 0 and delta < 0
+        txt := "DOWN_ACCEL"
+    else if slope < 0
+        txt := "DOWN"
+    txt
+
+f_jsonPair(string key, string val) =>
+    "\"" + key + "\":\"" + val + "\""
+
+f_jsonNumPair(string key, string val) =>
+    "\"" + key + "\":" + val
+
+f_perAlertJson(string eventState, string warningType, string warningSide, string riskLevel, string mainTfCandidate, string powerFlow, string closeReason, string ecTxt, string esTxt, string gpTxt, string gawCodeTxt, string gawLineTxt) =>
+    "{" +
+     f_jsonPair("source", "PER_A") + "," +
+     f_jsonPair("system", "AiLynx") + "," +
+     f_jsonPair("role", "defense_validation") + "," +
+     f_jsonPair("gv", "GV3") + "," +
+     f_jsonPair("ec", ecTxt) + "," +
+     f_jsonNumPair("es", esTxt) + "," +
+     f_jsonPair("gp", gpTxt) + "," +
+     f_jsonPair("symbol", syminfo.tickerid) + "," +
+     f_jsonPair("timeframe", timeframe.period) + "," +
+     f_jsonPair("time", str.tostring(time)) + "," +
+     f_jsonPair("price", str.tostring(close, format.mintick)) + "," +
+     f_jsonPair("eventState", eventState) + "," +
+     f_jsonPair("warningType", warningType) + "," +
+     f_jsonPair("warningSide", warningSide) + "," +
+     f_jsonPair("riskLevel", riskLevel) + "," +
+     f_jsonPair("mainTfCandidate", mainTfCandidate) + "," +
+     f_jsonPair("powerFlow", powerFlow) + "," +
+     f_jsonPair("closeReason", closeReason) + "," +
+     f_jsonPair("gaw_code", gawCodeTxt) + "," +
+     f_jsonPair("gaw_line", gawLineTxt) + "," +
+     f_jsonPair("note", "PER_A_STRATEGY_ALERT_EXPERIMENT") +
+     "}"
+
+f_histChar(float x) =>
+    x >= 3 ? "+" : x <= -3 ? "-" : "."
+
+//==================================================
+// 소스 정규화
+//==================================================
+bool sourceConnected =
+     math.abs(nz(srcGenutDir, 999)) <= 1 and
+     nz(srcGenutState, 999) >= -10 and nz(srcGenutState, 999) <= 10 and
+     nz(srcGenutRisk, 999) >= 0 and nz(srcGenutRisk, 999) <= 2 and
+     nz(srcGenutTrigger, 999) >= 0 and nz(srcGenutTrigger, 999) <= 100 and
+     nz(srcGenutBase, 999) >= 0 and nz(srcGenutBase, 999) <= 100 and
+     nz(srcGenutStruct, 999) >= 0 and nz(srcGenutStruct, 999) <= 100 and
+     nz(srcGenutAlign, 999) >= 0 and nz(srcGenutAlign, 999) <= 100 and
+     nz(srcGenutNet, 999) >= -100 and nz(srcGenutNet, 999) <= 100 and
+     nz(srcGenutExecBlend, 999) >= 0 and nz(srcGenutExecBlend, 999) <= 100 and
+     nz(srcGenutActiveCnt, 999) >= 0 and nz(srcGenutActiveCnt, 999) <= 9 and
+     nz(srcGenutCoreActive, 999) >= 0 and nz(srcGenutCoreActive, 999) <= 9 and
+     nz(srcGenutAuxActive, 999) >= 0 and nz(srcGenutAuxActive, 999) <= 9 and
+     nz(srcGenutFailCnt, 999) >= 0 and nz(srcGenutFailCnt, 999) <= 9 and
+     nz(srcGenutTotal, 999) >= 0 and nz(srcGenutTotal, 999) <= 100 and
+     nz(srcGenutLongOK, 999) >= 0 and nz(srcGenutLongOK, 999) <= 1 and
+     nz(srcGenutShortOK, 999) >= 0 and nz(srcGenutShortOK, 999) <= 1 and
+     nz(srcGenutWaitFlag, 999) >= 0 and nz(srcGenutWaitFlag, 999) <= 1 and
+     nz(srcGenutExitOK, 999) >= 0 and nz(srcGenutExitOK, 999) <= 1 and
+     nz(srcGenutBlockFlag, 999) >= 0 and nz(srcGenutBlockFlag, 999) <= 1 and
+     nz(srcGenutBarConf, 999) >= 0 and nz(srcGenutBarConf, 999) <= 1 and
+     nz(srcGenutFlowShift, 999) >= -5 and nz(srcGenutFlowShift, 999) <= 5
+
+int genutDir = sourceConnected ? (nz(srcGenutDir, 0) > 0 ? 1 : nz(srcGenutDir, 0) < 0 ? -1 : 0) : 0
+int genutState = sourceConnected ? int(math.round(nz(srcGenutState, 0))) : 0
+int genutRisk = sourceConnected ? int(math.round(nz(srcGenutRisk, 0))) : 2
+float triggerScore = sourceConnected ? nz(srcGenutTrigger, 0) : 0
+float baseScore = sourceConnected ? nz(srcGenutBase, 0) : 0
+float structScore = sourceConnected ? nz(srcGenutStruct, 0) : 0
+float alignScore = sourceConnected ? nz(srcGenutAlign, 0) : 0
+float netScore = sourceConnected ? nz(srcGenutNet, 0) : 0
+float execBlend = sourceConnected ? nz(srcGenutExecBlend, 0) : 0
+int activeCount = sourceConnected ? int(math.round(nz(srcGenutActiveCnt, 0))) : 0
+int coreActive = sourceConnected ? int(math.round(nz(srcGenutCoreActive, 0))) : 0
+int auxActive = sourceConnected ? int(math.round(nz(srcGenutAuxActive, 0))) : 0
+int failCount = sourceConnected ? int(math.round(nz(srcGenutFailCnt, 0))) : 9
+float totalScore = sourceConnected ? nz(srcGenutTotal, 0) : 0
+bool genutLongOK = sourceConnected ? nz(srcGenutLongOK, 0) > 0 : false
+bool genutShortOK = sourceConnected ? nz(srcGenutShortOK, 0) > 0 : false
+bool genutWait = sourceConnected ? nz(srcGenutWaitFlag, 0) > 0 : true
+bool genutExit = sourceConnected ? nz(srcGenutExitOK, 0) > 0 : false
+bool genutBlock = sourceConnected ? nz(srcGenutBlockFlag, 0) > 0 : true
+int blockReason = sourceConnected ? int(math.round(nz(srcGenutBlockReason, 0))) : 7
+bool barConfirmed = sourceConnected ? nz(srcGenutBarConf, 0) > 0 : false
+float flowDelta = sourceConnected ? nz(srcGenutFlowDelta, 0) : 0
+float flowSlope = sourceConnected ? nz(srcGenutFlowSlope, 0) : 0
+int flowUp = sourceConnected ? int(math.round(nz(srcGenutFlowUp, 0))) : 0
+int flowDn = sourceConnected ? int(math.round(nz(srcGenutFlowDn, 0))) : 0
+int flowShift = sourceConnected ? int(math.round(nz(srcGenutFlowShift, 0))) : 0
+bool optRiskBlockScoreOk = nz(srcGenutRiskBlockScore, 999) >= 0 and nz(srcGenutRiskBlockScore, 999) <= 100
+bool optTrapPressureScoreOk = nz(srcGenutTrapPressureScore, 999) >= 0 and nz(srcGenutTrapPressureScore, 999) <= 100
+bool optFlowShiftStrongOk = nz(srcGenutFlowShiftStrong, 999) >= 0 and nz(srcGenutFlowShiftStrong, 999) <= 1
+bool optExitStrongOk = nz(srcGenutExitStrong, 999) >= 0 and nz(srcGenutExitStrong, 999) <= 1
+bool optEntrySuppressOk = nz(srcGenutEntrySuppress, 999) >= 0 and nz(srcGenutEntrySuppress, 999) <= 1
+bool optHardExitOkOk = nz(srcGenutHardExitOk, 999) >= 0 and nz(srcGenutHardExitOk, 999) <= 1
+float genutRiskBlockScore = optRiskBlockScoreOk ? nz(srcGenutRiskBlockScore, 0) : 0
+float genutTrapPressureScore = optTrapPressureScoreOk ? nz(srcGenutTrapPressureScore, 0) : 0
+bool genutFlowShiftStrong = optFlowShiftStrongOk and nz(srcGenutFlowShiftStrong, 0) > 0.5
+bool genutExitStrong = optExitStrongOk and nz(srcGenutExitStrong, 0) > 0.5
+bool genutEntrySuppress = optEntrySuppressOk and nz(srcGenutEntrySuppress, 0) > 0.5
+bool genutHardExitOk = optHardExitOkOk and nz(srcGenutHardExitOk, 0) > 0.5
+bool optForceScoreOk = nz(srcGenutForceScore, 999) >= 0 and nz(srcGenutForceScore, 999) <= 100
+bool optForceFadeScoreOk = nz(srcGenutForceFadeScore, 999) >= 0 and nz(srcGenutForceFadeScore, 999) <= 100
+bool optHetemGateScoreOk = nz(srcGenutHetemGateScore, 999) >= 0 and nz(srcGenutHetemGateScore, 999) <= 100
+bool optHetemPressureIndexOk = nz(srcGenutHetemPressureIndex, 999) >= 0 and nz(srcGenutHetemPressureIndex, 999) <= 100
+bool optHetemGateStateCodeOk = nz(srcGenutHetemGateStateCode, 999) >= 0 and nz(srcGenutHetemGateStateCode, 999) <= 5
+bool optHetemEventCodeOk = nz(srcGenutHetemEventCode, 999) >= 0 and nz(srcGenutHetemEventCode, 999) <= 999
+bool optTfRoleCodeOk = nz(srcGenutTfRoleCode, 999) >= 0 and nz(srcGenutTfRoleCode, 999) <= 20
+bool optNextTfHintCodeOk = nz(srcGenutNextTfHintCode, 999) >= 0 and nz(srcGenutNextTfHintCode, 999) <= 20
+bool optModeCodeOk = nz(srcGenutModeCode, 999) >= 0 and nz(srcGenutModeCode, 999) <= 20
+bool optEventCodeOk = nz(srcGenutEventCode, 999) >= 0 and nz(srcGenutEventCode, 999) <= 999
+bool optFlowWeakOnlyOk = nz(srcGenutFlowWeakOnly, 999) >= 0 and nz(srcGenutFlowWeakOnly, 999) <= 1
+bool optCompatLiftAllowedOk = nz(srcGenutCompatLiftAllowed, 999) >= 0 and nz(srcGenutCompatLiftAllowed, 999) <= 1
+float hetemForceScore = optForceScoreOk ? nz(srcGenutForceScore, 0) : totalScore
+float hetemForceFadeScore = optForceFadeScoreOk ? nz(srcGenutForceFadeScore, 0) : math.max(genutRiskBlockScore, genutTrapPressureScore)
+float hetemGateScore = optHetemGateScoreOk ? nz(srcGenutHetemGateScore, 0) : (genutBlock ? 0.0 : totalScore)
+float hetemPressureIndex = optHetemPressureIndexOk ? nz(srcGenutHetemPressureIndex, 0) : math.max(genutRiskBlockScore, genutTrapPressureScore)
+float hetemGateStateCode = optHetemGateStateCodeOk ? nz(srcGenutHetemGateStateCode, 0) : (genutHardExitOk or genutBlock) ? 2.0 : genutRisk >= 2 ? 5.0 : genutWait ? 0.0 : totalScore >= 60 ? 1.0 : 3.0
+float hetemEventCode = optHetemEventCodeOk ? nz(srcGenutHetemEventCode, 0) : optEventCodeOk ? nz(srcGenutEventCode, 0) : 100.0
+float hetemModeCode = optModeCodeOk ? nz(srcGenutModeCode, 0) : 0.0
+float hetemTfRoleCode = optTfRoleCodeOk ? nz(srcGenutTfRoleCode, 0) : 0.0
+float hetemNextTfCode = optNextTfHintCodeOk ? nz(srcGenutNextTfHintCode, 0) : 0.0
+bool hetemFlowWeakOnly = optFlowWeakOnlyOk and nz(srcGenutFlowWeakOnly, 0) > 0.5
+bool hetemCompatLiftAllowed = optCompatLiftAllowedOk and nz(srcGenutCompatLiftAllowed, 0) > 0.5
+string hetemGateState = f_gateStateText(hetemGateStateCode)
+string hetemEventText = f_hetemEventTextA(hetemEventCode)
+
+string flowHist = "MISS"
+if sourceConnected
+    flowHist := f_histChar(nz(srcGenutFlowDelta[4], 0)) + f_histChar(nz(srcGenutFlowDelta[3], 0)) + f_histChar(nz(srcGenutFlowDelta[2], 0)) + f_histChar(nz(srcGenutFlowDelta[1], 0)) + f_histChar(nz(srcGenutFlowDelta, 0))
+
+//==================================================
+// PER 로직
+//==================================================
+bool longBase = sourceConnected and genutLongOK and genutDir > 0 and genutState >= 1 and genutRisk <= CFG_MAX_RISK and totalScore >= CFG_MIN_TOTAL and triggerScore >= CFG_MIN_TRIGGER and baseScore >= CFG_MIN_BASE and structScore >= CFG_MIN_STRUCT and alignScore >= CFG_MIN_ALIGN and activeCount >= CFG_MIN_ACTIVE and netScore >= CFG_MIN_NET and execBlend >= CFG_MIN_EXEC and failCount <= CFG_MAX_FAIL and not genutBlock and barConfirmed
+bool shortBase = sourceConnected and genutShortOK and genutDir < 0 and genutState >= 1 and genutRisk <= CFG_MAX_RISK and totalScore >= CFG_MIN_TOTAL and triggerScore >= CFG_MIN_TRIGGER and baseScore >= CFG_MIN_BASE and structScore >= CFG_MIN_STRUCT and alignScore >= CFG_MIN_ALIGN and activeCount >= CFG_MIN_ACTIVE and netScore >= CFG_MIN_NET and execBlend >= CFG_MIN_EXEC and failCount <= CFG_MAX_FAIL and not genutBlock and barConfirmed
+
+var int longStreak = 0
+var int shortStreak = 0
+longStreak := longBase ? nz(longStreak[1]) + 1 : 0
+shortStreak := shortBase ? nz(shortStreak[1]) + 1 : 0
+bool longConfirmed = longStreak >= CFG_CONFIRM
+bool shortConfirmed = shortStreak >= CFG_CONFIRM
+
+var int lastEntryBar = na
+var int vPos = 0
+var float vEntryPrice = na
+
+bool inLongPrev = vPos > 0
+bool inShortPrev = vPos < 0
+bool longExitNow = inLongPrev and (genutDir <= 0 or totalScore < CFG_HOLD_SCORE or genutRisk >= CFG_EXIT_RISK or genutBlock or genutExit or failCount > 0 or flowSlope < 0 or not sourceConnected)
+bool shortExitNow = inShortPrev and (genutDir >= 0 or totalScore < CFG_HOLD_SCORE or genutRisk >= CFG_EXIT_RISK or genutBlock or genutExit or failCount > 0 or flowSlope > 0 or not sourceConnected)
+
+bool exitPulse = false
+if longExitNow and vPos > 0
+    vPos := 0
+    vEntryPrice := na
+    exitPulse := true
+if shortExitNow and vPos < 0
+    vPos := 0
+    vEntryPrice := na
+    exitPulse := true
+
+bool cooldownOK = na(lastEntryBar) or (bar_index - lastEntryBar > CFG_COOLDOWN)
+bool enterLong = longConfirmed and cooldownOK and (vPos == 0 or vPos < 0)
+bool enterShort = shortConfirmed and cooldownOK and (vPos == 0 or vPos > 0)
+
+if enterLong
+    vPos := 1
+    vEntryPrice := close
+    lastEntryBar := bar_index
+
+if enterShort
+    vPos := -1
+    vEntryPrice := close
+    lastEntryBar := bar_index
+
+bool inLong = vPos > 0
+bool inShort = vPos < 0
+float vQty = not na(vEntryPrice) and vEntryPrice > 0 ? (CFG_VIRTUAL_CASH / vEntryPrice) : 0.0
+float virtualPnl = inLong and not na(vEntryPrice) ? (close - vEntryPrice) * vQty : inShort and not na(vEntryPrice) ? (vEntryPrice - close) * vQty : 0.0
+
+int aDir = genutDir
+int aRisk = not sourceConnected ? 2 : (genutBlock or failCount > 0 ? 1 : genutRisk)
+float aTotal = totalScore
+bool aBlock = genutBlock or failCount > 0 or not sourceConnected
+int aReason = not sourceConnected ? 7 : genutBlock ? 4 : genutExit ? 3 : genutRisk >= 2 ? 2 : (longConfirmed or shortConfirmed ? 5 : genutWait ? 6 : blockReason)
+bool perLong = longConfirmed and not aBlock
+bool perShort = shortConfirmed and not aBlock
+bool perWait = not perLong and not perShort and vPos == 0
+bool perExit = exitPulse or genutExit
+
+int perState = 0
+if aBlock
+    perState := 4
+else if inLong or inShort
+    perState := 3
+else if perLong or perShort
+    perState := 1
+else if longBase or shortBase
+    perState := 2
+else
+    perState := 0
+
+string logCode = enterLong ? "UP_OBS" : enterShort ? "DOWN_OBS" : perExit ? "RISK_FADE" : aBlock ? "BLOCK" : perWait ? "WAIT" : "IDLE"
+int logNum = enterLong ? 1 : enterShort ? -1 : perExit ? 2 : aBlock ? -2 : perWait ? 0 : 9
+
+//==================================================
+// 이벤트 검증
+//==================================================
+bool prevPerLong = bar_index > 0 ? perLong[1] : false
+bool prevPerShort = bar_index > 0 ? perShort[1] : false
+bool prevPerExit = bar_index > 0 ? perExit[1] : false
+bool prevABlock = bar_index > 0 ? aBlock[1] : false
+bool prevSourceConnected = bar_index > 0 ? sourceConnected[1] : true
+
+bool eventBlockOn = aBlock and not prevABlock
+bool eventBlockOff = (not aBlock) and prevABlock
+bool eventFlowShift = sourceConnected and flowShift != 0
+bool eventExit = perExit and not prevPerExit
+bool eventHold = sourceConnected and genutState == 3 and nz(genutState[1], 0) < 3
+bool eventLinkIssue = (not sourceConnected) and prevSourceConnected
+
+int eventCode =
+     eventLinkIssue ? 6 :
+     eventHold ? 5 :
+     eventExit ? 4 :
+     eventFlowShift ? 3 :
+     eventBlockOff ? 2 :
+     eventBlockOn ? 1 : 0
+
+string eventText =
+     eventCode == 6 ? "LINK_ISSUE" :
+     eventCode == 5 ? "HOLD" :
+     eventCode == 4 ? "RISK_FADE" :
+     eventCode == 3 ? "FLOW_SHIFT" :
+     eventCode == 2 ? "GATE_CLEARING" :
+     eventCode == 1 ? "GATE_BLOCKED" : "NONE"
+
+var int blockOnCount = 0
+var int blockOffCount = 0
+var int flowShiftCount = 0
+var int exitCount = 0
+var int holdCount = 0
+var int linkIssueCount = 0
+
+if eventBlockOn
+    blockOnCount += 1
+if eventBlockOff
+    blockOffCount += 1
+if eventFlowShift
+    flowShiftCount += 1
+if eventExit
+    exitCount += 1
+if eventHold
+    holdCount += 1
+if eventLinkIssue
+    linkIssueCount += 1
+
+bool pressureLongProbe = sourceConnected and aDir > 0 and totalScore >= probeTotalMin and (genutLongOK or netScore > 0 or flowSlope > 0)
+bool pressureShortProbe = sourceConnected and aDir < 0 and totalScore >= probeTotalMin and (genutShortOK or netScore < 0 or flowSlope < 0)
+bool flowLongProbe = sourceConnected and eventFlowShift and (flowShift > 0 or (flowShift == 2 and aDir > 0) or flowSlope >= probeFlowMin)
+bool flowShortProbe = sourceConnected and eventFlowShift and (flowShift < 0 or (flowShift == 2 and aDir < 0) or flowSlope <= -probeFlowMin)
+
+bool modeStrict = tradeMode == "STRICT_PER"
+bool modePressure = tradeMode == "PRESSURE_PROBE"
+bool modeFlow = tradeMode == "FLOW_PROBE"
+bool modeHybrid = tradeMode == "HYBRID_PROBE"
+
+bool probeModeActive = modePressure or modeFlow or modeHybrid
+bool probeEntryActive = allowProbeEntries and probeModeActive
+bool rawStrictLong = enterLong
+bool rawStrictShort = enterShort
+bool rawBalancedBase = sourceConnected and not aBlock and totalScore >= 55 and triggerScore >= 10 and baseScore >= 10 and structScore >= 0 and alignScore >= 50 and activeCount >= 3 and genutRisk <= 1 and failCount <= 0 and (not useBarConfirmedFilter or barConfirmed)
+bool rawBalancedLong = rawBalancedBase and aDir > 0 and (genutLongOK or netScore > 0 or flowSlope > 0)
+bool rawBalancedShort = rawBalancedBase and aDir < 0 and (genutShortOK or netScore < 0 or flowSlope < 0)
+bool rawLooseBase = sourceConnected and not aBlock and totalScore >= 45 and activeCount >= 2 and aDir != 0
+bool rawLooseLong = rawLooseBase and aDir > 0 and (genutLongOK or netScore > 0)
+bool rawLooseShort = rawLooseBase and aDir < 0 and (genutShortOK or netScore < 0)
+bool rawExitAuditBase = sourceConnected and not aBlock and aDir != 0 and totalScore >= 45 and activeCount >= 2
+bool rawExitAuditLong = rawExitAuditBase and aDir > 0
+bool rawExitAuditShort = rawExitAuditBase and aDir < 0
+bool rawProbeLong = probeEntryActive ? (modePressure ? pressureLongProbe : modeFlow ? flowLongProbe : (pressureLongProbe or flowLongProbe)) : false
+bool rawProbeShort = probeEntryActive ? (modePressure ? pressureShortProbe : modeFlow ? flowShortProbe : (pressureShortProbe or flowShortProbe)) : false
+bool rawDefenseLong = defenseSensitivity == "STRICT" ? rawStrictLong : (defenseSensitivity == "BALANCED" or defenseSensitivity == "DEFENSE_PROTECT") ? rawBalancedLong : defenseSensitivity == "LOOSE" ? rawLooseLong : rawExitAuditLong
+bool rawDefenseShort = defenseSensitivity == "STRICT" ? rawStrictShort : (defenseSensitivity == "BALANCED" or defenseSensitivity == "DEFENSE_PROTECT") ? rawBalancedShort : defenseSensitivity == "LOOSE" ? rawLooseShort : rawExitAuditShort
+bool rawShadowLong = rawDefenseLong or rawProbeLong
+bool rawShadowShort = rawDefenseShort or rawProbeShort
+
+var int lastShadowEntryBar = na
+var int lastDefenseExitBar = na
+var int defenseEntryBar = na
+var float defenseHighSinceEntry = na
+var float defenseLowSinceEntry = na
+
+int positionSide = strategy.position_size > 0 ? 1 : strategy.position_size < 0 ? -1 : 0
+float prevPositionSize = nz(strategy.position_size[1], 0.0)
+int prevPositionSide = prevPositionSize > 0 ? 1 : prevPositionSize < 0 ? -1 : 0
+if positionSide == 0
+    defenseEntryBar := na
+    defenseHighSinceEntry := na
+    defenseLowSinceEntry := na
+else if na(defenseEntryBar) or positionSide != prevPositionSide
+    defenseEntryBar := bar_index
+    defenseHighSinceEntry := high
+    defenseLowSinceEntry := low
+else
+    defenseHighSinceEntry := na(defenseHighSinceEntry) ? high : math.max(defenseHighSinceEntry, high)
+    defenseLowSinceEntry := na(defenseLowSinceEntry) ? low : math.min(defenseLowSinceEntry, low)
+
+int positionAge = not na(defenseEntryBar) ? bar_index - defenseEntryBar : 0
+
+float currentTradePnlPct = positionSide > 0 and strategy.position_avg_price > 0 ? (close / strategy.position_avg_price - 1.0) * 100.0 : positionSide < 0 and strategy.position_avg_price > 0 ? (strategy.position_avg_price / close - 1.0) * 100.0 : 0.0
+float positionMfePct = positionSide > 0 and strategy.position_avg_price > 0 and not na(defenseHighSinceEntry) ? (defenseHighSinceEntry / strategy.position_avg_price - 1.0) * 100.0 : positionSide < 0 and strategy.position_avg_price > 0 and not na(defenseLowSinceEntry) ? (strategy.position_avg_price / defenseLowSinceEntry - 1.0) * 100.0 : 0.0
+bool mfeReached = positionSide != 0 and positionMfePct >= breakEvenAfterPct
+bool profitProtectActive = positionSide != 0 and positionMfePct >= breakEvenAfterPct
+bool trailProtectActive = positionSide != 0 and positionMfePct >= trailAfterMfePct
+bool hardProfitProtectActive = positionSide != 0 and positionMfePct >= protectProfitAfterPct
+
+float totalDropNow = math.max(0.0, nz(totalScore[1], totalScore) - totalScore)
+float flowDropNow = math.max(0.0, nz(flowSlope[1], flowSlope) - flowSlope)
+float flowRiseNow = math.max(0.0, flowSlope - nz(flowSlope[1], flowSlope))
+int activeDropNow = int(math.max(0, nz(activeCount[1], activeCount) - activeCount))
+bool exitTotalDropOk = totalDropNow >= exitTotalDropMin or totalScore < CFG_HOLD_SCORE
+bool exitFlowDeteriorationOk = (positionSide > 0 and (flowSlope <= -exitFlowDeteriorationMin or flowDropNow >= exitFlowDeteriorationMin)) or (positionSide < 0 and (flowSlope >= exitFlowDeteriorationMin or flowRiseNow >= exitFlowDeteriorationMin))
+bool exitDirectionMismatchOk = (positionSide > 0 and aDir <= 0) or (positionSide < 0 and aDir >= 0)
+bool exitActiveWeakeningOk = activeDropNow >= exitActiveWeakeningMin or activeCount < 3
+bool exitStrictOk = eventExit and (not useStrictExitFilter or exitTotalDropOk or exitFlowDeteriorationOk or exitDirectionMismatchOk or exitActiveWeakeningOk)
+bool flowStrongOpposite = positionSide != 0 and eventFlowShift and ((positionSide > 0 and (aDir < 0 or genutShortOK or flowShift < 0 or flowSlope <= -flowStrongOppositeMin or (flowDelta < 0 and flowSlope < 0))) or (positionSide < 0 and (aDir > 0 or genutLongOK or flowShift > 0 or flowSlope >= flowStrongOppositeMin or (flowDelta > 0 and flowSlope > 0))))
+
+bool defenseBlockExit = closeOnBlock and positionSide != 0 and eventBlockOn
+bool defenseFlowExit = closeOnFlowShift and flowStrongOpposite
+bool defenseExitSignal = closeOnExit and positionSide != 0 and exitStrictOk
+bool defenseLinkExit = closeOnLinkIssue and positionSide != 0 and (eventLinkIssue or not sourceConnected)
+bool defenseTimeExit = maxBarsInTrade > 0 and positionSide != 0 and positionAge >= maxBarsInTrade
+bool defenseExitNow = defenseBlockExit or defenseFlowExit or defenseExitSignal or defenseLinkExit or defenseTimeExit
+
+if defenseExitNow
+    lastDefenseExitBar := bar_index
+
+bool defenseCooldownActive = not na(lastDefenseExitBar) and bar_index - lastDefenseExitBar <= defenseCooldownBars
+bool shadowCooldownOK = na(lastShadowEntryBar) or (bar_index - lastShadowEntryBar > probeCooldownBars)
+bool blockAllowsProbe = allowProbeInBlock or not aBlock
+int tfModeCode = timeframeMode == "HTF_DEFENSE" ? 0 : timeframeMode == "LTF_AUDIT" ? 1 : 2
+bool defenseEntryAllowed = sourceConnected and blockAllowsProbe and shadowCooldownOK and not defenseCooldownActive and not eventLinkIssue
+bool shadowEnterLong = rawShadowLong and defenseEntryAllowed and strategy.position_size <= 0
+bool shadowEnterShort = rawShadowShort and defenseEntryAllowed and strategy.position_size >= 0
+
+float selectedTotalMin = defenseSensitivity == "STRICT" ? CFG_MIN_TOTAL : (defenseSensitivity == "BALANCED" or defenseSensitivity == "DEFENSE_PROTECT") ? 55.0 : 45.0
+int selectedActiveMin = defenseSensitivity == "STRICT" ? CFG_MIN_ACTIVE : (defenseSensitivity == "BALANCED" or defenseSensitivity == "DEFENSE_PROTECT") ? 3 : 2
+bool selectedTotalTooLow = totalScore < selectedTotalMin
+bool selectedSubscoreTooLow = defenseSensitivity == "STRICT" ? (triggerScore < CFG_MIN_TRIGGER or baseScore < CFG_MIN_BASE or structScore < CFG_MIN_STRUCT or alignScore < CFG_MIN_ALIGN or netScore < CFG_MIN_NET or execBlend < CFG_MIN_EXEC) : (defenseSensitivity == "BALANCED" or defenseSensitivity == "DEFENSE_PROTECT") ? (triggerScore < 10 or baseScore < 10 or structScore < 0 or alignScore < 50) : false
+bool selectedActiveTooLow = activeCount < selectedActiveMin
+bool selectedBarMissing = defenseSensitivity == "STRICT" ? not barConfirmed : (defenseSensitivity == "BALANCED" or defenseSensitivity == "DEFENSE_PROTECT") and useBarConfirmedFilter and not barConfirmed
+bool selectedRiskFailBlocked = defenseSensitivity == "STRICT" ? (genutRisk > CFG_MAX_RISK or failCount > CFG_MAX_FAIL) : (defenseSensitivity == "BALANCED" or defenseSensitivity == "DEFENSE_PROTECT") ? (genutRisk > 1 or failCount > 0) : false
+bool selectedDirectionMismatch = sourceConnected and not selectedTotalTooLow and not selectedSubscoreTooLow and not selectedActiveTooLow and not selectedBarMissing and not selectedRiskFailBlocked and not (rawDefenseLong or rawDefenseShort)
+int entryRejectCode =
+     not sourceConnected ? 1 :
+     aBlock ? 2 :
+     (defenseCooldownActive or not shadowCooldownOK) ? 4 :
+     selectedTotalTooLow ? 5 :
+     selectedSubscoreTooLow ? 6 :
+     selectedActiveTooLow ? 7 :
+     selectedDirectionMismatch ? 8 :
+     selectedBarMissing ? 9 :
+     selectedRiskFailBlocked ? 10 : 0
+
+int defenseReasonCode =
+     defenseBlockExit ? 1 :
+     defenseFlowExit ? 2 :
+     profitProtectActive ? 5 :
+     defenseExitSignal ? 3 :
+     defenseLinkExit ? 4 :
+     defenseTimeExit ? 6 :
+     defenseCooldownActive ? 7 :
+     not sourceConnected ? 8 :
+     aBlock ? 9 : 0
+
+float protectProfitLockPct = protectProfitAfterPct * 0.5
+float longEmergencyStop = useStopLoss and strategy.position_size > 0 ? strategy.position_avg_price * (1.0 - stopLossPct * 0.01) : na
+float longBreakEvenStop = strategy.position_size > 0 and mfeReached ? strategy.position_avg_price : na
+float longProtectStop = strategy.position_size > 0 and hardProfitProtectActive ? strategy.position_avg_price * (1.0 + protectProfitLockPct * 0.01) : na
+float longTrailStop = strategy.position_size > 0 and trailProtectActive and not na(defenseHighSinceEntry) ? defenseHighSinceEntry * (1.0 - trailGivebackPct * 0.01) : na
+float longStop = f_maxMaybe(f_maxMaybe(longEmergencyStop, longBreakEvenStop), f_maxMaybe(longProtectStop, longTrailStop))
+float longLimit = useTakeProfit and strategy.position_size > 0 ? strategy.position_avg_price * (1.0 + takeProfitPct * 0.01) : na
+float shortEmergencyStop = useStopLoss and strategy.position_size < 0 ? strategy.position_avg_price * (1.0 + stopLossPct * 0.01) : na
+float shortBreakEvenStop = strategy.position_size < 0 and mfeReached ? strategy.position_avg_price : na
+float shortProtectStop = strategy.position_size < 0 and hardProfitProtectActive ? strategy.position_avg_price * (1.0 - protectProfitLockPct * 0.01) : na
+float shortTrailStop = strategy.position_size < 0 and trailProtectActive and not na(defenseLowSinceEntry) ? defenseLowSinceEntry * (1.0 + trailGivebackPct * 0.01) : na
+float shortStop = f_minMaybe(f_minMaybe(shortEmergencyStop, shortBreakEvenStop), f_minMaybe(shortProtectStop, shortTrailStop))
+float shortLimit = useTakeProfit and strategy.position_size < 0 ? strategy.position_avg_price * (1.0 - takeProfitPct * 0.01) : na
+bool stopLossHit = (strategy.position_size > 0 and not na(longStop) and low <= longStop) or (strategy.position_size < 0 and not na(shortStop) and high >= shortStop)
+if stopLossHit
+    lastDefenseExitBar := bar_index
+
+string defenseCloseReason = "NONE"
+if defenseBlockExit
+    defenseCloseReason := "GATE_BLOCKED"
+else if defenseExitSignal
+    defenseCloseReason := "RISK_FADE_STRICT"
+else if defenseFlowExit
+    defenseCloseReason := "OPP_FLOW"
+else if defenseLinkExit
+    defenseCloseReason := "LINK_ISSUE"
+else if stopLossHit and strategy.position_size > 0
+    defenseCloseReason := "UP_RISK"
+else if stopLossHit and strategy.position_size < 0
+    defenseCloseReason := "DOWN_RISK"
+else if defenseTimeExit
+    defenseCloseReason := "TIME_GUARD"
+
+bool hardBlockRaw = sourceConnected and (genutHardExitOk or genutEntrySuppress or (optRiskBlockScoreOk and genutRiskBlockScore >= 85))
+bool prevHardBlockRaw = bar_index > 0 ? hardBlockRaw[1] : false
+bool warnHardBlock = hardBlockRaw and not prevHardBlockRaw
+bool conflictRaw = sourceConnected and ((genutLongOK and genutShortOK) or (aDir == 0 and totalScore >= 55 and activeCount >= 3 and math.abs(netScore) <= 10))
+bool prevConflictRaw = bar_index > 0 ? conflictRaw[1] : false
+bool warnConflict = conflictRaw and not prevConflictRaw
+bool trapRaw = sourceConnected and optTrapPressureScoreOk and genutTrapPressureScore >= 72
+bool prevTrapRaw = bar_index > 0 ? trapRaw[1] : false
+bool warnTrap = trapRaw and not prevTrapRaw
+bool fakeoutRaw = sourceConnected and (genutEntrySuppress or (eventFlowShift and ((flowShift < 0 and nz(genutDir[1], 0) > 0) or (flowShift > 0 and nz(genutDir[1], 0) < 0))))
+bool prevFakeoutRaw = bar_index > 0 ? fakeoutRaw[1] : false
+bool warnFakeout = fakeoutRaw and not prevFakeoutRaw
+bool flowFatigueRaw = sourceConnected and activeCount > 0 and ((aDir > 0 and (flowDropNow >= exitFlowDeteriorationMin or flowSlope <= -probeFlowMin)) or (aDir < 0 and (flowRiseNow >= exitFlowDeteriorationMin or flowSlope >= probeFlowMin)))
+bool prevFlowFatigueRaw = bar_index > 0 ? flowFatigueRaw[1] : false
+bool warnFlowFatigue = flowFatigueRaw and not prevFlowFatigueRaw
+bool warnALRisk = strategy.position_size > 0 and stopLossHit
+bool warnASRisk = strategy.position_size < 0 and stopLossHit
+bool warnLinkIssue = eventLinkIssue
+
+string alertEventState = "NONE"
+string alertWarningType = "WARN_NONE"
+string alertWarningSide = f_sideTxt(aDir)
+int alertWarningLevel = 0
+if warnLinkIssue
+    alertEventState := "LINK_ISSUE"
+    alertWarningType := "WARN_LINK_ISSUE"
+    alertWarningSide := "NEUTRAL"
+    alertWarningLevel := 2
+else if warnALRisk
+    alertEventState := "UP_RISK"
+    alertWarningType := "WARN_A_UP_RISK"
+    alertWarningSide := "UP"
+    alertWarningLevel := 2
+else if warnASRisk
+    alertEventState := "DOWN_RISK"
+    alertWarningType := "WARN_A_DOWN_RISK"
+    alertWarningSide := "DOWN"
+    alertWarningLevel := 2
+else if warnHardBlock
+    alertEventState := "HARD_BLOCK"
+    alertWarningType := "WARN_HARD_BLOCK"
+    alertWarningSide := f_sideTxt(aDir)
+    alertWarningLevel := 2
+else if eventBlockOn
+    alertEventState := "BLOCK_ON"
+    alertWarningType := "WARN_BLOCK_ON"
+    alertWarningSide := f_sideTxt(aDir)
+    alertWarningLevel := 1
+else if warnTrap
+    alertEventState := "TRAP"
+    alertWarningType := "WARN_TRAP"
+    alertWarningSide := f_sideTxt(aDir)
+    alertWarningLevel := genutTrapPressureScore >= 85 ? 2 : 1
+else if warnFakeout
+    alertEventState := "FAKEOUT"
+    alertWarningType := "WARN_FAKEOUT"
+    alertWarningSide := f_sideTxt(aDir)
+    alertWarningLevel := 1
+else if warnConflict
+    alertEventState := "CONFLICT"
+    alertWarningType := "WARN_CONFLICT"
+    alertWarningSide := "NEUTRAL"
+    alertWarningLevel := 1
+else if warnFlowFatigue
+    alertEventState := "FLOW_FATIGUE"
+    alertWarningType := "WARN_FLOW_FATIGUE"
+    alertWarningSide := f_sideTxt(aDir)
+    alertWarningLevel := 1
+
+string hetemBlockText = f_hetemBlockText(genutHardExitOk, genutEntrySuppress, aBlock)
+string hetemFlowText = f_hetemFlowText(flowShift, flowSlope)
+float hetemEventSeverity = f_clamp(math.max(math.max(hetemPressureIndex, genutRiskBlockScore), math.max(genutTrapPressureScore, hetemForceFadeScore)) + (aBlock ? 8.0 : 0.0) + (warnConflict ? 4.0 : 0.0), 0, 100)
+string hetemEc = f_gawEvent(hetemEventText)
+bool gawPolicyBlockPA = genutHardExitOk or aBlock or hetemGateState == "BLOCKED" or genutRiskBlockScore >= 78
+bool gawPolicyCheckPA = eventBlockOff or eventFlowShift or hetemGateState == "CLEARING" or hetemEventText == "FORCE_SHIFT" or hetemEventText == "FORCE_FADE_BLOCK"
+bool gawPolicyWaitPA = perWait or warnConflict or hetemGateState == "CONGESTED" or hetemEventText == "TRAP_WAIT"
+string gawPolicyPA = gawPolicyBlockPA ? "GP:BK" : gawPolicyCheckPA ? "GP:CK" : gawPolicyWaitPA ? "GP:WT" : "GP:ON"
+string gawSchemaVersionPA = "GV3"
+string gawCodePA = gawSchemaVersionPA + "|TF:" + timeframe.period + "|EC:" + hetemEc + "|ES:" + f_numTxt(hetemEventSeverity) + "|" + gawPolicyPA + "|G:" + f_gawGate(hetemGateState) + "|P:" + f_gawBand(f_hetemBand(hetemPressureIndex)) + f_numTxt(hetemPressureIndex) + "|B:" + f_gawBlock(hetemBlockText)
+string gawLinePA = "GAW_V3; TF=" + timeframe.period + "; EC=" + hetemEc + "; ES=" + f_numTxt(hetemEventSeverity) + "; " + gawPolicyPA + "; GATE=" + hetemGateState + "; PRESSURE=" + f_hetemBand(hetemPressureIndex) + "_" + f_numTxt(hetemPressureIndex) + "; BLOCK=" + hetemBlockText
+
+string alertPowerFlow = f_powerFlowTxt(flowSlope, flowDelta)
+string alertRiskLevel = f_riskTxt(aRisk)
+string alertMainTfCandidate = timeframeMode
+string perAlertMessage = f_perAlertJson(alertEventState, alertWarningType, alertWarningSide, alertRiskLevel, alertMainTfCandidate, alertPowerFlow, defenseCloseReason, hetemEc, f_numTxt(hetemEventSeverity), gawPolicyPA, gawCodePA, gawLinePA)
+string perOrderCloseWarningType = "WARN_NONE"
+if defenseBlockExit
+    perOrderCloseWarningType := "WARN_BLOCK_ON"
+else if defenseLinkExit
+    perOrderCloseWarningType := "WARN_LINK_ISSUE"
+else if defenseFlowExit
+    perOrderCloseWarningType := "WARN_FLOW_FATIGUE"
+else if defenseExitSignal
+    perOrderCloseWarningType := genutHardExitOk ? "WARN_HARD_BLOCK" : "WARN_FLOW_FATIGUE"
+string perOrderCloseEventState = eventText == "NONE" ? "STATE_FADE" : eventText
+string perOrderCloseAlertMessage = f_perAlertJson(perOrderCloseEventState, perOrderCloseWarningType, f_sideTxt(positionSide), alertRiskLevel, alertMainTfCandidate, alertPowerFlow, defenseCloseReason, hetemEc, f_numTxt(hetemEventSeverity), gawPolicyPA, gawCodePA, gawLinePA)
+string perLongRiskAlertMessage = f_perAlertJson("UP_RISK", "WARN_A_UP_RISK", "UP", "RISK", alertMainTfCandidate, alertPowerFlow, "UP_RISK", hetemEc, f_numTxt(hetemEventSeverity), gawPolicyPA, gawCodePA, gawLinePA)
+string perShortRiskAlertMessage = f_perAlertJson("DOWN_RISK", "WARN_A_DOWN_RISK", "DOWN", "RISK", alertMainTfCandidate, alertPowerFlow, "DOWN_RISK", hetemEc, f_numTxt(hetemEventSeverity), gawPolicyPA, gawCodePA, gawLinePA)
+string perLongOpenAlertMessage = f_perAlertJson("OBS_START", "WARN_NONE", "UP", alertRiskLevel, alertMainTfCandidate, alertPowerFlow, "NONE", hetemEc, f_numTxt(hetemEventSeverity), gawPolicyPA, gawCodePA, gawLinePA)
+string perShortOpenAlertMessage = f_perAlertJson("OBS_START", "WARN_NONE", "DOWN", alertRiskLevel, alertMainTfCandidate, alertPowerFlow, "NONE", hetemEc, f_numTxt(hetemEventSeverity), gawPolicyPA, gawCodePA, gawLinePA)
+
+var int lastPerAlertBar = na
+bool perAlertAnyWarning = alertWarningType != "WARN_NONE"
+bool perAlertCooldownOK = na(lastPerAlertBar) or bar_index - lastPerAlertBar > perAlertCooldownBars
+bool perAlertConfirmedOK = not perAlertConfirmedOnly or barstate.isconfirmed
+bool perAlertReady = perLegacyAlertsOn and enablePerAlertExperiment and perAlertAnyWarning and alertWarningLevel >= perAlertMinWarningLevel and perAlertCooldownOK and perAlertConfirmedOK
+if perAlertReady
+    if perAlertFrequencyMode == "ONCE_PER_BAR"
+        alert(perAlertMessage, alert.freq_once_per_bar)
+    else
+        alert(perAlertMessage, alert.freq_once_per_bar_close)
+    lastPerAlertBar := bar_index
+
+string longEntryComment = defenseSensitivity == "STRICT" ? "STRICT_UP" : defenseSensitivity == "BALANCED" ? "BALANCED_UP" : defenseSensitivity == "LOOSE" ? "LOOSE_UP" : defenseSensitivity == "DEFENSE_PROTECT" ? "DEF_PROTECT_UP" : "RISK_AUDIT_UP"
+string shortEntryComment = defenseSensitivity == "STRICT" ? "STRICT_DOWN" : defenseSensitivity == "BALANCED" ? "BALANCED_DOWN" : defenseSensitivity == "LOOSE" ? "LOOSE_DOWN" : defenseSensitivity == "DEFENSE_PROTECT" ? "DEF_PROTECT_DOWN" : "RISK_AUDIT_DOWN"
+
+if enableShadowTrades and defenseBacktestMode
+    if defenseExitNow
+        strategy.close("A-LONG", comment=eventText, alert_message=perOrderCloseAlertMessage)
+        strategy.close("A-SHORT", comment=eventText, alert_message=perOrderCloseAlertMessage)
+    if strategy.position_size > 0 and (not na(longStop) or not na(longLimit))
+        strategy.exit("A-L-RISK", from_entry="A-LONG", stop=longStop, limit=longLimit, alert_message=perLongRiskAlertMessage)
+    if strategy.position_size < 0 and (not na(shortStop) or not na(shortLimit))
+        strategy.exit("A-S-RISK", from_entry="A-SHORT", stop=shortStop, limit=shortLimit, alert_message=perShortRiskAlertMessage)
+    if allowLongProbe and shadowEnterLong
+        strategy.entry("A-LONG", strategy.long, comment=longEntryComment, alert_message=perLongOpenAlertMessage)
+        lastShadowEntryBar := bar_index
+    if allowShortProbe and shadowEnterShort
+        strategy.entry("A-SHORT", strategy.short, comment=shortEntryComment, alert_message=perShortOpenAlertMessage)
+        lastShadowEntryBar := bar_index
+
+//==================================================
+// 표 색상
+//==================================================
+color dirColor = aDir > 0 ? colGood : aDir < 0 ? colBad : colWarn
+color stateColor = perState == 4 ? colBad : perState == 3 ? colGood : perState == 2 ? colWarn : perState == 1 ? colAccent : colSoft
+color riskColor = aRisk == 0 ? colGood : aRisk == 1 ? colWarn : colBad
+color trigColor = triggerScore >= 65 ? colGood : triggerScore >= 35 ? colWarn : colBad
+color baseColor = baseScore >= 65 ? colGood : baseScore >= 35 ? colWarn : colBad
+color structColor = structScore >= 65 ? colGood : structScore >= 35 ? colWarn : colBad
+color alignColor = alignScore >= 65 ? colGood : alignScore >= 35 ? colWarn : colBad
+color netColor = netScore >= 10 ? colGood : netScore <= -10 ? colBad : colWarn
+color activeColor = activeCount >= CFG_MIN_ACTIVE ? colGood : activeCount > 0 ? colWarn : colBad
+color totalColor = aTotal >= 65 ? colGood : aTotal >= 35 ? colWarn : colBad
+color blockColor = aBlock ? colBad : colGood
+color reasonColor = aReason == 0 ? colGood : aReason == 6 ? colWarn : blockColor
+color longColor = perLong ? colGood : colSoft
+color shortColor = perShort ? colBad : colSoft
+color waitColor = perWait ? colWarn : colSoft
+color exitColor = perExit ? colAccent : colSoft
+color flowColor = flowSlope > 0 ? colGood : flowSlope < 0 ? colBad : colSoft
+color runColor = flowUp > 0 ? colGood : flowDn > 0 ? colBad : colSoft
+color execColor = execBlend >= CFG_MIN_EXEC ? colAccent : colWarn
+color logColor = logNum == 1 ? colGood : logNum == -1 ? colBad : logNum == 2 ? colAccent : logNum == -2 ? colBad : logNum == 0 ? colWarn : colSoft
+color pnlColor = virtualPnl >= 0 ? colGood : colBad
+color eventColor = eventCode == 6 ? colBad : eventCode == 5 ? colGood : eventCode == 4 ? colAccent : eventCode == 3 ? colWarn : eventCode == 2 ? colGood : eventCode == 1 ? colBad : colSoft
+string hetemNote = f_hetemNoteA(hetemGateState, hetemEventText, hetemPressureIndex)
+color gateColor = hetemGateState == "OPEN" or hetemGateState == "CLEARING" ? colGood : hetemGateState == "WAIT" ? colWarn : colBad
+color pressureColor = hetemPressureIndex >= 80 ? colBad : hetemPressureIndex >= 60 ? colWarn : colGood
+color severityColor = hetemEventSeverity >= 75 ? colBad : hetemEventSeverity >= 45 ? colWarn : colGood
+color policyColor = gawPolicyPA == "GP:BK" ? colBad : gawPolicyPA == "GP:WT" ? colWarn : gawPolicyPA == "GP:CK" ? colAccent : colGood
+
+//==================================================
+// 표
+//==================================================
+var table t = na
+var string lastTableLayoutKey = ""
+int frameW = showTableBorder ? tableFrameWidth : 0
+int borderW = showTableBorder ? tableBorderWidth : 0
+color tableBgColor = color.new(colBg, tableBgTransp)
+string tableLayoutKey = str.tostring(tableScale) + "|" + tablePosOpt + "|" + (showTableBorder ? "1" : "0") + "|" + str.tostring(tableFrameWidth) + "|" + str.tostring(tableBorderWidth) + "|" + str.tostring(tableBgTransp)
+txtSize = f_textSizeFromScale(tableScale)
+bodySz = txtSize
+headSz = txtSize
+
+if barstate.islast
+    if showTable
+        if na(t) or tableLayoutKey != lastTableLayoutKey
+            if not na(t)
+                table.delete(t)
+            t := table.new(f_tablePos(tablePosOpt), 4, 21, bgcolor=tableBgColor, frame_color=tableFrameColor, frame_width=frameW, border_color=tableBorderColor, border_width=borderW)
+            lastTableLayoutKey := tableLayoutKey
+        table.clear(t, 0, 0, 3, 20)
+        string gawGatePA = f_gawGate(hetemGateState)
+        string gawPressPA = f_gawBand(f_hetemBand(hetemPressureIndex))
+        string gawRiskPA = f_gawRisk(f_riskTxt(aRisk))
+        string gawBlockPA = f_gawBlock(hetemBlockText)
+        string gawFlowPA = f_gawFlow(hetemFlowText)
+        string gawEventPA = f_gawEvent(hetemEventText)
+        string gawNextPA = f_gawNextText(hetemNextTfCode)
+
+        table.cell(t, 0, 0, "PA", text_color=colHead, text_size=headSz)
+        table.cell(t, 1, 0, "FM", text_color=colAccent, text_size=headSz)
+        table.cell(t, 2, 0, "TF", text_color=colHead, text_size=headSz)
+        table.cell(t, 3, 0, timeframe.period, text_color=colNum, text_size=headSz)
+
+        table.cell(t, 0, 1, "GW", text_color=colHead, text_size=bodySz)
+        table.cell(t, 1, 1, "EC:" + gawEventPA, text_color=eventColor, text_size=bodySz)
+        table.cell(t, 2, 1, "ES:" + f_numTxt(hetemEventSeverity), text_color=severityColor, text_size=bodySz)
+        table.cell(t, 3, 1, gawPolicyPA, text_color=policyColor, text_size=bodySz)
+
+        table.cell(t, 0, 2, "G1", text_color=colHead, text_size=bodySz)
+        table.cell(t, 1, 2, sourceConnected ? "SRC:OK" : "SRC:CK", text_color=sourceConnected ? colGood : colBad, text_size=bodySz)
+        table.cell(t, 2, 2, "R:" + gawRiskPA, text_color=riskColor, text_size=bodySz)
+        table.cell(t, 3, 2, "B:" + gawBlockPA, text_color=blockColor, text_size=bodySz)
+
+        table.cell(t, 0, 3, "G2", text_color=colHead, text_size=bodySz)
+        table.cell(t, 1, 3, "EC:" + gawEventPA, text_color=eventColor, text_size=bodySz)
+        table.cell(t, 2, 3, "N:" + gawNextPA, text_color=colNum, text_size=bodySz)
+        table.cell(t, 3, 3, "MON", text_color=colWarn, text_size=bodySz)
+
+        table.cell(t, 0, 4, "PR", text_color=colText, text_size=bodySz)
+        table.cell(t, 1, 4, gawPressPA, text_color=pressureColor, text_size=bodySz)
+        table.cell(t, 2, 4, "PI", text_color=colSoft, text_size=bodySz)
+        table.cell(t, 3, 4, f_numTxt(hetemPressureIndex), text_color=colNum, text_size=bodySz)
+
+        table.cell(t, 0, 5, "EC", text_color=colText, text_size=bodySz)
+        table.cell(t, 1, 5, gawEventPA, text_color=eventColor, text_size=bodySz)
+        table.cell(t, 2, 5, "ES", text_color=colSoft, text_size=bodySz)
+        table.cell(t, 3, 5, f_numTxt(hetemEventSeverity), text_color=severityColor, text_size=bodySz)
+
+        table.cell(t, 0, 6, "MD", text_color=colText, text_size=bodySz)
+        table.cell(t, 1, 6, str.tostring(int(math.round(hetemModeCode))), text_color=colNum, text_size=bodySz)
+        table.cell(t, 2, 6, "RL", text_color=colText, text_size=bodySz)
+        table.cell(t, 3, 6, str.tostring(int(math.round(hetemTfRoleCode))), text_color=colNum, text_size=bodySz)
+
+        table.cell(t, 0, 7, "NX", text_color=colText, text_size=bodySz)
+        table.cell(t, 1, 7, str.tostring(int(math.round(hetemNextTfCode))), text_color=colNum, text_size=bodySz)
+        table.cell(t, 2, 7, "DR", text_color=colText, text_size=bodySz)
+        table.cell(t, 3, 7, f_gawFlow(f_dirTxt(aDir)), text_color=dirColor, text_size=bodySz)
+
+        table.cell(t, 0, 8, "ST", text_color=colText, text_size=bodySz)
+        table.cell(t, 1, 8, f_gawState(f_stateTxt(perState)), text_color=stateColor, text_size=bodySz)
+        table.cell(t, 2, 8, "SC", text_color=colSoft, text_size=bodySz)
+        table.cell(t, 3, 8, str.tostring(perState), text_color=colNum, text_size=bodySz)
+
+        table.cell(t, 0, 9, "RK", text_color=colText, text_size=bodySz)
+        table.cell(t, 1, 9, gawRiskPA, text_color=riskColor, text_size=bodySz)
+        table.cell(t, 2, 9, "RF", text_color=colSoft, text_size=bodySz)
+        table.cell(t, 3, 9, f_gawBand(f_hetemBand(hetemForceFadeScore)), text_color=pressureColor, text_size=bodySz)
+
+        table.cell(t, 0, 10, "B", text_color=colText, text_size=bodySz)
+        table.cell(t, 1, 10, gawBlockPA, text_color=blockColor, text_size=bodySz)
+        table.cell(t, 2, 10, "RS", text_color=colSoft, text_size=bodySz)
+        table.cell(t, 3, 10, f_reasonTxt(aReason), text_color=colSoft, text_size=bodySz)
+
+        table.cell(t, 0, 11, "FL", text_color=colText, text_size=bodySz)
+        table.cell(t, 1, 11, gawFlowPA, text_color=flowColor, text_size=bodySz)
+        table.cell(t, 2, 11, "SL", text_color=colSoft, text_size=bodySz)
+        table.cell(t, 3, 11, f_numTxt(flowSlope), text_color=colNum, text_size=bodySz)
+
+        table.cell(t, 0, 12, "FU", text_color=colText, text_size=bodySz)
+        table.cell(t, 1, 12, genutLongOK ? "1" : "0", text_color=genutLongOK ? colGood : colSoft, text_size=bodySz)
+        table.cell(t, 2, 12, "FD", text_color=colText, text_size=bodySz)
+        table.cell(t, 3, 12, genutShortOK ? "1" : "0", text_color=genutShortOK ? colBad : colSoft, text_size=bodySz)
+
+        table.cell(t, 0, 13, "FS", text_color=colText, text_size=bodySz)
+        table.cell(t, 1, 13, f_gawBand(f_hetemBand(hetemForceScore)), text_color=totalColor, text_size=bodySz)
+        table.cell(t, 2, 13, "FV", text_color=colSoft, text_size=bodySz)
+        table.cell(t, 3, 13, f_numTxt(hetemForceScore), text_color=colNum, text_size=bodySz)
+
+        table.cell(t, 0, 14, "RFD", text_color=colText, text_size=bodySz)
+        table.cell(t, 1, 14, genutExit ? "1" : "0", text_color=genutExit ? colWarn : colSoft, text_size=bodySz)
+        table.cell(t, 2, 14, "WK", text_color=colText, text_size=bodySz)
+        table.cell(t, 3, 14, hetemFlowWeakOnly ? "1" : "0", text_color=hetemFlowWeakOnly ? colWarn : colSoft, text_size=bodySz)
+
+        table.cell(t, 0, 15, "DL", text_color=colText, text_size=bodySz)
+        table.cell(t, 1, 15, flowDelta > 0 ? "UP" : flowDelta < 0 ? "DN" : "FL", text_color=flowColor, text_size=bodySz)
+        table.cell(t, 2, 15, "DV", text_color=colSoft, text_size=bodySz)
+        table.cell(t, 3, 15, f_numTxt(flowDelta), text_color=colNum, text_size=bodySz)
+
+        table.cell(t, 0, 16, "RN", text_color=colText, text_size=bodySz)
+        table.cell(t, 1, 16, flowUp > 0 ? "UP" : flowDn > 0 ? "DN" : "FL", text_color=runColor, text_size=bodySz)
+        table.cell(t, 2, 16, "RV", text_color=colSoft, text_size=bodySz)
+        table.cell(t, 3, 16, str.tostring(math.max(flowUp, flowDn)), text_color=colNum, text_size=bodySz)
+
+        table.cell(t, 0, 17, "XF", text_color=colText, text_size=bodySz)
+        table.cell(t, 1, 17, f_numTxt(execBlend), text_color=execColor, text_size=bodySz)
+        table.cell(t, 2, 17, "FC", text_color=colSoft, text_size=bodySz)
+        table.cell(t, 3, 17, str.tostring(failCount), text_color=failCount > 0 ? colBad : colGood, text_size=bodySz)
+
+        table.cell(t, 0, 18, "BO", text_color=colText, text_size=bodySz)
+        table.cell(t, 1, 18, str.tostring(blockOnCount), text_color=colBad, text_size=bodySz)
+        table.cell(t, 2, 18, "BF", text_color=colSoft, text_size=bodySz)
+        table.cell(t, 3, 18, str.tostring(blockOffCount), text_color=colGood, text_size=bodySz)
+
+        table.cell(t, 0, 19, "SH", text_color=colText, text_size=bodySz)
+        table.cell(t, 1, 19, str.tostring(flowShiftCount), text_color=colWarn, text_size=bodySz)
+        table.cell(t, 2, 19, "LK", text_color=colSoft, text_size=bodySz)
+        table.cell(t, 3, 19, str.tostring(linkIssueCount), text_color=colBad, text_size=bodySz)
+
+        table.cell(t, 0, 20, "END", text_color=colSoft, text_size=bodySz)
+        table.cell(t, 1, 20, "GAW", text_color=colAccent, text_size=bodySz)
+        table.cell(t, 2, 20, gawSchemaVersionPA, text_color=colGood, text_size=bodySz)
+        table.cell(t, 3, 20, "HTM", text_color=colAccent, text_size=bodySz)
+    else
+        if not na(t)
+            table.delete(t)
+            t := na
+            lastTableLayoutKey := ""
+
+
+//==================================================
+// 출력
+//==================================================
+plot(hetemGateScore, title="AL_PER_A_HETEM_GATE_SCORE", display=display.none)
+plot(hetemPressureIndex, title="AL_PER_A_HETEM_PRESSURE_INDEX", display=display.none)
+plot(hetemGateStateCode, title="AL_PER_A_HETEM_GATE_STATE_CODE", display=display.none)
+plot(hetemEventCode, title="AL_PER_A_HETEM_EVENT_CODE", display=display.none)
+plot(hetemModeCode, title="AL_PER_A_HETEM_MODE_CODE", display=display.none)
+plot(hetemTfRoleCode, title="AL_PER_A_HETEM_TF_ROLE_CODE", display=display.none)
+plot(hetemNextTfCode, title="AL_PER_A_HETEM_NEXT_TF_CODE", display=display.none)
+plot(sourceConnected ? 1.0 : 0.0, title="AL_PER_A_SOURCE_OK", display=display.none)
+plot(monitorOnlyMode ? 1.0 : 0.0, title="AL_PER_A_MONITOR_ONLY", display=display.none)
+plot(float(aDir), title="AL_PER_A_DIRECTION", display=display.none)
+plot(float(perState), title="AL_PER_A_STATE", display=display.none)
+plot(float(aRisk), title="AL_PER_A_RISK", display=display.none)
+plot(aTotal, title="AL_PER_A_TOTAL", display=display.none)
+plot(aBlock ? 1.0 : 0.0, title="AL_PER_A_BLOCK", display=display.none)
+plot(float(aReason), title="AL_PER_A_BLOCK_REASON", display=display.none)
+plot(perLong ? 1.0 : 0.0, title="AL_PER_A_LONG", display=display.none)
+plot(perShort ? 1.0 : 0.0, title="AL_PER_A_SHORT", display=display.none)
+plot(perWait ? 1.0 : 0.0, title="AL_PER_A_WAIT", display=display.none)
+plot(perExit ? 1.0 : 0.0, title="AL_PER_A_EXIT", display=display.none)
+plot(flowDelta, title="AL_PER_A_FLOW_DELTA", display=display.none)
+plot(flowSlope, title="AL_PER_A_FLOW_SLOPE", display=display.none)
+plot(float(flowShift), title="AL_PER_A_FLOW_SHIFT", display=display.none)
+plot(virtualPnl, title="AL_PER_A_PNL", display=display.none)
+
+plot(eventBlockOn ? 1.0 : 0.0, title="AL_PER_A_EVT_BLOCK_ON", display=display.none)
+plot(eventBlockOff ? 1.0 : 0.0, title="AL_PER_A_EVT_BLOCK_OFF", display=display.none)
+plot(eventFlowShift ? 1.0 : 0.0, title="AL_PER_A_EVT_FLOW_SHIFT", display=display.none)
+plot(eventExit ? 1.0 : 0.0, title="AL_PER_A_EVT_EXIT", display=display.none)
+plot(eventHold ? 1.0 : 0.0, title="AL_PER_A_EVT_HOLD", display=display.none)
+plot(eventLinkIssue ? 1.0 : 0.0, title="AL_PER_A_EVT_LINK_ISSUE", display=display.none)
+plot(float(eventCode), title="AL_PER_A_EVENT_CODE", display=display.none)
+plot(float(entryRejectCode), title="ENTRY_REJECT_CODE", display=display.none)
+plot(float(tfModeCode), title="TF_MODE_CODE", display=display.none)
+plot(defenseEntryAllowed ? 1.0 : 0.0, title="DEF_ENTRY_ALLOWED", display=display.none)
+plot(defenseBlockExit ? 1.0 : 0.0, title="DEF_BLOCK_EXIT", display=display.none)
+plot(defenseFlowExit ? 1.0 : 0.0, title="DEF_FLOW_EXIT", display=display.none)
+plot(defenseExitSignal ? 1.0 : 0.0, title="DEF_EXIT_SIGNAL", display=display.none)
+plot(defenseLinkExit ? 1.0 : 0.0, title="DEF_LINK_EXIT", display=display.none)
+plot(defenseCooldownActive ? 1.0 : 0.0, title="DEF_COOLDOWN", display=display.none)
+plot(mfeReached ? 1.0 : 0.0, title="MFE_REACHED", display=display.none)
+plot(profitProtectActive ? 1.0 : 0.0, title="PROFIT_PROTECT_ACTIVE", display=display.none)
+plot(exitStrictOk ? 1.0 : 0.0, title="EXIT_STRICT_OK", display=display.none)
+plot(flowStrongOpposite ? 1.0 : 0.0, title="FLOW_STRONG_OPPOSITE", display=display.none)
+plot(stopLossHit ? 1.0 : 0.0, title="STOP_LOSS_HIT", display=display.none)
+plot(float(positionSide), title="POSITION_SIDE", display=display.none)
+plot(float(positionAge), title="POSITION_AGE", display=display.none)
+plot(float(defenseReasonCode), title="DEFENSE_REASON_CODE", display=display.none)
+
+if showEventMarks and eventBlockOn
+    label.new(bar_index, high, "A BLOCK", style=label.style_label_down, color=color.red, textcolor=color.white, size=size.tiny)
+if showEventMarks and eventBlockOff
+    label.new(bar_index, low, "A CLEAR", style=label.style_label_up, color=color.lime, textcolor=color.black, size=size.tiny)
+if showEventMarks and eventFlowShift
+    label.new(bar_index, high, "A SHIFT", style=label.style_label_down, color=color.orange, textcolor=color.black, size=size.tiny)
+if showEventMarks and eventExit
+    label.new(bar_index, high, "A RISK", style=label.style_label_down, color=color.aqua, textcolor=color.white, size=size.tiny)
+if showEventMarks and eventHold
+    label.new(bar_index, low, "A HOLD", style=label.style_label_up, color=color.lime, textcolor=color.black, size=size.tiny)
+if showEventMarks and eventLinkIssue
+    label.new(bar_index, high, "A LINK", style=label.style_label_down, color=color.red, textcolor=color.white, size=size.tiny)
+
+//==================================================
+// 알림
+//==================================================
+alertcondition(perLegacyAlertsOn and perLong and not prevPerLong, title="AL PER A MONITOR | UP PRESSURE", message="AL_PER_A_MONITOR,UP_PRESSURE")
+alertcondition(perLegacyAlertsOn and perShort and not prevPerShort, title="AL PER A MONITOR | DOWN PRESSURE", message="AL_PER_A_MONITOR,DOWN_PRESSURE")
+alertcondition(perLegacyAlertsOn and eventExit, title="AL PER A MONITOR | RISK FADE", message="AL_PER_A_MONITOR,RISK_FADE")
+alertcondition(perLegacyAlertsOn and eventBlockOn, title="AL PER A MONITOR | GATE BLOCKED", message="AL_PER_A_MONITOR,GATE_BLOCKED")
+alertcondition(perLegacyAlertsOn and eventBlockOff, title="AL PER A MONITOR | GATE CLEARING", message="AL_PER_A_MONITOR,GATE_CLEARING")
+alertcondition(perLegacyAlertsOn and eventFlowShift, title="AL PER A MONITOR | FORCE SHIFT", message="AL_PER_A_MONITOR,FORCE_SHIFT")
+alertcondition(perLegacyAlertsOn and eventHold, title="AL PER A MONITOR | HOLD", message="AL_PER_A_MONITOR,HOLD")
+alertcondition(perLegacyAlertsOn and eventLinkIssue, title="AL PER A MONITOR | LINK ISSUE", message="AL_PER_A_MONITOR,LINK_ISSUE")

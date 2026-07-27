@@ -1,0 +1,845 @@
+//@version=6
+indicator("AL VOL", shorttitle="VOL", overlay=false, max_labels_count=300, precision=2)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// AL VOLUME V2 — 강한 매수세 / 매도세 구분 강화 버전
+//
+// [V2 개선 사항]
+// FIX-1 : Delta 기반 봉 내부 매수/매도 압력 분해 (Bid/Ask Split Estimation)
+// FIX-2 : Body Ratio — 봉 형태 기반 방향 강도 측정
+// FIX-3 : Wick Pressure — 위/아래 꼬리 압력 비율
+// FIX-4 : CVD (Cumulative Volume Delta) — 누적 순매수 압력
+// FIX-5 : Absorption 탐지 — 큰 거래량 + 작은 봉 = 세력 흡수/분산
+// FIX-6 : Climax 탐지 — 극단 거래량 후 반전 경고
+// FIX-7 : bearSnort 추가 — 강한 매도세 대칭 탐지
+// FIX-8 : 강도 분류 5단계 (STRONG_BUY / BUY / NEUTRAL / SELL / STRONG_SELL)
+// FIX-9 : 흡수/클라이맥스 hidden output 추가
+// FIX-10: plot count 64 제한 회피 — 마커 plotshape 제거, 배경 bgcolor 1개로 통합
+// FIX-11: 상단 상태줄 입력값 숨김 + 오른쪽 거래량 스케일 M 단위 압축
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Groups
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+grpCore    = "01. 기본 설정"
+grpDelta   = "02. Delta / CVD 설정"
+grpBody    = "03. 봉 형태 압력 설정"
+grpAbsorb  = "04. 흡수 / 클라이맥스 설정"
+grpLogic   = "05. 파란 거래량 로직"
+grpDry     = "06. 드라이 / 파워 거래량"
+grpColor   = "07. 색상 설정"
+grpLine    = "08. 평균선 / 기준선"
+grpMark    = "09. 마커 / 배경"
+grpTable   = "10. 정보표"
+grpLabel   = "11. 라벨"
+grpOutput  = "12. 출력값 / 알림"
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 01. Core
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+vol = nz(volume)
+
+pocketLookback = input.int(10,  "포켓 피봇 기준 봉 수",             minval=1, maxval=200, group=grpCore, display=display.none)
+avgLen         = input.int(50,  "거래량 평균 기준 봉 수",            minval=1, maxval=500, group=grpCore, display=display.none)
+relLen         = input.int(20,  "상대 거래량 기준 봉 수",            minval=1, maxval=500, group=grpCore, display=display.none)
+upDownLen      = input.int(20,  "상승 / 하락 거래량 비율 기준 봉 수", minval=1, maxval=500, group=grpCore, display=display.none)
+bullSnortLen   = input.int(50,  "강한 매수 / 매도 거래량 평균 봉 수", minval=1, maxval=500, group=grpCore, display=display.none)
+turnoverMode   = input.string("거래량", "파워 기준 계산 방식", options=["거래량", "거래대금"], group=grpCore, display=display.none)
+usePrevColor   = input.bool(false, "이전 봉 방향 기준으로 색상 판단", group=grpCore, display=display.none)
+
+isUp   = usePrevColor ? close >= close[1] : close >= open
+isDown = not isUp
+
+volAvg  = ta.sma(vol, avgLen)
+relAvg  = ta.sma(vol, relLen)
+relVol  = relAvg > 0.0 ? vol / relAvg : 0.0
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// [FIX-1] Delta 기반 봉 내부 매수/매도 압력 분해
+// Bid/Ask Split Estimation (Tick Rule 대안 — Pine Script 가능 버전)
+// 원리: (close - low) / (high - low) 비율이 클수록 봉 내에서 매수 우위
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+useDelta    = input.bool(true,  "Delta 압력 계산 사용",          group=grpDelta, display=display.none)
+deltaMode   = input.string("정밀", "Delta 계산 방식", options=["단순", "정밀"], group=grpDelta, display=display.none)
+cvdLen      = input.int(50,    "CVD 단기 누적 기준 봉 수",       minval=5, maxval=500, group=grpDelta, display=display.none)
+cvdNormLen  = input.int(200,   "CVD 정규화 기준 봉 수",          minval=20, maxval=1000, group=grpDelta, display=display.none)
+showCvd     = input.bool(true,  "CVD 라인 표시",                 group=grpDelta, display=display.none)
+cvdLineColor = input.color(color.new(color.yellow, 0), "CVD 라인 색상", group=grpDelta, display=display.none)
+
+// [핵심 공식] 봉 내부 매수/매도 비율 추정
+rangeBar    = high - low
+safeRange   = math.max(rangeBar, syminfo.mintick)
+
+// 단순: 봉 방향으로만 분기
+// 정밀: 봉 내에서 close 위치 비율로 매수/매도 추정
+buyPressureRaw = deltaMode == "정밀" ? (close - low) / safeRange * vol : (isUp ? vol : 0.0)
+
+sellPressureRaw = deltaMode == "정밀" ? (high - close) / safeRange * vol : (isDown ? vol : 0.0)
+
+// 봉별 Delta (순매수: 양수 = 매수 우위, 음수 = 매도 우위)
+deltaBar = buyPressureRaw - sellPressureRaw
+
+// CVD — 단기 누적 순매수 압력
+cvdRolling = math.sum(deltaBar, cvdLen)
+
+// CVD 정규화 (z-score 방식 — 극단값 방어)
+cvdMean   = ta.sma(cvdRolling, cvdNormLen)
+cvdStdev  = ta.stdev(cvdRolling, cvdNormLen)
+cvdZ      = cvdStdev > 0 ? (cvdRolling - cvdMean) / cvdStdev : 0.0
+
+// CVD 방향 판단 (Z-score 기준)
+cvdBull   = cvdZ >= 0.5     // 누적 매수 우위
+cvdBear   = cvdZ <= -0.5    // 누적 매도 우위
+cvdStrong = math.abs(cvdZ) >= 1.2  // 강한 방향 확립
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// [FIX-2] Body Ratio — 봉 형태 기반 방향 강도
+// 원리: body가 전체 범위 대비 클수록 방향성이 강한 봉
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+useBodyFilter  = input.bool(true,  "봉 형태 필터 사용",          group=grpBody, display=display.none)
+strongBodyRatio = input.float(0.60, "강한 방향봉 Body 비율 기준", minval=0.2, maxval=0.95, step=0.05, group=grpBody, display=display.none)
+weakBodyRatio   = input.float(0.25, "약한 방향봉 Body 비율 기준", minval=0.05, maxval=0.5, step=0.05, group=grpBody, display=display.none)
+
+bodySize  = math.abs(close - open)
+bodyRatio = safeRange > 0 ? bodySize / safeRange : 0.5  // 0~1
+
+// 꼬리 압력
+wickUp   = high - math.max(close, open)
+wickDown = math.min(close, open) - low
+wickUpRatio   = safeRange > 0 ? wickUp   / safeRange : 0.0
+wickDownRatio = safeRange > 0 ? wickDown / safeRange : 0.0
+
+// 꼬리 거부 압력 (위꼬리 = 매도 거부, 아래꼬리 = 매수 거부)
+// 상승봉에서 위꼬리가 크면 → 매도 저항 존재
+// 하락봉에서 아래꼬리가 크면 → 매수 지지 존재
+wickRejectionUp   = isUp   and wickUpRatio   >= 0.40  // 상승봉인데 매도 압력
+wickRejectionDown = isDown and wickDownRatio >= 0.40  // 하락봉인데 매수 지지
+
+// 강한 방향봉 / 약한 방향봉
+strongBody = bodyRatio >= strongBodyRatio
+weakBody   = bodyRatio <= weakBodyRatio
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// [FIX-3] 기존 upVol/downVol — Delta 방식으로 업그레이드
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 기존: upVol = isUp ? vol : 0
+// 개선: buyPressureRaw / sellPressureRaw 사용
+upVol   = buyPressureRaw    // 봉 내 매수 추정 거래량
+downVol = sellPressureRaw   // 봉 내 매도 추정 거래량
+
+upVolSum   = math.sum(upVol,   upDownLen)
+downVolSum = math.sum(downVol, upDownLen)
+
+// 상승/하락 거래량 비율 (개선됨 — Delta 기반)
+upDownRatio = downVolSum > 0.0 ? upVolSum / downVolSum : (upVolSum > 0.0 ? 99.0 : 0.0)
+
+// EMA 가중 비율 (최근성 반영 — V2 신규)
+upVolEma   = ta.ema(upVol,   upDownLen)
+downVolEma = ta.ema(downVol, upDownLen)
+upDownEmaRatio = downVolEma > 0.0 ? upVolEma / downVolEma : (upVolEma > 0.0 ? 99.0 : 0.0)
+
+turnoverValue = turnoverMode == "거래대금" ? vol * close : vol
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// [FIX-4] Absorption 탐지
+// 원리: 평균 대비 큰 거래량 + 작은 봉 = 세력이 물량을 조용히 흡수/분산 중
+// 매수 흡수: 하락 중 하락봉인데 아래꼬리 크고 거래량 큼 → 세력 매수
+// 매도 흡수: 상승 중 상승봉인데 위꼬리 크고 거래량 큼 → 세력 매도
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+showAbsorb     = input.bool(true,  "흡수봉 탐지 표시",                  group=grpAbsorb, display=display.none)
+absorbVolMult  = input.float(1.5,  "흡수봉 거래량 기준 (평균의 N배)",   minval=1.0, step=0.1, group=grpAbsorb, display=display.none)
+absorbBodyMax  = input.float(0.35, "흡수봉 최대 Body 비율",             minval=0.1, maxval=0.6, step=0.05, group=grpAbsorb, display=display.none)
+absorbWickMin  = input.float(0.35, "흡수봉 최소 Wick 비율",             minval=0.1, maxval=0.7, step=0.05, group=grpAbsorb, display=display.none)
+
+// 매수 흡수: 큰 거래량 + 작은 봉 + 아래꼬리 (매수세가 조용히 받아내는 중)
+buyAbsorption = vol >= volAvg * absorbVolMult and bodyRatio <= absorbBodyMax and wickDownRatio >= absorbWickMin
+
+// 매도 흡수: 큰 거래량 + 작은 봉 + 위꼬리 (매도세가 조용히 내다 파는 중)
+sellAbsorption = vol >= volAvg * absorbVolMult and bodyRatio <= absorbBodyMax and wickUpRatio >= absorbWickMin
+
+// 중립 흡수: 큰 거래량 + 매우 작은 봉 (양방향 균형)
+neutralAbsorption = vol >= volAvg * absorbVolMult and bodyRatio <= absorbBodyMax * 0.5 and not buyAbsorption and not sellAbsorption
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// [FIX-5] Climax 탐지
+// 원리: 극단 거래량 후 반전 가능성 경고
+// 매수 클라이맥스: 강한 상승 지속 후 역대급 거래량 → 천장 가능성
+// 매도 클라이맥스: 강한 하락 지속 후 역대급 거래량 → 바닥 가능성
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+showClimax       = input.bool(true, "클라이맥스 탐지 표시",                 group=grpAbsorb, display=display.none)
+climaxLookback   = input.int(50,    "클라이맥스 기준 기간 (봉 수)",          minval=10, maxval=200, group=grpAbsorb, display=display.none)
+climaxVolPct     = input.float(0.90,"클라이맥스 거래량 기준 (역대 최고의 N)", minval=0.5, maxval=1.0, step=0.05, group=grpAbsorb, display=display.none)
+climaxTrendLen   = input.int(5,     "클라이맥스 방향 확인 봉 수",            minval=2, maxval=20, group=grpAbsorb, display=display.none)
+
+climaxHighVol = vol >= ta.highest(vol, climaxLookback) * climaxVolPct
+
+// 방향 지속 확인 (같은 방향 봉이 N개 이상 연속)
+upStreak   = 0
+downStreak = 0
+for i = 1 to climaxTrendLen
+    if close[i] >= open[i]
+        upStreak   += 1
+    if close[i] < open[i]
+        downStreak += 1
+
+buyClimax  = climaxHighVol and isUp   and upStreak   >= climaxTrendLen - 1
+sellClimax = climaxHighVol and isDown and downStreak >= climaxTrendLen - 1
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// [FIX-6] 강한 매수 / 매도세 5단계 강도 분류
+// STRONG_BUY / BUY / NEUTRAL / SELL / STRONG_SELL
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+strongBuyTh   = input.float(1.8, "강한 매수 상대 거래량 기준",  minval=1.0, step=0.1, group=grpDry, display=display.none)
+strongSellTh  = input.float(1.8, "강한 매도 상대 거래량 기준",  minval=1.0, step=0.1, group=grpDry, display=display.none)
+highRelTh     = input.float(1.4, "일반 강세 상대 거래량 기준",  minval=1.0, step=0.1, group=grpDry, display=display.none)
+
+// [FIX-7] bearSnort (강한 매도 마커) — 기존 bullSnort와 대칭
+bullSnortAvg  = ta.sma(upVol,   bullSnortLen)
+bearSnortAvg  = ta.sma(downVol, bullSnortLen)
+bullSnortTh   = input.float(1.8, "강한 매수 마커 상대 기준", minval=1.0, step=0.1, group=grpDry, display=display.none)
+bearSnortTh   = input.float(1.8, "강한 매도 마커 상대 기준", minval=1.0, step=0.1, group=grpDry, display=display.none)
+
+bullSnort = isUp and bullSnortAvg > 0.0 and upVol >= bullSnortAvg * bullSnortTh and (not useBodyFilter or strongBody)  // [FIX-2] Body 필터 추가
+
+bearSnort = isDown and bearSnortAvg > 0.0 and downVol >= bearSnortAvg * bearSnortTh and (not useBodyFilter or strongBody)  // [FIX-2] Body 필터 추가
+
+// [FIX-8] 5단계 강도 판단
+// 조건: 상대 거래량 + Delta 방향 + Body 강도 + CVD 방향 통합
+strongBuy = isUp and relVol >= strongBuyTh and strongBody and (not useDelta or deltaBar > 0) and (not useDelta or cvdBull or cvdStrong)
+
+strongSell = isDown and relVol >= strongSellTh and strongBody and (not useDelta or deltaBar < 0) and (not useDelta or cvdBear or cvdStrong)
+// 중간 강도
+midBuy  = isUp   and relVol >= highRelTh and not strongBuy
+midSell = isDown and relVol >= highRelTh and not strongSell
+
+// Wick 거부 신호 (방향과 반대 압력)
+rejectionUp   = isUp   and wickRejectionUp   and relVol >= highRelTh   // 상승봉인데 매도 저항
+rejectionDown = isDown and wickRejectionDown and relVol >= highRelTh   // 하락봉인데 매수 지지
+
+// 강도 코드 (숫자 → hidden output 용)
+// 4=STRONG_BUY, 3=BUY, 2=NEUTRAL, 1=SELL, 0=STRONG_SELL
+pressureCode = strongBuy ? 4 : midBuy ? 3 : strongSell ? 0 : midSell ? 1 : 2
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 02 (기존). Blue Volume Logic
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+usePocketPivot  = input.bool(true,  "포켓 피봇 거래량 사용",        group=grpLogic, display=display.none)
+useHighestVol   = input.bool(true,  "기간 최고 거래량 사용",         group=grpLogic, display=display.none)
+useRelBlue      = input.bool(true,  "상대 거래량 파란 막대 사용",    group=grpLogic, display=display.none)
+usePowerBlue    = input.bool(false, "파워 거래량도 파란 막대에 포함", group=grpLogic, display=display.none)
+
+highestLookbackE = input.int(500, "HVE 기준 봉 수", minval=10, maxval=5000, group=grpLogic, display=display.none)
+highestLookbackY = input.int(365, "HVY 기준 봉 수", minval=10, maxval=5000, group=grpLogic, display=display.none)
+highestLookbackQ = input.int(90,  "HVQ 기준 봉 수", minval=10, maxval=5000, group=grpLogic, display=display.none)
+relBlueTh        = input.float(2.0,"파란 막대 상대 거래량 기준",    minval=0.1, step=0.1, group=grpLogic, display=display.none)
+blueOnlyUp       = input.bool(false,"파란 최고 거래량을 상승봉에서만 표시", group=grpLogic, display=display.none)
+blueNeedScore    = input.int(1,    "파란 막대 필요 점수",           minval=1, maxval=6, group=grpLogic, display=display.none)
+
+downVolPrev    = close[1] < open[1] ? vol[1] : 0.0
+highestDownVol = ta.highest(downVolPrev, pocketLookback)
+pocketPivot    = usePocketPivot and isUp and vol > highestDownVol and relVol >= 1.0
+
+hveVol = ta.highest(vol, highestLookbackE)
+hvyVol = ta.highest(vol, highestLookbackY)
+hvqVol = ta.highest(vol, highestLookbackQ)
+
+hve = useHighestVol and vol >= hveVol and (not blueOnlyUp or isUp)
+hvy = useHighestVol and vol >= hvyVol and (not blueOnlyUp or isUp)
+hvq = useHighestVol and vol >= hvqVol and (not blueOnlyUp or isUp)
+
+relBlue = useRelBlue and relVol >= relBlueTh
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 03 (기존). Dry / Power Volume
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+showDry       = input.bool(true,     "드라이 거래량 표시",               group=grpDry, display=display.none)
+dryDivisor    = input.float(5.0,     "드라이 기준: 평균 거래량의 1/N 이하", minval=1.0, step=0.5, group=grpDry, display=display.none)
+showPower     = input.bool(true,     "파워 거래량 표시",                  group=grpDry, display=display.none)
+powerThreshold = input.float(500000.0,"파워 거래량 절대 기준",            minval=0.0, step=1000.0, group=grpDry, display=display.none)
+powerUseRelative = input.bool(true,  "파워 거래량에 상대 기준 함께 사용", group=grpDry, display=display.none)
+powerRelTh    = input.float(1.5,     "파워 거래량 상대 기준",             minval=0.1, step=0.1, group=grpDry, display=display.none)
+
+dryVol = showDry and volAvg > 0.0 and vol <= volAvg / dryDivisor
+
+powerAbsOk = turnoverValue >= powerThreshold
+powerRelOk = relVol >= powerRelTh
+powerVol   = false
+if showPower
+    powerVol := powerUseRelative ? (powerAbsOk and powerRelOk) : powerAbsOk
+
+powerBlue = usePowerBlue and powerVol
+
+blueScore = (pocketPivot ? 1 : 0) + (hve ? 1 : 0) + (hvy ? 1 : 0) + (hvq ? 1 : 0) + (relBlue ? 1 : 0) + (powerBlue ? 1 : 0)
+blueBar   = blueScore >= blueNeedScore
+
+// Blue Type
+blueTypeCount = blueScore
+blueType = "NONE"
+if blueBar
+    if blueTypeCount >= 2
+        blueType := "MIXED"
+    else if hve
+        blueType := "HVE"
+    else if hvy
+        blueType := "HVY"
+    else if hvq
+        blueType := "HVQ"
+    else if pocketPivot
+        blueType := "POCKET"
+    else if relBlue
+        blueType := "RVOL"
+    else if powerBlue
+        blueType := "POWER"
+    else
+        blueType := "BLUE"
+
+highUpVol   = not blueBar and not dryVol and isUp   and relVol >= highRelTh
+highDownVol = not blueBar and not dryVol and isDown and relVol >= highRelTh
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 07. Colors — V2 강도 색상 추가
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+barWidth = input.int(3, "거래량 막대 두께", minval=1, maxval=5, group=grpColor, display=display.none)
+
+normalUpColor    = input.color(color.new(color.lime, 0),          "일반 상승 색상",          group=grpColor, display=display.none)
+normalDownColor  = input.color(color.new(color.red, 0),           "일반 하락 색상",          group=grpColor, display=display.none)
+dryColor         = input.color(color.new(color.gray, 65),         "드라이 색상",             group=grpColor, display=display.none)
+highUpColor      = input.color(color.new(color.green, 0),         "강세 상승 색상",          group=grpColor, display=display.none)
+highDownColor    = input.color(color.new(color.maroon, 0),        "강세 하락 색상",          group=grpColor, display=display.none)
+
+// [FIX-8] 강도 전용 색상
+strongBuyColor   = input.color(color.new(color.rgb(0, 255, 100), 0),  "STRONG BUY 색상",   group=grpColor, display=display.none)
+strongSellColor  = input.color(color.new(color.rgb(255, 50, 50), 0),  "STRONG SELL 색상",  group=grpColor, display=display.none)
+absorbBuyColor   = input.color(color.new(color.rgb(100, 200, 255), 0),"흡수 매수 색상",    group=grpColor, display=display.none)
+absorbSellColor  = input.color(color.new(color.rgb(255, 180, 80), 0), "흡수 매도 색상",    group=grpColor, display=display.none)
+climaxBuyColor   = input.color(color.new(color.rgb(255, 100, 255), 0),"클라이맥스 매수 색상", group=grpColor, display=display.none)
+climaxSellColor  = input.color(color.new(color.rgb(255, 220, 0), 0),  "클라이맥스 매도 색상", group=grpColor, display=display.none)
+
+pocketColor      = input.color(color.new(color.aqua, 0),          "포켓 피봇 색상",         group=grpColor, display=display.none)
+hveColor         = input.color(color.new(color.blue, 0),           "HVE 색상",              group=grpColor, display=display.none)
+hvyColor         = input.color(color.new(color.rgb(0,160,255), 0), "HVY 색상",              group=grpColor, display=display.none)
+hvqColor         = input.color(color.new(color.rgb(0,220,255), 0), "HVQ 색상",              group=grpColor, display=display.none)
+relBlueColor     = input.color(color.new(color.aqua, 0),           "상대 거래량 파란 색상",  group=grpColor, display=display.none)
+mixedBlueColor   = input.color(color.new(color.rgb(0,120,255), 0), "복합 파란 색상",         group=grpColor, display=display.none)
+powerUpColor     = input.color(color.new(color.rgb(190,255,200),0),"상승 파워 색상",         group=grpColor, display=display.none)
+powerDownColor   = input.color(color.new(color.rgb(255,190,185),0),"하락 파워 색상",         group=grpColor, display=display.none)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Display Scale — 오른쪽 스케일 압축
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 기본값 M: 오른쪽 축을 15,000,000 → 15.00 형태로 줄여서 차트가 덜 답답하게 보이게 함.
+// 내부 계산 / hidden output / alertcondition은 원본 거래량 값을 그대로 유지.
+plotScaleOpt = input.string("M", "오른쪽 스케일 단위", options=["원본","K","M","B"], group=grpLine, display=display.none)
+
+f_plotScaleFactor(opt) =>
+    result = 1.0
+    if opt == "K"
+        result := 1000.0
+    else if opt == "M"
+        result := 1000000.0
+    else if opt == "B"
+        result := 1000000000.0
+    result
+
+plotScaleFactor = f_plotScaleFactor(plotScaleOpt)
+volPlot = vol / plotScaleFactor
+
+// 색상 우선순위: Climax > Absorption > Strong > Blue > Power > High > Normal > Dry
+barColor = isUp ? normalUpColor : normalDownColor
+
+if dryVol
+    barColor := dryColor
+else if buyClimax                   // 클라이맥스 최우선
+    barColor := climaxBuyColor
+else if sellClimax
+    barColor := climaxSellColor
+else if blueBar
+    if blueType == "MIXED"
+        barColor := mixedBlueColor
+    else if hve
+        barColor := hveColor
+    else if hvy
+        barColor := hvyColor
+    else if hvq
+        barColor := hvqColor
+    else if pocketPivot
+        barColor := pocketColor
+    else if powerBlue
+        barColor := isUp ? powerUpColor : powerDownColor
+    else
+        barColor := relBlueColor
+else if buyAbsorption               // 흡수봉
+    barColor := absorbBuyColor
+else if sellAbsorption
+    barColor := absorbSellColor
+else if strongBuy                   // [FIX-8] 강한 매수
+    barColor := strongBuyColor
+else if strongSell                  // [FIX-8] 강한 매도
+    barColor := strongSellColor
+else if powerVol
+    barColor := isUp ? powerUpColor : powerDownColor
+else if highUpVol
+    barColor := highUpColor
+else if highDownVol
+    barColor := highDownColor
+
+plot(volPlot, title="VOL", style=plot.style_columns, color=barColor, linewidth=barWidth, display=display.pane)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 08. Average Lines + CVD Line
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+showAvgLine    = input.bool(true,  "거래량 평균선 표시",         group=grpLine, display=display.none)
+showRelLine    = input.bool(false, "파란 거래량 기준선 표시",    group=grpLine, display=display.none)
+showProjected  = input.bool(false, "현재 봉 예상 거래량 표시",  group=grpLine, display=display.none)
+
+avgLineColor   = input.color(color.new(color.white, 0),  "거래량 평균선 색상", group=grpLine, display=display.none)
+relLineColor   = input.color(color.new(color.aqua, 35),  "파란 기준선 색상",   group=grpLine, display=display.none)
+projectedColor = input.color(color.new(color.yellow, 0), "예상 거래량 색상",   group=grpLine, display=display.none)
+avgLineWidth   = input.int(1, "거래량 평균선 두께", minval=1, maxval=5, group=grpLine, display=display.none)
+relLineWidth   = input.int(1, "파란 기준선 두께",   minval=1, maxval=5, group=grpLine, display=display.none)
+projectedWidth = input.int(1, "예상 거래량 선 두께",minval=1, maxval=5, group=grpLine, display=display.none)
+
+blueThresholdLine = relAvg * relBlueTh
+
+barMs       = time_close - time
+elapsedMs   = timenow - time
+barProgressRaw = barMs > 0 ? elapsedMs / barMs : 1.0
+barProgress = barstate.isrealtime ? math.min(math.max(barProgressRaw, 0.05), 1.0) : 1.0
+projectedVol = barProgress > 0.0 ? vol / barProgress : vol
+
+plot(showAvgLine   ? volAvg / plotScaleFactor            : na, title="AVG",       color=avgLineColor,   linewidth=avgLineWidth, display=display.pane)
+plot(showRelLine   ? blueThresholdLine / plotScaleFactor : na, title="BLUE TH",  color=relLineColor,   linewidth=relLineWidth, display=display.pane)
+plot(showProjected ? projectedVol / plotScaleFactor      : na, title="PROJ", color=projectedColor, linewidth=projectedWidth, display=display.pane)
+
+// [FIX-1] CVD 라인 — 별도 스케일로 표시 (거래량 패널 하단)
+// CVD는 절대값이 커서 거래량과 다른 스케일. 정규화된 Z-score 사용.
+cvdDisplayScale = input.float(0.3, "CVD 표시 스케일 (거래량 평균 대비)", minval=0.05, maxval=2.0, step=0.05, group=grpDelta, display=display.none)
+cvdDisplay = (cvdZ * volAvg * cvdDisplayScale + volAvg * 0.15) / plotScaleFactor  // 거래량 패널 기준선 위에 표시
+plot(showCvd ? cvdDisplay : na, title="CVD", color=cvdLineColor, linewidth=2, display=display.pane)
+// CVD 기준선 (0선)
+cvdZeroLine = (volAvg * 0.15) / plotScaleFactor
+plot(showCvd ? cvdZeroLine : na, title="CVD 0", color=color.new(color.yellow, 75), linewidth=1, style=plot.style_line, display=display.pane)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 09. Markers / Background
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// RE10140 방어용 경량화: plotshape 마커는 제거하고, 배경 표시만 유지
+showBlueBg        = input.bool(false, "파란 거래량 배경 표시",       group=grpMark, display=display.none)
+showDryBg         = input.bool(false, "드라이 거래량 배경 표시",     group=grpMark, display=display.none)
+showStrongBg      = input.bool(false, "강한 매수/매도 배경 표시",    group=grpMark, display=display.none)
+
+// TradingView plot-count limit 방어
+// 기존 plotshape 마커 10개 + bgcolor 4개가 plot count를 크게 사용해서 RE10140 런타임 오류가 발생함.
+// 마커 정보는 거래량 막대 색상 / 정보표 / hidden output / alertcondition으로 유지하고,
+// 배경은 1개 bgcolor로 통합해 plot count를 64개 이하로 낮춤.
+color bgCol = na
+if showBlueBg and blueBar
+    bgCol := color.new(color.aqua, 88)
+else if showDryBg and dryVol
+    bgCol := color.new(color.orange, 90)
+else if showStrongBg and strongBuy
+    bgCol := color.new(color.green, 92)
+else if showStrongBg and strongSell
+    bgCol := color.new(color.red, 92)
+bgcolor(bgCol)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 10. Info Table — V2 강도 정보 추가
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+showTable = input.bool(true, "표 표시", group=grpTable, display=display.none)
+tablePosOpt = input.string("우측 상단", "표 위치", options=["좌측 상단","중앙 상단","우측 상단","좌측 중앙","정중앙","우측 중앙","좌측 하단","중앙 하단","우측 하단"], group=grpTable, display=display.none)
+tableSizeScale = input.int(4, "표 크기 1~10", minval=1, maxval=10, group=grpTable, display=display.none)
+cellWidthOpt = input.int(0, "셀 너비 (0 = 자동)", minval=0, maxval=40, group=grpTable, display=display.none)
+cellHeightOpt = input.int(0, "셀 높이 (0 = 자동)", minval=0, maxval=20, group=grpTable, display=display.none)
+showTableFrame = input.bool(true, "표 외곽선 표시", group=grpTable, display=display.none)
+showTableGrid = input.bool(true, "표 내부 그리드 표시", group=grpTable, display=display.none)
+frameWidthOpt = input.int(1, "외곽선 두께", minval=0, maxval=5, group=grpTable, display=display.none)
+gridWidthOpt = input.int(1, "그리드 두께", minval=0, maxval=5, group=grpTable, display=display.none)
+frameColorOpt = input.color(color.new(color.white, 70), "표 외곽선 색상", group=grpTable, display=display.none)
+gridColorOpt = input.color(color.new(color.white, 85), "표 테두리 색상", group=grpTable, display=display.none)
+tableHeaderBg = input.color(color.new(color.teal, 35), "헤더 배경색", group=grpTable, display=display.none)
+tableBodyBg = input.color(color.new(color.black, 20), "본문 배경색", group=grpTable, display=display.none)
+tableFinalBg = input.color(color.new(color.black, 15), "종합 행 배경색", group=grpTable, display=display.none)
+tableTextColor = input.color(color.white, "기본 글자색", group=grpTable, display=display.none)
+upTextColor = input.color(color.lime, "UP 글자색", group=grpTable, display=display.none)
+downTextColor = input.color(color.red, "DOWN 글자색", group=grpTable, display=display.none)
+warnTextColor = input.color(color.orange, "경고 글자색", group=grpTable, display=display.none)
+neutralTextColor = input.color(color.gray, "중립 글자색", group=grpTable, display=display.none)
+tableBgTransp = input.int(20, "표 배경 투명도", minval=0, maxval=100, group=grpTable, display=display.none)
+headerBgTransp = input.int(35, "헤더 배경 투명도", minval=0, maxval=100, group=grpTable, display=display.none)
+riskBgTransp = input.int(35, "위험/경고 배경 투명도", minval=0, maxval=100, group=grpTable, display=display.none)
+langMode = input.string("CODE", "상태 언어", options=["KR", "EN", "CODE"], group=grpTable, display=display.none)
+columnMode = input.string("NORMAL", "열 표시 모드", options=["COMPACT", "NORMAL", "DEBUG"], group=grpTable, display=display.none)
+debugMode = input.bool(false, "디버그 모드", group=grpTable, display=display.none)
+compactRows = input.bool(true, "행 간격 압축", group=grpTable, display=display.none)
+showStateRow = input.bool(true, "STATE 행 표시", group=grpTable, display=display.none)
+showVolRow = input.bool(true, "VOL 행 표시", group=grpTable, display=display.none)
+showRelRow = input.bool(true, "REL 행 표시", group=grpTable, display=display.none)
+showTypeRow = input.bool(true, "TYPE 행 표시", group=grpTable, display=display.none)
+showCvdRow = input.bool(true, "CVD 행 표시", group=grpTable, display=display.none)
+showBodyRow = input.bool(true, "BODY 행 표시", group=grpTable, display=display.none)
+showDeltaRow = input.bool(true, "DELTA 행 표시", group=grpTable, display=display.none)
+showAbsorbRow = input.bool(true, "ABSORB 행 표시", group=grpTable, display=display.none)
+showClimaxRow = input.bool(true, "CLIMAX 행 표시", group=grpTable, display=display.none)
+showScoreRow = input.bool(true, "SCORE 행 표시", group=grpTable, display=display.none)
+showBusRow = input.bool(true, "BUS 행 표시", group=grpTable, display=display.none)
+
+f_pos(opt) =>
+    result = position.top_right
+    if opt == "좌측 상단"
+        result := position.top_left
+    else if opt == "중앙 상단"
+        result := position.top_center
+    else if opt == "좌측 중앙"
+        result := position.middle_left
+    else if opt == "정중앙"
+        result := position.middle_center
+    else if opt == "우측 중앙"
+        result := position.middle_right
+    else if opt == "좌측 하단"
+        result := position.bottom_left
+    else if opt == "중앙 하단"
+        result := position.bottom_center
+    else if opt == "우측 하단"
+        result := position.bottom_right
+    result
+
+f_sizeFromScale(scale) =>
+    result = size.small
+    if scale <= 2
+        result := size.tiny
+    else if scale <= 5
+        result := size.small
+    else if scale <= 7
+        result := size.normal
+    else if scale <= 9
+        result := size.large
+    else
+        result := size.huge
+    result
+
+f_tableCell(t, int col, int row, string txt, color txtColor, color bgColor, txtSize) =>
+    if cellWidthOpt > 0 and cellHeightOpt > 0
+        table.cell(t, col, row, txt, width=cellWidthOpt, height=cellHeightOpt, text_color=txtColor, bgcolor=bgColor, text_size=txtSize)
+    else if cellWidthOpt > 0
+        table.cell(t, col, row, txt, width=cellWidthOpt, text_color=txtColor, bgcolor=bgColor, text_size=txtSize)
+    else if cellHeightOpt > 0
+        table.cell(t, col, row, txt, height=cellHeightOpt, text_color=txtColor, bgcolor=bgColor, text_size=txtSize)
+    else
+        table.cell(t, col, row, txt, text_color=txtColor, bgcolor=bgColor, text_size=txtSize)
+
+f_row2(t, int row, string a, string b, color ca, color cb, color bg, txtSize) =>
+    f_tableCell(t, 0, row, a, ca, bg, txtSize)
+    f_tableCell(t, 1, row, b, cb, bg, txtSize)
+
+f_fmtVol(v) =>
+    txt = str.tostring(v, "#.##")
+    if v >= 1000000000000.0
+        txt := str.tostring(v / 1000000000000.0, "#.##") + "T"
+    else if v >= 1000000000.0
+        txt := str.tostring(v / 1000000000.0, "#.##") + "B"
+    else if v >= 1000000.0
+        txt := str.tostring(v / 1000000.0, "#.##") + "M"
+    else if v >= 1000.0
+        txt := str.tostring(v / 1000.0, "#.##") + "K"
+    txt
+
+f_dirText(int dirCode, string lang) =>
+    string txt = "N"
+    if lang == "KR"
+        if dirCode > 0
+            txt := "상승"
+        else if dirCode < 0
+            txt := "하락"
+        else
+            txt := "중립"
+    else if lang == "EN"
+        if dirCode > 0
+            txt := "BULL"
+        else if dirCode < 0
+            txt := "BEAR"
+        else
+            txt := "NEUT"
+    else
+        if dirCode > 0
+            txt := "B"
+        else if dirCode < 0
+            txt := "S"
+        else
+            txt := "N"
+    txt
+
+f_riskText(int riskCode, string lang) =>
+    string txt = "R" + str.tostring(riskCode)
+    if lang == "KR"
+        if riskCode >= 4
+            txt := "과열"
+        else if riskCode >= 3
+            txt := "위험"
+        else if riskCode >= 1
+            txt := "주의"
+        else
+            txt := "안정"
+    else if lang == "EN"
+        if riskCode >= 4
+            txt := "OVERHEAT"
+        else if riskCode >= 3
+            txt := "RISK"
+        else if riskCode >= 1
+            txt := "CAUTION"
+        else
+            txt := "SAFE"
+    txt
+
+f_eventText(int eventCode, string lang) =>
+    string txt = "E" + str.tostring(eventCode)
+    if lang == "KR"
+        if eventCode == 9
+            txt := "개방"
+        else if eventCode == 6
+            txt := "흡수"
+        else if eventCode == 5
+            txt := "과열"
+        else if eventCode == 3
+            txt := "건조"
+        else if eventCode == 2
+            txt := "충돌"
+        else if eventCode == 1
+            txt := "공명"
+        else
+            txt := "-"
+    else if lang == "EN"
+        if eventCode == 9
+            txt := "OPEN"
+        else if eventCode == 6
+            txt := "ABSORB"
+        else if eventCode == 5
+            txt := "CLIMAX"
+        else if eventCode == 3
+            txt := "DRY"
+        else if eventCode == 2
+            txt := "CONFLICT"
+        else if eventCode == 1
+            txt := "SYNC"
+        else
+            txt := "-"
+    else
+        if eventCode == 9
+            txt := "OP"
+        else if eventCode == 6
+            txt := "AB"
+        else if eventCode == 5
+            txt := "OH"
+        else if eventCode == 3
+            txt := "DRY"
+        else if eventCode == 2
+            txt := "CF"
+        else if eventCode == 1
+            txt := "S"
+        else
+            txt := "-"
+    txt
+
+// 강도 텍스트
+pressureText = strongBuy ? "STRONG BUY" : midBuy ? "BUY" : strongSell ? "STRONG SELL" : midSell ? "SELL" : buyAbsorption ? "ABSORB BUY" : sellAbsorption ? "ABSORB SELL" : buyClimax ? "CLIMAX BUY" : sellClimax ? "CLIMAX SELL" : dryVol ? "DRY" : "NEUTRAL"
+
+pressureBg = strongBuy ? color.new(strongBuyColor, 30) : midBuy ? color.new(color.green, 55) : strongSell ? color.new(strongSellColor, 30) : midSell ? color.new(color.red, 55) : buyAbsorption ? color.new(absorbBuyColor, 40) : sellAbsorption ? color.new(absorbSellColor, 40) : buyClimax ? color.new(climaxBuyColor, 30) : sellClimax ? color.new(climaxSellColor, 30) : color.new(tableBodyBg, tableBgTransp)
+
+typeText = dryVol ? "DRY" : blueBar ? blueType : powerVol ? "POWER" : highUpVol ? "HIGH UP" : highDownVol ? "HIGH DOWN" : "NORMAL"
+
+cvdText = cvdZ >= 1.2 ? "STRONG BUY" : cvdZ >= 0.5 ? "BUY" : cvdZ <= -1.2 ? "STRONG SELL" : cvdZ <= -0.5 ? "SELL" : "NEUTRAL"
+
+cvdTextColor = cvdZ >= 0.5 ? color.new(color.lime, 0) : cvdZ <= -0.5 ? color.new(color.red, 0) : tableTextColor
+
+int volDirCode = pressureCode >= 3 ? 1 : pressureCode <= 1 ? -1 : 0
+float volScoreBase = pressureCode == 4 ? 100.0 : pressureCode == 3 ? 75.0 : pressureCode == 2 ? 50.0 : pressureCode == 1 ? 25.0 : 0.0
+float volScore = math.max(0.0, math.min(100.0, volScoreBase + blueScore * 3.0 + cvdZ * 4.0))
+int volRiskCode = 0
+if buyClimax or sellClimax
+    volRiskCode := 5
+else if buyAbsorption or sellAbsorption
+    volRiskCode := 3
+else if dryVol
+    volRiskCode := 2
+else if cvdStrong and pressureCode == 2
+    volRiskCode := 2
+int volEventCode = 0
+if buyClimax or sellClimax
+    volEventCode := 5
+else if buyAbsorption or sellAbsorption
+    volEventCode := 6
+else if dryVol
+    volEventCode := 3
+else if cvdStrong and pressureCode == 2
+    volEventCode := 2
+else if strongBuy or strongSell or blueBar
+    volEventCode := 9
+else if volDirCode != 0
+    volEventCode := 1
+
+int T_LAST_COL = 1
+int T_LAST_ROW = 12
+int tableFrameWidth = showTableFrame ? frameWidthOpt : 0
+int tableGridWidth = showTableGrid ? gridWidthOpt : 0
+var table infoTable = table.new(f_pos(tablePosOpt), T_LAST_COL + 1, T_LAST_ROW + 1, frame_color=frameColorOpt, frame_width=tableFrameWidth, border_color=gridColorOpt, border_width=tableGridWidth)
+
+if barstate.islast
+    table.clear(infoTable, 0, 0, T_LAST_COL, T_LAST_ROW)
+    if showTable
+        txtSize = f_sizeFromScale(tableSizeScale)
+        string activeMode = debugMode ? "DEBUG" : columnMode
+        color headerBg = color.new(tableHeaderBg, headerBgTransp)
+        color bodyBg = color.new(tableBodyBg, tableBgTransp)
+        color finalBg = color.new(tableFinalBg, tableBgTransp)
+        color riskBg = volRiskCode >= 3 ? color.new(warnTextColor, riskBgTransp) : bodyBg
+        int row = 0
+        if showStateRow
+            string stateText = f_dirText(volDirCode, langMode) + " " + f_eventText(volEventCode, langMode)
+            f_row2(infoTable, row, "VOL", stateText, tableTextColor, volDirCode > 0 ? upTextColor : volDirCode < 0 ? downTextColor : neutralTextColor, headerBg, txtSize)
+            row := row + 1
+        if showVolRow
+            f_row2(infoTable, row, activeMode == "COMPACT" ? "V" : "VOL", f_fmtVol(vol), tableTextColor, tableTextColor, bodyBg, txtSize)
+            row := row + 1
+        if showRelRow and activeMode != "COMPACT"
+            f_row2(infoTable, row, "REL", str.tostring(relVol, "#.##") + "x", tableTextColor, relVol >= 1.5 ? warnTextColor : neutralTextColor, bodyBg, txtSize)
+            row := row + 1
+        if showTypeRow
+            string typeCell = activeMode == "DEBUG" ? typeText + " / P" + str.tostring(pressureCode) : typeText
+            f_row2(infoTable, row, "TYPE", typeCell, tableTextColor, tableTextColor, pressureBg, txtSize)
+            row := row + 1
+        if showCvdRow and activeMode != "COMPACT"
+            f_row2(infoTable, row, "CVD", activeMode == "DEBUG" ? cvdText + " Z" + str.tostring(cvdZ, "#.##") : cvdText, tableTextColor, cvdTextColor, bodyBg, txtSize)
+            row := row + 1
+        if showBodyRow and activeMode == "DEBUG"
+            f_row2(infoTable, row, "BODY", str.tostring(bodyRatio * 100, "#") + "%", tableTextColor, tableTextColor, bodyBg, txtSize)
+            row := row + 1
+        if showDeltaRow and activeMode != "COMPACT"
+            f_row2(infoTable, row, "DELTA", str.tostring(deltaBar, "#.#"), tableTextColor, deltaBar >= 0 ? upTextColor : downTextColor, bodyBg, txtSize)
+            row := row + 1
+        if showAbsorbRow and activeMode != "COMPACT"
+            f_row2(infoTable, row, "ABSORB", buyAbsorption ? "BUY" : sellAbsorption ? "SELL" : neutralAbsorption ? "NEUT" : "-", tableTextColor, buyAbsorption ? upTextColor : sellAbsorption ? downTextColor : neutralTextColor, bodyBg, txtSize)
+            row := row + 1
+        if showClimaxRow and activeMode != "COMPACT"
+            f_row2(infoTable, row, "CLIMAX", buyClimax ? "BUY" : sellClimax ? "SELL" : "-", tableTextColor, buyClimax ? warnTextColor : sellClimax ? warnTextColor : neutralTextColor, riskBg, txtSize)
+            row := row + 1
+        if showScoreRow
+            f_row2(infoTable, row, "SCORE", str.tostring(math.round(volScore)) + " " + f_riskText(volRiskCode, langMode), tableTextColor, volRiskCode >= 3 ? warnTextColor : tableTextColor, finalBg, txtSize)
+            row := row + 1
+        if showBusRow
+            string busText = "D" + str.tostring(volDirCode) + " S" + str.tostring(math.round(volScore)) + " R" + str.tostring(volRiskCode) + " E" + str.tostring(volEventCode)
+            f_row2(infoTable, row, "BUS", busText, tableTextColor, tableTextColor, finalBg, txtSize)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 11. Labels (기존 유지)
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+showTypeLabels     = input.bool(false, "파란 거래량 타입 라벨 표시",  group=grpLabel, display=display.none)
+showOnlyMainLabels = input.bool(true,  "핵심 타입만 라벨 표시",       group=grpLabel, display=display.none)
+labelSizeOpt       = input.string("아주 작게", "라벨 크기", options=["아주 작게","작게","보통"], group=grpLabel, display=display.none)
+labelTextColor     = input.color(color.white, "라벨 글자 색상", group=grpLabel, display=display.none)
+maxLabelCount      = input.int(80, "최대 라벨 개수", minval=10, maxval=250, group=grpLabel, display=display.none)
+
+f_labelSize(opt) =>
+    result = size.tiny
+    if opt == "작게"
+        result := size.small
+    else if opt == "보통"
+        result := size.normal
+    result
+
+labelOk = false
+if showTypeLabels and blueBar
+    labelOk := showOnlyMainLabels ? (blueType == "HVE" or blueType == "HVY" or blueType == "HVQ" or blueType == "POCKET" or blueType == "MIXED") : true
+
+labelText = blueType == "MIXED" ? "MIX" : blueType
+
+var label[] volLabels = array.new_label()
+if labelOk
+    newLabel = label.new(bar_index, volPlot, labelText, xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_down, color=barColor, textcolor=labelTextColor, size=f_labelSize(labelSizeOpt))
+    array.push(volLabels, newLabel)
+if array.size(volLabels) > maxLabelCount
+    label.delete(array.shift(volLabels))
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 12. Hidden Outputs / Alerts — V2 확장
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+showHiddenOutput = input.bool(true,  "숨김 출력값 유지", group=grpOutput, display=display.none)
+useAlerts        = input.bool(true,  "알림 조건 사용",   group=grpOutput, display=display.none)
+
+// 기존 플래그
+blueFlag      = blueBar      ? 1 : 0
+pocketFlag    = pocketPivot  ? 1 : 0
+hveFlag       = hve          ? 1 : 0
+hvyFlag       = hvy          ? 1 : 0
+hvqFlag       = hvq          ? 1 : 0
+dryFlag       = dryVol       ? 1 : 0
+powerFlag     = powerVol     ? 1 : 0
+bullSnortFlag = bullSnort    ? 1 : 0
+mixedFlag     = blueType == "MIXED" ? 1 : 0
+
+// [FIX-9] V2 신규 플래그
+strongBuyFlag    = strongBuy      ? 1 : 0
+strongSellFlag   = strongSell     ? 1 : 0
+bearSnortFlag    = bearSnort      ? 1 : 0
+buyAbsorbFlag    = buyAbsorption  ? 1 : 0
+sellAbsorbFlag   = sellAbsorption ? 1 : 0
+buyClimaxFlag    = buyClimax      ? 1 : 0
+sellClimaxFlag   = sellClimax     ? 1 : 0
+
+// 기존 hidden outputs
+plot(showHiddenOutput ? float(blueFlag)       : na, title="AL_VOLUME_BLUE_FLAG",          display=display.none)
+plot(showHiddenOutput ? float(pocketFlag)     : na, title="AL_VOLUME_POCKET_FLAG",         display=display.none)
+plot(showHiddenOutput ? float(hveFlag)        : na, title="AL_VOLUME_HVE_FLAG",            display=display.none)
+plot(showHiddenOutput ? float(hvyFlag)        : na, title="AL_VOLUME_HVY_FLAG",            display=display.none)
+plot(showHiddenOutput ? float(hvqFlag)        : na, title="AL_VOLUME_HVQ_FLAG",            display=display.none)
+plot(showHiddenOutput ? float(mixedFlag)      : na, title="AL_VOLUME_MIXED_FLAG",          display=display.none)
+plot(showHiddenOutput ? float(dryFlag)        : na, title="AL_VOLUME_DRY_FLAG",            display=display.none)
+plot(showHiddenOutput ? float(powerFlag)      : na, title="AL_VOLUME_POWER_FLAG",          display=display.none)
+plot(showHiddenOutput ? float(bullSnortFlag)  : na, title="AL_VOLUME_BULL_SNORT_FLAG",     display=display.none)
+plot(showHiddenOutput ? relVol                : na, title="AL_VOLUME_RELATIVE_VOLUME",     display=display.none)
+plot(showHiddenOutput ? upDownEmaRatio        : na, title="AL_VOLUME_UP_DOWN_RATIO",       display=display.none)
+plot(showHiddenOutput ? projectedVol          : na, title="AL_VOLUME_PROJECTED_VOLUME",    display=display.none)
+plot(showHiddenOutput ? float(blueScore)      : na, title="AL_VOLUME_BLUE_SCORE",          display=display.none)
+
+// [FIX-9] V2 신규 hidden outputs
+plot(showHiddenOutput ? float(strongBuyFlag)  : na, title="AL_VOLUME_STRONG_BUY_FLAG",    display=display.none)
+plot(showHiddenOutput ? float(strongSellFlag) : na, title="AL_VOLUME_STRONG_SELL_FLAG",   display=display.none)
+plot(showHiddenOutput ? float(bearSnortFlag)  : na, title="AL_VOLUME_BEAR_SNORT_FLAG",    display=display.none)
+plot(showHiddenOutput ? float(buyAbsorbFlag)  : na, title="AL_VOLUME_BUY_ABSORB_FLAG",    display=display.none)
+plot(showHiddenOutput ? float(sellAbsorbFlag) : na, title="AL_VOLUME_SELL_ABSORB_FLAG",   display=display.none)
+plot(showHiddenOutput ? float(buyClimaxFlag)  : na, title="AL_VOLUME_BUY_CLIMAX_FLAG",    display=display.none)
+plot(showHiddenOutput ? float(sellClimaxFlag) : na, title="AL_VOLUME_SELL_CLIMAX_FLAG",   display=display.none)
+plot(showHiddenOutput ? deltaBar              : na, title="AL_VOLUME_DELTA_BAR",           display=display.none)
+plot(showHiddenOutput ? cvdZ                  : na, title="AL_VOLUME_CVD_ZSCORE",          display=display.none)
+plot(showHiddenOutput ? bodyRatio             : na, title="AL_VOLUME_BODY_RATIO",          display=display.none)
+plot(showHiddenOutput ? float(pressureCode)   : na, title="AL_VOLUME_PRESSURE_CODE",       display=display.none)
+plot(showHiddenOutput ? float(volDirCode)     : na, title="AL_VOL_DIR_CODE",               display=display.none)
+plot(showHiddenOutput ? volScore              : na, title="AL_VOL_SCORE",                  display=display.none)
+plot(showHiddenOutput ? float(volRiskCode)    : na, title="AL_VOL_RISK_CODE",              display=display.none)
+plot(showHiddenOutput ? float(volEventCode)   : na, title="AL_VOL_EVENT_CODE",             display=display.none)
+
+// Alerts
+blueConfirmed    = blueBar      and barstate.isconfirmed
+dryConfirmed     = dryVol       and barstate.isconfirmed
+powerConfirmed   = powerVol     and barstate.isconfirmed
+pocketConfirmed  = pocketPivot  and barstate.isconfirmed
+mixedConfirmed   = blueType == "MIXED" and barstate.isconfirmed
+strongBuyConf    = strongBuy    and barstate.isconfirmed
+strongSellConf   = strongSell   and barstate.isconfirmed
+buyAbsorbConf    = buyAbsorption  and barstate.isconfirmed
+sellAbsorbConf   = sellAbsorption and barstate.isconfirmed
+buyClimaxConf    = buyClimax    and barstate.isconfirmed
+sellClimaxConf   = sellClimax   and barstate.isconfirmed
+
+alertcondition(useAlerts and blueBar,         title="AL VOL Blue Volume",              message="AL VOL V2: Blue volume detected.")
+alertcondition(useAlerts and blueConfirmed,   title="AL VOL Blue Volume Confirmed",    message="AL VOL V2: Blue volume confirmed.")
+alertcondition(useAlerts and pocketConfirmed, title="AL VOL Pocket Pivot Confirmed",   message="AL VOL V2: Pocket pivot confirmed.")
+alertcondition(useAlerts and mixedConfirmed,  title="AL VOL Mixed Blue Confirmed",     message="AL VOL V2: Mixed blue confirmed.")
+alertcondition(useAlerts and dryConfirmed,    title="AL VOL Dry Volume Confirmed",     message="AL VOL V2: Dry volume confirmed.")
+alertcondition(useAlerts and powerConfirmed,  title="AL VOL Power Volume Confirmed",   message="AL VOL V2: Power volume confirmed.")
+// V2 신규 알림
+alertcondition(useAlerts and strongBuyConf,   title="AL VOL STRONG BUY Confirmed",    message="AL VOL V2: STRONG BUY — 강한 매수세 확인.")
+alertcondition(useAlerts and strongSellConf,  title="AL VOL STRONG SELL Confirmed",   message="AL VOL V2: STRONG SELL — 강한 매도세 확인.")
+alertcondition(useAlerts and buyAbsorbConf,   title="AL VOL BUY Absorption Confirmed",message="AL VOL V2: 매수 흡수봉 확인 — 세력 매수 가능.")
+alertcondition(useAlerts and sellAbsorbConf,  title="AL VOL SELL Absorption Confirmed",message="AL VOL V2: 매도 흡수봉 확인 — 세력 매도 가능.")
+alertcondition(useAlerts and buyClimaxConf,   title="AL VOL BUY Climax Confirmed",    message="AL VOL V2: 매수 클라이맥스 — 천장 가능성 경고.")
+alertcondition(useAlerts and sellClimaxConf,  title="AL VOL SELL Climax Confirmed",   message="AL VOL V2: 매도 클라이맥스 — 바닥 가능성 경고.")

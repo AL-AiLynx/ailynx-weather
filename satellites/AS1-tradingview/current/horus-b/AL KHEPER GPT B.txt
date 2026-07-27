@@ -1,0 +1,683 @@
+//@version=6
+// AL KHEPER GPT LINK5
+// Timeframe handoff / HTF position / structure velocity sensor for AiLynx B-group context.
+// This is a state-only market gate sensor. It only emits gate state.
+indicator("AL KHEPER GPT B", overlay=true, max_bars_back=3000, max_labels_count=0, max_lines_count=0, max_boxes_count=0)
+
+//==================================================
+// Constants
+//==================================================
+int DIR_DN = -1
+int DIR_FLAT = 0
+int DIR_UP = 1
+
+int ST_IDLE = 0
+int ST_APPROACH = 1
+int ST_TEST = 2
+int ST_HANDOFF = 3
+int ST_BLOCK = 4
+
+int EC_NONE = 0
+int EC_ACTIVE_ON = 5
+int EC_UPPER_GATE = 11
+int EC_LOWER_GATE = 12
+int EC_HANDOFF_UP = 21
+int EC_HANDOFF_DN = 22
+int EC_UPPER_BLOCK = 31
+int EC_LOWER_BLOCK = 32
+int EC_CONGESTED = 41
+int EC_CLEARING = 42
+int EC_ACCEL = 51
+int EC_STALL = 52
+
+int BR_OPEN = 1
+int BR_BLOCKED = 2
+int BR_CONGESTED = 3
+int BR_CLEARING = 4
+
+int CAUSE_NONE = 0
+int CAUSE_CURRENT_TF = 1
+int CAUSE_NEXT_HTF = 2
+int CAUSE_BRIDGE = 3
+int CAUSE_VELOCITY = 4
+int CAUSE_MIXED = 5
+
+//==================================================
+// Inputs
+//==================================================
+string G_CORE = "KHEPER B | Core"
+bool useAutoHtf = input.bool(true, "Auto Next HTF", group=G_CORE, display=display.none)
+string manualHtf = input.timeframe("60", "Manual Next HTF", group=G_CORE, display=display.none)
+int htfLen = input.int(34, "HTF Basis Length", minval=5, maxval=200, group=G_CORE, display=display.none)
+int htfGateLen = input.int(20, "HTF Gate Length", minval=5, maxval=200, group=G_CORE, display=display.none)
+int atrLen = input.int(14, "ATR Length", minval=5, maxval=100, group=G_CORE, display=display.none)
+float gateNearAtr = input.float(0.55, "Gate Near ATR", minval=0.05, maxval=3.0, step=0.05, group=G_CORE, display=display.none)
+float gateBreakAtr = input.float(0.15, "Gate Break ATR", minval=0.0, maxval=2.0, step=0.05, group=G_CORE, display=display.none)
+
+string G_HANDOFF = "KHEPER B | Handoff"
+int fastLen = input.int(8, "Current TF Fast Length", minval=2, maxval=100, group=G_HANDOFF, display=display.none)
+int slowLen = input.int(21, "Current TF Slow Length", minval=3, maxval=200, group=G_HANDOFF, display=display.none)
+int impulseLen = input.int(6, "Impulse Lookback", minval=2, maxval=50, group=G_HANDOFF, display=display.none)
+int smoothLen = input.int(5, "Velocity Smooth", minval=1, maxval=50, group=G_HANDOFF, display=display.none)
+float impulseAtrMin = input.float(0.28, "Impulse ATR Min", minval=0.01, maxval=5.0, step=0.01, group=G_HANDOFF, display=display.none)
+float htfSlopeMin = input.float(0.015, "HTF Slope ATR Min", minval=0.0, maxval=1.0, step=0.005, group=G_HANDOFF, display=display.none)
+float velocityMoveMin = input.float(0.08, "Velocity Move Min", minval=0.0, maxval=2.0, step=0.01, group=G_HANDOFF, display=display.none)
+float velocityStallMax = input.float(0.035, "Velocity Stall Max", minval=0.0, maxval=1.0, step=0.005, group=G_HANDOFF, display=display.none)
+float velocityDeltaMin = input.float(0.018, "Velocity Delta Min", minval=0.0, maxval=1.0, step=0.005, group=G_HANDOFF, display=display.none)
+float activeMin = input.float(35.0, "Active Score Min", minval=1.0, maxval=100.0, step=1.0, group=G_HANDOFF, display=display.none)
+
+string G_UI = "KHEPER B | GPT Table"
+bool showTable = input.bool(true, "Show GPT Table", group=G_UI, display=display.none)
+string tablePosOpt = input.string("TR", "Table Position", options=["TL","TC","TR","ML","MC","MR","BL","BC","BR"], group=G_UI, display=display.none)
+int tableScale = input.int(4, "Table Scale 1-9", minval=1, maxval=9, group=G_UI, display=display.none)
+bool showTableBorder = input.bool(true, "Table Border", group=G_UI, display=display.none)
+
+string G_ALERT = "KHEPER B | Alerts"
+bool useJsonAlerts = input.bool(true, "Enable GV3 JSON Alerts", group=G_ALERT, display=display.none)
+string alertFrequencyMode = input.string("BAR_CLOSE", "Alert Frequency", options=["BAR_CLOSE","ONCE_PER_BAR"], group=G_ALERT, display=display.none)
+
+//==================================================
+// Helpers
+//==================================================
+f_clamp(float x, float lo, float hi) =>
+    math.max(lo, math.min(hi, x))
+
+f_clamp100(float x) =>
+    f_clamp(x, 0.0, 100.0)
+
+f_signDir(float x, float deadband) =>
+    int out = DIR_FLAT
+    if x > deadband
+        out := DIR_UP
+    else if x < -deadband
+        out := DIR_DN
+    out
+
+f_autoNextTf() =>
+    int sec = timeframe.in_seconds(timeframe.period)
+    string out = "D"
+    if sec <= 60
+        out := "5"
+    else if sec <= 300
+        out := "15"
+    else if sec <= 900
+        out := "60"
+    else if sec <= 3600
+        out := "240"
+    else if sec <= 14400
+        out := "D"
+    else if sec <= 86400
+        out := "W"
+    else if sec <= 604800
+        out := "M"
+    else
+        out := "12M"
+    out
+
+f_tablePos(string opt) =>
+    pos = position.top_right
+    if opt == "TL"
+        pos := position.top_left
+    else if opt == "TC"
+        pos := position.top_center
+    else if opt == "TR"
+        pos := position.top_right
+    else if opt == "ML"
+        pos := position.middle_left
+    else if opt == "MC"
+        pos := position.middle_center
+    else if opt == "MR"
+        pos := position.middle_right
+    else if opt == "BL"
+        pos := position.bottom_left
+    else if opt == "BC"
+        pos := position.bottom_center
+    else
+        pos := position.bottom_right
+    pos
+
+f_textSize(int sc) =>
+    txtSz = size.normal
+    if sc <= 2
+        txtSz := size.tiny
+    else if sc <= 4
+        txtSz := size.small
+    else if sc <= 6
+        txtSz := size.normal
+    else if sc <= 8
+        txtSz := size.large
+    else
+        txtSz := size.huge
+    txtSz
+
+f_numTxt(float v) =>
+    str.tostring(math.round(nz(v, 0.0) * 10.0) / 10.0)
+
+f_dirText(int d) =>
+    string out = "FLAT"
+    if d > 0
+        out := "UP"
+    else if d < 0
+        out := "DN"
+    out
+
+f_stateText(int s) =>
+    string out = "IDLE"
+    if s == ST_APPROACH
+        out := "APPROACH"
+    else if s == ST_TEST
+        out := "TEST"
+    else if s == ST_HANDOFF
+        out := "HANDOFF"
+    else if s == ST_BLOCK
+        out := "BLOCK"
+    out
+
+f_eventText(int ec) =>
+    string out = "NONE"
+    if ec == EC_ACTIVE_ON
+        out := "ACTIVE"
+    else if ec == EC_UPPER_GATE
+        out := "UP_GATE"
+    else if ec == EC_LOWER_GATE
+        out := "DN_GATE"
+    else if ec == EC_HANDOFF_UP
+        out := "UP_HAND"
+    else if ec == EC_HANDOFF_DN
+        out := "DN_HAND"
+    else if ec == EC_UPPER_BLOCK
+        out := "UP_BLOCK"
+    else if ec == EC_LOWER_BLOCK
+        out := "DN_BLOCK"
+    else if ec == EC_CONGESTED
+        out := "CONGEST"
+    else if ec == EC_CLEARING
+        out := "CLEARING"
+    else if ec == EC_ACCEL
+        out := "ACCEL"
+    else if ec == EC_STALL
+        out := "STALL"
+    out
+
+f_positionText(int p) =>
+    string out = "MID"
+    if p >= 3
+        out := "ABOVE"
+    else if p == 2
+        out := "UP_GATE"
+    else if p == 1
+        out := "UP_HALF"
+    else if p == -1
+        out := "DN_HALF"
+    else if p == -2
+        out := "DN_GATE"
+    else if p <= -3
+        out := "BELOW"
+    out
+
+f_handoffText(int h) =>
+    string out = "NONE"
+    if h == 1
+        out := "UP_TEST"
+    else if h == 2
+        out := "UP_ACCEPT"
+    else if h == 3
+        out := "UP_BLOCK"
+    else if h == -1
+        out := "DN_TEST"
+    else if h == -2
+        out := "DN_ACCEPT"
+    else if h == -3
+        out := "DN_BLOCK"
+    out
+
+f_bridgeText(int b) =>
+    string out = "OPEN"
+    if b == BR_BLOCKED
+        out := "BLOCKED"
+    else if b == BR_CONGESTED
+        out := "CONGESTED"
+    else if b == BR_CLEARING
+        out := "CLEARING"
+    out
+
+f_velocityText(int v) =>
+    string out = "STEADY"
+    if v == 2
+        out := "ACCEL"
+    else if v == 1
+        out := "MOVING"
+    else if v == -1
+        out := "SLOWING"
+    else if v == -2
+        out := "STALL"
+    out
+
+f_causeText(int c) =>
+    string out = "NONE"
+    if c == CAUSE_CURRENT_TF
+        out := "CUR_TF"
+    else if c == CAUSE_NEXT_HTF
+        out := "NEXT_TF"
+    else if c == CAUSE_BRIDGE
+        out := "BRIDGE"
+    else if c == CAUSE_VELOCITY
+        out := "VELOCITY"
+    else if c == CAUSE_MIXED
+        out := "MIXED"
+    out
+
+f_jsonPair(string k, string v) =>
+    string safe = str.replace_all(v, "\\", "\\\\")
+    safe := str.replace_all(safe, "\"", "\\\"")
+    "\"" + k + "\":\"" + safe + "\""
+
+f_jsonNumPair(string k, string v) =>
+    "\"" + k + "\":" + v
+
+f_kheperAlertJson(int ec, float es, string gp, int htfPosition, int handoff, int bridge, int velocity, int causeTf, string nextTf) =>
+    "{" +
+     f_jsonPair("source", "AL_KHEPER") + "," +
+     f_jsonPair("gv", "GV3") + "," +
+     f_jsonNumPair("ec", str.tostring(ec)) + "," +
+     f_jsonNumPair("es", f_numTxt(es)) + "," +
+     f_jsonPair("gp", gp) + "," +
+     f_jsonPair("symbol", syminfo.tickerid) + "," +
+     f_jsonPair("timeframe", timeframe.period) + "," +
+     f_jsonPair("next_tf", nextTf) + "," +
+     f_jsonPair("time", str.tostring(time)) + "," +
+     f_jsonPair("price", str.tostring(close, format.mintick)) + "," +
+     f_jsonNumPair("htf_position", str.tostring(htfPosition)) + "," +
+     f_jsonNumPair("handoff", str.tostring(handoff)) + "," +
+     f_jsonNumPair("bridge", str.tostring(bridge)) + "," +
+     f_jsonNumPair("velocity", str.tostring(velocity)) + "," +
+     f_jsonNumPair("cause_tf", str.tostring(causeTf)) +
+     "}"
+
+//==================================================
+// HTF gate model
+//==================================================
+string nextTf = useAutoHtf ? f_autoNextTf() : manualHtf
+
+float htfHighRaw = request.security(syminfo.tickerid, nextTf, ta.highest(high, htfGateLen)[1], barmerge.gaps_off, barmerge.lookahead_off)
+float htfLowRaw = request.security(syminfo.tickerid, nextTf, ta.lowest(low, htfGateLen)[1], barmerge.gaps_off, barmerge.lookahead_off)
+float htfBasisRaw = request.security(syminfo.tickerid, nextTf, ta.ema(close, htfLen)[1], barmerge.gaps_off, barmerge.lookahead_off)
+float htfBasisPrevRaw = request.security(syminfo.tickerid, nextTf, ta.ema(close, htfLen)[2], barmerge.gaps_off, barmerge.lookahead_off)
+float htfAtrRaw = request.security(syminfo.tickerid, nextTf, ta.atr(atrLen)[1], barmerge.gaps_off, barmerge.lookahead_off)
+float htfCloseLive = request.security(syminfo.tickerid, nextTf, close, barmerge.gaps_off, barmerge.lookahead_off)
+
+float htfHigh = nz(htfHighRaw, high)
+float htfLow = nz(htfLowRaw, low)
+float htfBasis = nz(htfBasisRaw, close)
+float htfBasisPrev = nz(htfBasisPrevRaw, htfBasis)
+float htfAtr = math.max(nz(htfAtrRaw, ta.atr(atrLen)), syminfo.mintick)
+float htfRange = math.max(htfHigh - htfLow, syminfo.mintick)
+float htfMid = (htfHigh + htfLow) * 0.5
+float gateNearDist = htfAtr * gateNearAtr
+float gateBreakDist = htfAtr * gateBreakAtr
+
+float htfSlopeAtr = htfAtr > 0.0 ? (htfBasis - htfBasisPrev) / htfAtr : 0.0
+int htfTrendDir = DIR_FLAT
+if htfCloseLive > htfBasis and htfSlopeAtr >= -htfSlopeMin
+    htfTrendDir := DIR_UP
+else if htfCloseLive < htfBasis and htfSlopeAtr <= htfSlopeMin
+    htfTrendDir := DIR_DN
+
+bool aboveUpperGate = close > htfHigh + gateBreakDist
+bool belowLowerGate = close < htfLow - gateBreakDist
+bool nearUpperGate = not aboveUpperGate and math.abs(close - htfHigh) <= gateNearDist
+bool nearLowerGate = not belowLowerGate and math.abs(close - htfLow) <= gateNearDist
+bool nearAnyGate = nearUpperGate or nearLowerGate or aboveUpperGate or belowLowerGate
+
+int htfPosition = 0
+if aboveUpperGate
+    htfPosition := 3
+else if nearUpperGate
+    htfPosition := 2
+else if close > htfMid
+    htfPosition := 1
+else if belowLowerGate
+    htfPosition := -3
+else if nearLowerGate
+    htfPosition := -2
+else if close < htfMid
+    htfPosition := -1
+
+float midDistanceN = f_clamp(math.abs(close - htfMid) / (htfRange * 0.5), 0.0, 1.0)
+float gatePressureScore = nearAnyGate ? 68.0 : midDistanceN * 42.0
+if aboveUpperGate or belowLowerGate
+    gatePressureScore := 84.0
+
+//==================================================
+// Current TF impulse and velocity
+//==================================================
+float atrNow = math.max(ta.atr(atrLen), syminfo.mintick)
+float fastMa = ta.ema(close, fastLen)
+float slowMa = ta.ema(close, slowLen)
+float impulseRaw = close - nz(close[impulseLen], close)
+float impulseAtr = impulseRaw / atrNow
+float spreadAtr = (fastMa - slowMa) / atrNow
+float slopeAtr = (fastMa - nz(fastMa[1], fastMa)) / atrNow
+
+int impulseDir = f_signDir(impulseAtr, impulseAtrMin)
+int spreadDir = f_signDir(spreadAtr, impulseAtrMin * 0.45)
+int slopeDir = f_signDir(slopeAtr, impulseAtrMin * 0.20)
+
+int moveDir = DIR_FLAT
+if impulseDir != DIR_FLAT
+    moveDir := impulseDir
+else if spreadDir != DIR_FLAT
+    moveDir := spreadDir
+else if slopeDir != DIR_FLAT
+    moveDir := slopeDir
+
+float structureVelocityRaw = ta.ema(spreadAtr + slopeAtr * 2.0, smoothLen)
+float velocityAbs = math.abs(structureVelocityRaw)
+float prevVelocityAbs = math.abs(nz(structureVelocityRaw[1], structureVelocityRaw))
+float velocityDelta = velocityAbs - prevVelocityAbs
+
+int kheperVelocity = 0
+if velocityAbs <= velocityStallMax
+    kheperVelocity := -2
+else if velocityDelta > velocityDeltaMin and velocityAbs >= velocityMoveMin
+    kheperVelocity := 2
+else if velocityDelta < -velocityDeltaMin and prevVelocityAbs >= velocityMoveMin
+    kheperVelocity := -1
+else if velocityAbs >= velocityMoveMin
+    kheperVelocity := 1
+
+//==================================================
+// Handoff and bridge
+//==================================================
+bool upProbe = moveDir > 0 and (nearUpperGate or aboveUpperGate or close > htfBasis)
+bool dnProbe = moveDir < 0 and (nearLowerGate or belowLowerGate or close < htfBasis)
+bool upperReject = upProbe and nearUpperGate and close < htfHigh and close < nz(close[1], close)
+bool lowerReject = dnProbe and nearLowerGate and close > htfLow and close > nz(close[1], close)
+bool htfSupportsUp = htfTrendDir >= 0 and htfCloseLive >= htfBasis
+bool htfSupportsDn = htfTrendDir <= 0 and htfCloseLive <= htfBasis
+bool upAccepted = upProbe and not upperReject and htfSupportsUp and (aboveUpperGate or (close > htfBasis and htfSlopeAtr >= -htfSlopeMin))
+bool dnAccepted = dnProbe and not lowerReject and htfSupportsDn and (belowLowerGate or (close < htfBasis and htfSlopeAtr <= htfSlopeMin))
+bool htfOpposesMove = moveDir != DIR_FLAT and htfTrendDir != DIR_FLAT and moveDir != htfTrendDir
+bool bridgeConflict = nearAnyGate and htfOpposesMove
+bool bridgeCongested = nearAnyGate and (kheperVelocity == -2 or kheperVelocity == -1 or htfOpposesMove)
+bool bridgeClearing = (upAccepted or dnAccepted) or (nearAnyGate and moveDir == htfTrendDir and kheperVelocity >= 1)
+bool bridgeBlocked = upperReject or lowerReject or bridgeConflict
+
+int kheperHandoff = 0
+if upAccepted
+    kheperHandoff := 2
+else if dnAccepted
+    kheperHandoff := -2
+else if upperReject
+    kheperHandoff := 3
+else if lowerReject
+    kheperHandoff := -3
+else if upProbe
+    kheperHandoff := 1
+else if dnProbe
+    kheperHandoff := -1
+
+int kheperBridge = BR_OPEN
+if bridgeBlocked
+    kheperBridge := BR_BLOCKED
+else if bridgeCongested
+    kheperBridge := BR_CONGESTED
+else if bridgeClearing
+    kheperBridge := BR_CLEARING
+
+float handoffScore = 0.0
+int handoffAbs = math.abs(kheperHandoff)
+if handoffAbs == 1
+    handoffScore := 54.0
+else if handoffAbs == 2
+    handoffScore := 86.0
+else if handoffAbs == 3
+    handoffScore := 82.0
+
+float bridgeScore = 24.0
+if kheperBridge == BR_BLOCKED
+    bridgeScore := 86.0
+else if kheperBridge == BR_CONGESTED
+    bridgeScore := 68.0
+else if kheperBridge == BR_CLEARING
+    bridgeScore := 62.0
+
+float velocityScore = f_clamp100(velocityAbs * 140.0)
+if kheperVelocity == 2
+    velocityScore := math.max(velocityScore, 72.0)
+else if kheperVelocity == -2
+    velocityScore := math.max(velocityScore, 54.0)
+else if kheperVelocity == -1
+    velocityScore := math.max(velocityScore, 48.0)
+
+float alignmentScore = 0.0
+if moveDir != DIR_FLAT and htfTrendDir != DIR_FLAT
+    alignmentScore := moveDir == htfTrendDir ? 38.0 : 64.0
+
+float kheperScore = f_clamp100(math.max(math.max(gatePressureScore, handoffScore), math.max(bridgeScore, math.max(velocityScore, alignmentScore))))
+
+//==================================================
+// Cause TF and state
+//==================================================
+bool currentTfCause = math.abs(impulseAtr) >= impulseAtrMin * 1.8 and htfTrendDir == DIR_FLAT
+bool nextHtfCause = (upperReject or lowerReject or bridgeConflict) and nearAnyGate
+bool bridgeCause = bridgeCongested or bridgeBlocked
+bool velocityCause = (kheperVelocity == 2 or kheperVelocity == -2) and not nearAnyGate
+
+int causeCount = 0
+if currentTfCause
+    causeCount += 1
+if nextHtfCause
+    causeCount += 1
+if bridgeCause
+    causeCount += 1
+if velocityCause
+    causeCount += 1
+
+int kheperCauseTf = CAUSE_NONE
+if causeCount > 1
+    kheperCauseTf := CAUSE_MIXED
+else if nextHtfCause
+    kheperCauseTf := CAUSE_NEXT_HTF
+else if bridgeCause
+    kheperCauseTf := CAUSE_BRIDGE
+else if currentTfCause
+    kheperCauseTf := CAUSE_CURRENT_TF
+else if velocityCause
+    kheperCauseTf := CAUSE_VELOCITY
+
+int kheperState = ST_IDLE
+if kheperBridge == BR_BLOCKED
+    kheperState := ST_BLOCK
+else if handoffAbs == 2
+    kheperState := ST_HANDOFF
+else if handoffAbs == 1 or nearAnyGate
+    kheperState := ST_TEST
+else if kheperScore >= activeMin or kheperBridge == BR_CONGESTED or kheperBridge == BR_CLEARING
+    kheperState := ST_APPROACH
+
+int kheperActiveFlag = (kheperState != ST_IDLE or kheperScore >= activeMin) ? 1 : 0
+
+int kheperDir = DIR_FLAT
+if kheperHandoff != 0
+    kheperDir := kheperHandoff > 0 ? DIR_UP : DIR_DN
+else if moveDir != DIR_FLAT
+    kheperDir := moveDir
+else
+    kheperDir := htfTrendDir
+
+string kheperPolicy = "OBSERVE"
+if kheperBridge == BR_BLOCKED
+    kheperPolicy := "GATE_BLOCKED"
+else if kheperBridge == BR_CONGESTED
+    kheperPolicy := "BRIDGE_CONGESTED"
+else if handoffAbs == 2
+    kheperPolicy := "HANDOFF_ACCEPTED"
+else if kheperBridge == BR_CLEARING
+    kheperPolicy := "BRIDGE_CLEARING"
+else if handoffAbs == 1
+    kheperPolicy := "HANDOFF_TEST"
+else if kheperVelocity == 2
+    kheperPolicy := "VELOCITY_ACCEL"
+else if kheperVelocity == -2
+    kheperPolicy := "VELOCITY_STALL"
+else if kheperBridge == BR_OPEN
+    kheperPolicy := "GATE_OPEN"
+
+//==================================================
+// Events
+//==================================================
+bool prevNearUpperGate = bar_index > 0 ? nearUpperGate[1] : false
+bool prevNearLowerGate = bar_index > 0 ? nearLowerGate[1] : false
+bool prevUpAccepted = bar_index > 0 ? upAccepted[1] : false
+bool prevDnAccepted = bar_index > 0 ? dnAccepted[1] : false
+bool prevUpperReject = bar_index > 0 ? upperReject[1] : false
+bool prevLowerReject = bar_index > 0 ? lowerReject[1] : false
+bool prevBridgeCongested = bar_index > 0 ? bridgeCongested[1] : false
+bool prevBridgeClearing = bar_index > 0 ? bridgeClearing[1] : false
+int prevVelocity = bar_index > 0 ? kheperVelocity[1] : 0
+int prevActiveFlag = bar_index > 0 ? kheperActiveFlag[1] : 0
+
+bool upperGateOn = nearUpperGate and not prevNearUpperGate
+bool lowerGateOn = nearLowerGate and not prevNearLowerGate
+bool handoffUpOn = upAccepted and not prevUpAccepted
+bool handoffDnOn = dnAccepted and not prevDnAccepted
+bool upperBlockOn = upperReject and not prevUpperReject
+bool lowerBlockOn = lowerReject and not prevLowerReject
+bool congestedOn = bridgeCongested and not prevBridgeCongested
+bool clearingOn = bridgeClearing and not prevBridgeClearing
+bool accelOn = kheperVelocity == 2 and prevVelocity != 2
+bool stallOn = kheperVelocity == -2 and prevVelocity != -2
+bool activeOn = kheperActiveFlag == 1 and prevActiveFlag == 0
+
+int kheperEvent = EC_NONE
+if handoffUpOn
+    kheperEvent := EC_HANDOFF_UP
+else if handoffDnOn
+    kheperEvent := EC_HANDOFF_DN
+else if upperBlockOn
+    kheperEvent := EC_UPPER_BLOCK
+else if lowerBlockOn
+    kheperEvent := EC_LOWER_BLOCK
+else if congestedOn
+    kheperEvent := EC_CONGESTED
+else if clearingOn
+    kheperEvent := EC_CLEARING
+else if upperGateOn
+    kheperEvent := EC_UPPER_GATE
+else if lowerGateOn
+    kheperEvent := EC_LOWER_GATE
+else if accelOn
+    kheperEvent := EC_ACCEL
+else if stallOn
+    kheperEvent := EC_STALL
+else if activeOn
+    kheperEvent := EC_ACTIVE_ON
+
+float eventSeverity = f_clamp100(math.max(kheperScore, handoffScore))
+
+//==================================================
+// GV3 alert bus
+//==================================================
+string kheperAlertJson = f_kheperAlertJson(kheperEvent, eventSeverity, kheperPolicy, htfPosition, kheperHandoff, kheperBridge, kheperVelocity, kheperCauseTf, nextTf)
+
+if useJsonAlerts and kheperEvent != EC_NONE
+    if alertFrequencyMode == "BAR_CLOSE"
+        if barstate.isconfirmed
+            alert(kheperAlertJson, alert.freq_once_per_bar_close)
+    else
+        alert(kheperAlertJson, alert.freq_once_per_bar)
+
+//==================================================
+// Compact GPT table
+//==================================================
+var table kheperTable = na
+var string lastTableLayoutKey = ""
+
+color colBg = color.rgb(12, 14, 18)
+color colHead = color.rgb(230, 236, 242)
+color colText = color.rgb(205, 212, 220)
+color colSoft = color.rgb(145, 154, 166)
+color colGood = color.rgb(70, 210, 145)
+color colWarn = color.rgb(245, 185, 70)
+color colBad = color.rgb(245, 95, 95)
+color colInfo = color.rgb(90, 190, 240)
+color colAccent = color.rgb(185, 150, 255)
+color colFrame = color.new(color.white, 50)
+color dirColor = kheperDir > 0 ? colGood : kheperDir < 0 ? colBad : colSoft
+color stateColor = kheperState == ST_HANDOFF ? colGood : kheperState == ST_BLOCK ? colBad : kheperState == ST_TEST ? colWarn : kheperState == ST_APPROACH ? colInfo : colSoft
+color eventColor = kheperEvent == EC_NONE ? colSoft : stateColor
+color bridgeColor = kheperBridge == BR_BLOCKED ? colBad : kheperBridge == BR_CONGESTED ? colWarn : kheperBridge == BR_CLEARING ? colInfo : colGood
+color velocityColor = kheperVelocity == 2 ? colGood : kheperVelocity == -2 ? colWarn : kheperVelocity == -1 ? colInfo : colText
+color policyColor = kheperBridge == BR_BLOCKED ? colBad : kheperBridge == BR_CONGESTED ? colWarn : handoffAbs == 2 ? colGood : colText
+
+int frameWidth = showTableBorder ? 1 : 0
+int borderWidth = showTableBorder ? 1 : 0
+string tableLayoutKey = tablePosOpt + "|" + str.tostring(tableScale) + "|" + (showTableBorder ? "1" : "0")
+txtSz = f_textSize(tableScale)
+
+if showTable and barstate.islast
+    if na(kheperTable) or tableLayoutKey != lastTableLayoutKey
+        if not na(kheperTable)
+            table.delete(kheperTable)
+        kheperTable := table.new(f_tablePos(tablePosOpt), 4, 10, bgcolor=colBg, frame_color=colFrame, frame_width=frameWidth, border_color=colFrame, border_width=borderWidth)
+        lastTableLayoutKey := tableLayoutKey
+    table.clear(kheperTable, 0, 0, 3, 9)
+    table.cell(kheperTable, 0, 0, "KHEPER", text_color=colHead, text_size=txtSz)
+    table.cell(kheperTable, 1, 0, "GV3", text_color=colAccent, text_size=txtSz)
+    table.cell(kheperTable, 2, 0, "HTF", text_color=colSoft, text_size=txtSz)
+    table.cell(kheperTable, 3, 0, nextTf, text_color=colInfo, text_size=txtSz)
+    table.cell(kheperTable, 0, 1, "EC", text_color=colSoft, text_size=txtSz)
+    table.cell(kheperTable, 1, 1, f_eventText(kheperEvent), text_color=eventColor, text_size=txtSz)
+    table.cell(kheperTable, 2, 1, "ES", text_color=colSoft, text_size=txtSz)
+    table.cell(kheperTable, 3, 1, f_numTxt(eventSeverity), text_color=eventColor, text_size=txtSz)
+    table.cell(kheperTable, 0, 2, "DIR", text_color=colSoft, text_size=txtSz)
+    table.cell(kheperTable, 1, 2, f_dirText(kheperDir), text_color=dirColor, text_size=txtSz)
+    table.cell(kheperTable, 2, 2, "ST", text_color=colSoft, text_size=txtSz)
+    table.cell(kheperTable, 3, 2, f_stateText(kheperState), text_color=stateColor, text_size=txtSz)
+    table.cell(kheperTable, 0, 3, "GP", text_color=colSoft, text_size=txtSz)
+    table.cell(kheperTable, 1, 3, kheperPolicy, text_color=policyColor, text_size=txtSz)
+    table.cell(kheperTable, 2, 3, "ACT", text_color=colSoft, text_size=txtSz)
+    table.cell(kheperTable, 3, 3, str.tostring(kheperActiveFlag), text_color=kheperActiveFlag == 1 ? colGood : colSoft, text_size=txtSz)
+    table.cell(kheperTable, 0, 4, "POS", text_color=colSoft, text_size=txtSz)
+    table.cell(kheperTable, 1, 4, f_positionText(htfPosition), text_color=htfPosition > 0 ? colGood : htfPosition < 0 ? colBad : colText, text_size=txtSz)
+    table.cell(kheperTable, 2, 4, "HAND", text_color=colSoft, text_size=txtSz)
+    table.cell(kheperTable, 3, 4, f_handoffText(kheperHandoff), text_color=handoffAbs == 2 ? colGood : handoffAbs == 3 ? colBad : handoffAbs == 1 ? colWarn : colSoft, text_size=txtSz)
+    table.cell(kheperTable, 0, 5, "BR", text_color=colSoft, text_size=txtSz)
+    table.cell(kheperTable, 1, 5, f_bridgeText(kheperBridge), text_color=bridgeColor, text_size=txtSz)
+    table.cell(kheperTable, 2, 5, "VEL", text_color=colSoft, text_size=txtSz)
+    table.cell(kheperTable, 3, 5, f_velocityText(kheperVelocity), text_color=velocityColor, text_size=txtSz)
+    table.cell(kheperTable, 0, 6, "CAUSE", text_color=colSoft, text_size=txtSz)
+    table.cell(kheperTable, 1, 6, f_causeText(kheperCauseTf), text_color=kheperCauseTf == CAUSE_NONE ? colSoft : colWarn, text_size=txtSz)
+    table.cell(kheperTable, 2, 6, "HTFD", text_color=colSoft, text_size=txtSz)
+    table.cell(kheperTable, 3, 6, f_dirText(htfTrendDir), text_color=htfTrendDir > 0 ? colGood : htfTrendDir < 0 ? colBad : colSoft, text_size=txtSz)
+    table.cell(kheperTable, 0, 7, "GATE", text_color=colSoft, text_size=txtSz)
+    table.cell(kheperTable, 1, 7, f_numTxt(gatePressureScore), text_color=nearAnyGate ? colWarn : colText, text_size=txtSz)
+    table.cell(kheperTable, 2, 7, "SCORE", text_color=colSoft, text_size=txtSz)
+    table.cell(kheperTable, 3, 7, f_numTxt(kheperScore), text_color=kheperScore >= activeMin ? colInfo : colText, text_size=txtSz)
+    table.cell(kheperTable, 0, 8, "GP", text_color=colAccent, text_size=txtSz)
+    table.cell(kheperTable, 1, 8, "EC:" + str.tostring(kheperEvent), text_color=eventColor, text_size=txtSz)
+    table.cell(kheperTable, 2, 8, "BR:" + str.tostring(kheperBridge), text_color=bridgeColor, text_size=txtSz)
+    table.cell(kheperTable, 3, 8, "CF:" + str.tostring(kheperCauseTf), text_color=kheperCauseTf == CAUSE_NONE ? colSoft : colWarn, text_size=txtSz)
+    table.cell(kheperTable, 0, 9, "POS", text_color=colAccent, text_size=txtSz)
+    table.cell(kheperTable, 1, 9, str.tostring(htfPosition), text_color=colText, text_size=txtSz)
+    table.cell(kheperTable, 2, 9, "HAND", text_color=colAccent, text_size=txtSz)
+    table.cell(kheperTable, 3, 9, str.tostring(kheperHandoff), text_color=colText, text_size=txtSz)
+else if (not showTable) and not na(kheperTable)
+    table.delete(kheperTable)
+    kheperTable := na
+    lastTableLayoutKey := ""
+
+//==================================================
+// Hidden LINK5 outputs
+//==================================================
+plot(float(kheperDir), title="AL_KHEPER_DIRECTION", display=display.none)
+plot(float(kheperState), title="AL_KHEPER_STATE", display=display.none)
+plot(kheperScore, title="AL_KHEPER_SCORE", display=display.none)
+plot(float(kheperActiveFlag), title="AL_KHEPER_ACTIVE_FLAG", display=display.none)
+plot(float(kheperEvent), title="AL_KHEPER_EVENT", display=display.none)
+plot(float(htfPosition), title="AL_KHEPER_HTF_POSITION", display=display.none)
+plot(float(kheperHandoff), title="AL_KHEPER_HANDOFF", display=display.none)
+plot(float(kheperBridge), title="AL_KHEPER_BRIDGE", display=display.none)
+plot(float(kheperVelocity), title="AL_KHEPER_VELOCITY", display=display.none)
+plot(float(kheperCauseTf), title="AL_KHEPER_CAUSE_TF", display=display.none)

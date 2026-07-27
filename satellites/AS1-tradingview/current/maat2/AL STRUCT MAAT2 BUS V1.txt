@@ -1,0 +1,940 @@
+//@version=6
+indicator("AL STRUCT MAAT2 BUS V1", overlay=false, max_bars_back=5000, max_labels_count=0, max_lines_count=2)
+
+showVisuals = input.bool(true, "DISPLAY: FULL (끄면 HEADLESS)", group="00. Render")
+
+// MAAT2 Season 2 BUS copy of the legacy STRUCT context sensor.
+// Source reference only: AL_MAAT_HYBRID_PACK/AL 구조.
+// Adds Compact BUS outputs without changing the legacy Season 1 file.
+
+string G_CORE = "허브2 | 핵심 설정"
+string G_ASHA = "아샤 | 거래량비율"
+string G_HET = "헤트 | OI"
+string G_DOM = "도미넌스"
+string G_WENUT = "웨누트 | 시간대"
+string G_WEIGHT = "허브2 | 가중치"
+string G_TABLE = "허브2 | 표 설정"
+string groupAlertBus = "HUB Alert Bus"
+
+bool enableAlertBus = input.bool(false, "Enable unified alert() JSON bus", group=groupAlertBus, display=display.none)
+bool sendSnapshots = input.bool(true, "Send snapshot on bar close", group=groupAlertBus, display=display.none)
+bool sendTriggers = input.bool(false, "Send trigger changes", group=groupAlertBus, display=display.none)
+string briefPolicy = input.string("STORE_ONLY", "Brief policy", options=["STORE_ONLY", "CHANGE_ONLY"], group=groupAlertBus, display=display.none)
+
+
+int atrLen = input.int(14, "ATR 길이", minval=1, group=G_CORE, display=display.none)
+float alertLevel = input.float(60.0, "얼러트 임계값", minval=1.0, maxval=100.0, step=1.0, group=G_CORE, display=display.none)
+
+bool useAutoAsha = input.bool(true, "자동 거래소 심볼 사용", group=G_ASHA, display=display.none)
+int vrLen = input.int(40, "VR 평균 길이", minval=5, maxval=300, group=G_ASHA, display=display.none)
+float volRatioTh = input.float(1.80, "VR 임계값", minval=1.0, step=0.05, group=G_ASHA, display=display.none)
+int churnMinAgree = input.int(2, "최소 동의 개수", minval=1, maxval=9, group=G_ASHA, display=display.none)
+float churnTrAtrMax = input.float(0.85, "소용돌이 TR/ATR 상한", minval=0.1, step=0.05, group=G_ASHA, display=display.none)
+bool cusAsha1On = input.bool(false, "사용자 VR #1 사용", group=G_ASHA, display=display.none)
+string cusAsha1 = input.string("", "사용자 VR #1 심볼", group=G_ASHA, display=display.none)
+bool cusAsha2On = input.bool(false, "사용자 VR #2 사용", group=G_ASHA, display=display.none)
+string cusAsha2 = input.string("", "사용자 VR #2 심볼", group=G_ASHA, display=display.none)
+
+bool useAutoHet = input.bool(true, "자동 OI 심볼 사용", group=G_HET, display=display.none)
+int hetLen = input.int(40, "헤트 정규화 길이", minval=5, maxval=300, group=G_HET, display=display.none)
+float hetMinMult = input.float(1.20, "헤트 최소 배수", minval=0.1, step=0.05, group=G_HET, display=display.none)
+bool cusOiOn = input.bool(false, "사용자 OI #1 사용", group=G_HET, display=display.none)
+string cusOi = input.string("", "사용자 OI #1 심볼", group=G_HET, display=display.none)
+
+int chopLen = input.int(14, "게르 촙 길이", minval=5, maxval=200, group=G_CORE, display=display.none)
+float chopLo = input.float(38.0, "게르 촙 하단", step=0.5, group=G_CORE, display=display.none)
+float chopHi = input.float(62.0, "게르 촙 상단", step=0.5, group=G_CORE, display=display.none)
+int squeezeLen = input.int(20, "게르 압축 길이", minval=5, maxval=200, group=G_CORE, display=display.none)
+float bbMult = input.float(2.0, "볼린저밴드 배수", minval=0.5, step=0.1, group=G_CORE, display=display.none)
+float kcMult = input.float(1.5, "켈트너채널 배수", minval=0.5, step=0.1, group=G_CORE, display=display.none)
+float pressureK = input.float(2.5, "압축 압력 증폭", minval=0.1, step=0.1, group=G_CORE, display=display.none)
+int bauAgreeMin = input.int(2, "바우 동의 게이트", minval=1, maxval=9, group=G_CORE, display=display.none)
+int obPivotLen = input.int(3, "바우 오더블록 피벗", minval=2, maxval=10, group=G_CORE, display=display.none)
+
+int domSmoothLen = input.int(3, "도미넌스 스무딩", minval=1, maxval=30, group=G_DOM, display=display.none)
+string btcSym = input.symbol("CRYPTOCAP:BTC.D", "BTC.D 심볼", group=G_DOM, display=display.none)
+string usdtSym = input.symbol("CRYPTOCAP:USDT.D", "USDT.D 심볼", group=G_DOM, display=display.none)
+string usdcSym = input.symbol("CRYPTOCAP:USDC.D", "USDC.D 심볼", group=G_DOM, display=display.none)
+
+int lookbackDays = input.int(30, "웨누트 통계 일수", minval=7, maxval=90, group=G_WENUT, display=display.none)
+float strongThreshold = input.float(70.0, "강한 시간대 기준", minval=50.0, maxval=95.0, step=1.0, group=G_WENUT, display=display.none)
+float quietThreshold = input.float(35.0, "조용한 시간대 기준", minval=5.0, maxval=60.0, step=1.0, group=G_WENUT, display=display.none)
+float leadMargin = input.float(8.0, "시간대 우세 간격", minval=1.0, maxval=30.0, step=1.0, group=G_WENUT, display=display.none)
+string tz = input.string("America/New_York", "웨누트 시간대", group=G_WENUT, display=display.none)
+
+float wAsha = input.float(1.30, "아샤", minval=0.0, step=0.05, group=G_WEIGHT, display=display.none)
+float wHet = input.float(1.20, "헤트", minval=0.0, step=0.05, group=G_WEIGHT, display=display.none)
+float wDom = input.float(0.80, "도미넌스", minval=0.0, step=0.05, group=G_WEIGHT, display=display.none)
+float wBau = input.float(0.90, "바우", minval=0.0, step=0.05, group=G_WEIGHT, display=display.none)
+float wWenut = input.float(0.70, "웨누트", minval=0.0, step=0.05, group=G_WEIGHT, display=display.none)
+float wFearGreed = input.float(0.45, "시장심리 프록시", minval=0.0, step=0.05, group=G_WEIGHT, display=display.none)
+
+bool showTable = input.bool(true, "표 표시", group=G_TABLE, display=display.none)
+string tablePosOpt = input.string("우측 상단", "표 위치", options=["좌측 상단", "중앙 상단", "우측 상단", "좌측 중앙", "정중앙", "우측 중앙", "좌측 하단", "중앙 하단", "우측 하단"], group=G_TABLE, display=display.none)
+int tableSizeScale = input.int(4, "표 크기 1~10", minval=1, maxval=10, group=G_TABLE, display=display.none)
+int cellWidthOpt = input.int(0, "셀 너비 (0 = 자동)", minval=0, maxval=40, group=G_TABLE, display=display.none)
+int cellHeightOpt = input.int(0, "셀 높이 (0 = 자동)", minval=0, maxval=20, group=G_TABLE, display=display.none)
+bool showTableFrame = input.bool(true, "표 외곽선 표시", group=G_TABLE, display=display.none)
+bool showTableGrid = input.bool(true, "표 내부 그리드 표시", group=G_TABLE, display=display.none)
+int frameWidthOpt = input.int(1, "외곽선 두께", minval=0, maxval=5, group=G_TABLE, display=display.none)
+int gridWidthOpt = input.int(1, "그리드 두께", minval=0, maxval=5, group=G_TABLE, display=display.none)
+color tableFrameColor = input.color(color.new(color.white, 70), "표 외곽선 색상", group=G_TABLE, display=display.none)
+color tableBorderColor = input.color(color.new(color.white, 85), "표 테두리 색상", group=G_TABLE, display=display.none)
+color tableHeaderBg = input.color(color.new(color.teal, 35), "헤더 배경색", group=G_TABLE, display=display.none)
+color tableBodyBg = input.color(color.new(color.black, 20), "본문 배경색", group=G_TABLE, display=display.none)
+color tableFinalBg = input.color(color.new(color.black, 15), "종합 행 배경색", group=G_TABLE, display=display.none)
+color tableLongStateBg = input.color(color.rgb(0, 50, 0), "UP 압력 배경색", group=G_TABLE, display=display.none)
+color tableShortStateBg = input.color(color.rgb(50, 0, 0), "DOWN 압력 배경색", group=G_TABLE, display=display.none)
+color tableNeutralStateBg = input.color(color.rgb(30, 30, 0), "중립 상태 배경색", group=G_TABLE, display=display.none)
+color tableTextColor = input.color(color.white, "기본 글자색", group=G_TABLE, display=display.none)
+color tableLongColor = input.color(color.lime, "UP 글자색", group=G_TABLE, display=display.none)
+color tableShortColor = input.color(color.red, "DOWN 글자색", group=G_TABLE, display=display.none)
+color tableWarnColor = input.color(color.orange, "경고 글자색", group=G_TABLE, display=display.none)
+color tableNeutralColor = input.color(color.gray, "중립 글자색", group=G_TABLE, display=display.none)
+color tableInfoColor = input.color(color.aqua, "정보 글자색", group=G_TABLE, display=display.none)
+int tableBgTransp = input.int(20, "표 배경 투명도", minval=0, maxval=100, group=G_TABLE, display=display.none)
+int headerBgTransp = input.int(35, "헤더 배경 투명도", minval=0, maxval=100, group=G_TABLE, display=display.none)
+int riskBgTransp = input.int(35, "위험/경고 배경 투명도", minval=0, maxval=100, group=G_TABLE, display=display.none)
+string langMode = input.string("CODE", "상태 언어", options=["KR", "EN", "CODE"], group=G_TABLE, display=display.none)
+string columnMode = input.string("NORMAL", "열 표시 모드", options=["COMPACT", "NORMAL", "DEBUG"], group=G_TABLE, display=display.none)
+bool debugMode = input.bool(false, "디버그 모드", group=G_TABLE, display=display.none)
+bool compactRows = input.bool(true, "행 간격 압축", group=G_TABLE, display=display.none)
+bool showStateRow = input.bool(true, "STATE 행 표시", group=G_TABLE, display=display.none)
+bool showLongRow = input.bool(true, "LONG 행 표시", group=G_TABLE, display=display.none)
+bool showShortRow = input.bool(true, "SHORT 행 표시", group=G_TABLE, display=display.none)
+bool showRiskRow = input.bool(true, "RISK 행 표시", group=G_TABLE, display=display.none)
+bool showEventRow = input.bool(true, "EVENT 행 표시", group=G_TABLE, display=display.none)
+bool showBusRow = input.bool(true, "BUS 행 표시", group=G_TABLE, display=display.none)
+
+f_clamp(float v, float lo, float hi) =>
+    math.max(lo, math.min(hi, v))
+
+f_clamp01(float v) =>
+    f_clamp(v, 0.0, 1.0)
+
+f_pct(float v) =>
+    float(math.round(f_clamp(v, 0.0, 100.0)))
+
+f_pos(string opt) =>
+    result = position.top_right
+    if opt == "좌측 상단"
+        result := position.top_left
+    else if opt == "중앙 상단"
+        result := position.top_center
+    else if opt == "우측 상단"
+        result := position.top_right
+    else if opt == "좌측 중앙"
+        result := position.middle_left
+    else if opt == "정중앙"
+        result := position.middle_center
+    else if opt == "우측 중앙"
+        result := position.middle_right
+    else if opt == "좌측 하단"
+        result := position.bottom_left
+    else if opt == "중앙 하단"
+        result := position.bottom_center
+    else if opt == "우측 하단"
+        result := position.bottom_right
+    result
+
+f_sizeFromScale(int scale) =>
+    result = size.small
+    if scale <= 2
+        result := size.tiny
+    else if scale <= 5
+        result := size.small
+    else if scale <= 7
+        result := size.normal
+    else if scale <= 9
+        result := size.large
+    else
+        result := size.huge
+    result
+
+f_tableCell(t, int col, int row, string txt, color txtColor, color bgColor, txtSize) =>
+    if cellWidthOpt > 0 and cellHeightOpt > 0
+        table.cell(t, col, row, txt, width=cellWidthOpt, height=cellHeightOpt, text_color=txtColor, bgcolor=bgColor, text_size=txtSize)
+    else if cellWidthOpt > 0
+        table.cell(t, col, row, txt, width=cellWidthOpt, text_color=txtColor, bgcolor=bgColor, text_size=txtSize)
+    else if cellHeightOpt > 0
+        table.cell(t, col, row, txt, height=cellHeightOpt, text_color=txtColor, bgcolor=bgColor, text_size=txtSize)
+    else
+        table.cell(t, col, row, txt, text_color=txtColor, bgcolor=bgColor, text_size=txtSize)
+
+f_row3(t, int row, string a, string b, string c, color ca, color cb, color cc, color bg, txtSize) =>
+    f_tableCell(t, 0, row, a, ca, bg, txtSize)
+    f_tableCell(t, 1, row, b, cb, bg, txtSize)
+    f_tableCell(t, 2, row, c, cc, bg, txtSize)
+
+f_dirCode(float upPct, float downPct) =>
+    int result = 0
+    if upPct > downPct + 5.0
+        result := 1
+    else if downPct > upPct + 5.0
+        result := -1
+    result
+
+f_dirText(int dirCode, string lang) =>
+    string txt = "N"
+    if lang == "KR"
+        if dirCode > 0
+            txt := "상승"
+        else if dirCode < 0
+            txt := "하락"
+        else
+            txt := "중립"
+    else if lang == "EN"
+        if dirCode > 0
+            txt := "BULL"
+        else if dirCode < 0
+            txt := "BEAR"
+        else
+            txt := "NEUT"
+    else
+        if dirCode > 0
+            txt := "B"
+        else if dirCode < 0
+            txt := "S"
+        else
+            txt := "N"
+    txt
+
+f_riskCode(float chopPenalty, float squeezeBoost, float hetMove, float ctxUp, float ctxDown) =>
+    int result = 0
+    if ctxUp >= 35 and ctxDown >= 35 and math.abs(ctxUp - ctxDown) <= 10
+        result := 3
+    if chopPenalty > 0.7
+        result := math.max(result, 3)
+    else if chopPenalty > 0.4
+        result := math.max(result, 2)
+    if squeezeBoost > 0.65
+        result := math.max(result, 4)
+    if math.abs(hetMove) > 0.75
+        result := math.max(result, 4)
+    result
+
+f_riskText(int riskCode, string lang) =>
+    string txt = "R" + str.tostring(riskCode)
+    if lang == "KR"
+        if riskCode >= 4
+            txt := "과열"
+        else if riskCode >= 3
+            txt := "위험"
+        else if riskCode >= 1
+            txt := "주의"
+        else
+            txt := "안정"
+    else if lang == "EN"
+        if riskCode >= 4
+            txt := "OVERHEAT"
+        else if riskCode >= 3
+            txt := "RISK"
+        else if riskCode >= 1
+            txt := "CAUTION"
+        else
+            txt := "SAFE"
+    txt
+
+f_eventText(int eventCode, string lang) =>
+    string txt = "E" + str.tostring(eventCode)
+    if lang == "KR"
+        if eventCode == 9
+            txt := "소음"
+        else if eventCode == 8
+            txt := "위험차단"
+        else if eventCode == 7
+            txt := "압축"
+        else if eventCode == 6
+            txt := "횡보"
+        else if eventCode == 5
+            txt := "충돌"
+        else if eventCode == 4
+            txt := "동조"
+        else if eventCode == 3
+            txt := "확장"
+        else if eventCode == 2
+            txt := "형성"
+        else if eventCode == 1
+            txt := "기억"
+        else
+            txt := "-"
+    else if lang == "EN"
+        if eventCode == 9
+            txt := "NOISE"
+        else if eventCode == 8
+            txt := "RISK_BLOCK"
+        else if eventCode == 7
+            txt := "SQUEEZE"
+        else if eventCode == 6
+            txt := "CHOP"
+        else if eventCode == 5
+            txt := "CONFLICT"
+        else if eventCode == 4
+            txt := "SYNC"
+        else if eventCode == 3
+            txt := "EXPAND"
+        else if eventCode == 2
+            txt := "BUILD"
+        else if eventCode == 1
+            txt := "MEMORY"
+        else
+            txt := "-"
+    else
+        if eventCode == 9
+            txt := "NO"
+        else if eventCode == 8
+            txt := "RB"
+        else if eventCode == 7
+            txt := "SQ"
+        else if eventCode == 6
+            txt := "CH"
+        else if eventCode == 5
+            txt := "CF"
+        else if eventCode == 4
+            txt := "SY"
+        else if eventCode == 3
+            txt := "EX"
+        else if eventCode == 2
+            txt := "BU"
+        else if eventCode == 1
+            txt := "ME"
+        else
+            txt := "-"
+    txt
+
+f_stateText(string state, string lang) =>
+    string txt = state
+    if lang == "KR"
+        txt := state
+    else if lang == "EN"
+        if state == "상방환경"
+            txt := "BULL ENV"
+        else if state == "하방환경"
+            txt := "BEAR ENV"
+        else if state == "혼합환경"
+            txt := "CONFLICT"
+        else if state == "방향대기"
+            txt := "WAIT"
+        else
+            txt := "NEUTRAL"
+    else
+        if state == "상방환경"
+            txt := "B.ENV"
+        else if state == "하방환경"
+            txt := "S.ENV"
+        else if state == "혼합환경"
+            txt := "CF"
+        else if state == "방향대기"
+            txt := "W"
+        else
+            txt := "N"
+    txt
+
+
+f_jsonSafe(string s) =>
+    string out = str.replace_all(s, "\\", "\\\\")
+    out := str.replace_all(out, "\"", "\\\"")
+    out := str.replace_all(out, "\n", " ")
+    out
+
+f_kv(string k, string v) =>
+    "\"" + k + "\":\"" + f_jsonSafe(v) + "\""
+
+f_kvNum(string k, float v) =>
+    "\"" + k + "\":" + str.tostring(v)
+
+f_kvBool(string k, bool v) =>
+    "\"" + k + "\":" + (v ? "true" : "false")
+
+f_band(float v) =>
+    float x = f_clamp(v, 0.0, 100.0)
+    string out = "NONE"
+    if x >= 80.0
+        out := "EXTREME"
+    else if x >= 60.0
+        out := "HIGH"
+    else if x >= 40.0
+        out := "MID"
+    else if x >= 20.0
+        out := "LOW"
+    out
+
+f_signedBand(float v) =>
+    string out = "FLAT_NONE"
+    if v > 0.0
+        out := "UP_" + f_band(math.abs(v) * 100.0)
+    else if v < 0.0
+        out := "DN_" + f_band(math.abs(v) * 100.0)
+    out
+
+f_isValid(float x) =>
+    not na(x) and x > 0.0 and x < 1000000000000.0
+
+f_vr(string sym) =>
+    request.security(sym, timeframe.period, [nz(volume, 0.0) / math.max(ta.sma(nz(volume, 0.0), vrLen), 1.0), close > open ? 1.0 : close < open ? -1.0 : 0.0], ignore_invalid_symbol=true)
+
+f_oi(string sym) =>
+    request.security(sym, timeframe.period, close, ignore_invalid_symbol=true)
+
+f_dom(string sym) =>
+    request.security(sym, timeframe.period, close, ignore_invalid_symbol=true)
+
+f_ob(int pivLen) =>
+    var float bullTopMem = na
+    var float bullBotMem = na
+    var float bearTopMem = na
+    var float bearBotMem = na
+    float pl = ta.pivotlow(low, pivLen, pivLen)
+    float ph = ta.pivothigh(high, pivLen, pivLen)
+    if not na(pl)
+        bullTopMem := math.max(open[pivLen], close[pivLen])
+        bullBotMem := low[pivLen]
+    if not na(ph)
+        bearTopMem := high[pivLen]
+        bearBotMem := math.min(open[pivLen], close[pivLen])
+    [bullTopMem, bullBotMem, bearTopMem, bearBotMem]
+
+f_wenutStats(int days, string zone) =>
+    int currentHour = hour(time, zone)
+    int bullCnt = 0
+    int bearCnt = 0
+    int sampleCnt = 0
+    int barsBack = math.max(days * 24, 24)
+    for i = 1 to barsBack
+        if not na(close[i]) and not na(time[i]) and hour(time[i], zone) == currentHour
+            sampleCnt += 1
+            bullCnt += close[i] > open[i] ? 1 : 0
+            bearCnt += close[i] < open[i] ? 1 : 0
+    float bullPct = sampleCnt > 0 ? float(bullCnt) / float(sampleCnt) * 100.0 : 0.0
+    float bearPct = sampleCnt > 0 ? float(bearCnt) / float(sampleCnt) * 100.0 : 0.0
+    [bullPct, bearPct, float(currentHour)]
+
+float atrV = ta.atr(atrLen)
+string base = syminfo.basecurrency == "" ? "BTC" : syminfo.basecurrency
+
+string sCoinbase = "COINBASE:" + base + "USD"
+string sBnSpotU = "BINANCE:" + base + "USDT"
+string sBnSpotC = "BINANCE:" + base + "USDC"
+string sBnPerpU = "BINANCE:" + base + "USDT.P"
+string sBnPerpC = "BINANCE:" + base + "USDC.P"
+string sOkxSpot = "OKX:" + base + "USDT"
+string sOkxPerp = "OKX:" + base + "USDT.P"
+string sBybPerp = "BYBIT:" + base + "USDT.P"
+string sBtgPerp = "BITGET:" + base + "USDT.P"
+
+[vr1Raw, dir1Raw] = f_vr(sCoinbase)
+[vr2Raw, dir2Raw] = f_vr(sBnSpotU)
+[vr3Raw, dir3Raw] = f_vr(sBnSpotC)
+[vr4Raw, dir4Raw] = f_vr(sBnPerpU)
+[vr5Raw, dir5Raw] = f_vr(sBnPerpC)
+[vr6Raw, dir6Raw] = f_vr(sOkxSpot)
+[vr7Raw, dir7Raw] = f_vr(sOkxPerp)
+[vr8Raw, dir8Raw] = f_vr(sBybPerp)
+[vr9Raw, dir9Raw] = f_vr(sBtgPerp)
+float vr1 = useAutoAsha ? vr1Raw : na
+float vr2 = useAutoAsha ? vr2Raw : na
+float vr3 = useAutoAsha ? vr3Raw : na
+float vr4 = useAutoAsha ? vr4Raw : na
+float vr5 = useAutoAsha ? vr5Raw : na
+float vr6 = useAutoAsha ? vr6Raw : na
+float vr7 = useAutoAsha ? vr7Raw : na
+float vr8 = useAutoAsha ? vr8Raw : na
+float vr9 = useAutoAsha ? vr9Raw : na
+float dir1 = useAutoAsha ? dir1Raw : na
+float dir2 = useAutoAsha ? dir2Raw : na
+float dir3 = useAutoAsha ? dir3Raw : na
+float dir4 = useAutoAsha ? dir4Raw : na
+float dir5 = useAutoAsha ? dir5Raw : na
+float dir6 = useAutoAsha ? dir6Raw : na
+float dir7 = useAutoAsha ? dir7Raw : na
+float dir8 = useAutoAsha ? dir8Raw : na
+float dir9 = useAutoAsha ? dir9Raw : na
+float vrC1 = na
+float vrC2 = na
+float dirC1 = na
+float dirC2 = na
+if cusAsha1On and cusAsha1 != ""
+    [vrC1Raw, dirC1Raw] = f_vr(cusAsha1)
+    vrC1 := vrC1Raw
+    dirC1 := dirC1Raw
+if cusAsha2On and cusAsha2 != ""
+    [vrC2Raw, dirC2Raw] = f_vr(cusAsha2)
+    vrC2 := vrC2Raw
+    dirC2 := dirC2Raw
+
+int ashaEnabled = 0
+int agreeNow = 0
+int buyAgreeCnt = 0
+int sellAgreeCnt = 0
+if f_isValid(vr1)
+    ashaEnabled += 1
+    if vr1 >= volRatioTh
+        agreeNow += 1
+        buyAgreeCnt += dir1 > 0 ? 1 : 0
+        sellAgreeCnt += dir1 < 0 ? 1 : 0
+if f_isValid(vr2)
+    ashaEnabled += 1
+    if vr2 >= volRatioTh
+        agreeNow += 1
+        buyAgreeCnt += dir2 > 0 ? 1 : 0
+        sellAgreeCnt += dir2 < 0 ? 1 : 0
+if f_isValid(vr3)
+    ashaEnabled += 1
+    if vr3 >= volRatioTh
+        agreeNow += 1
+        buyAgreeCnt += dir3 > 0 ? 1 : 0
+        sellAgreeCnt += dir3 < 0 ? 1 : 0
+if f_isValid(vr4)
+    ashaEnabled += 1
+    if vr4 >= volRatioTh
+        agreeNow += 1
+        buyAgreeCnt += dir4 > 0 ? 1 : 0
+        sellAgreeCnt += dir4 < 0 ? 1 : 0
+if f_isValid(vr5)
+    ashaEnabled += 1
+    if vr5 >= volRatioTh
+        agreeNow += 1
+        buyAgreeCnt += dir5 > 0 ? 1 : 0
+        sellAgreeCnt += dir5 < 0 ? 1 : 0
+if f_isValid(vr6)
+    ashaEnabled += 1
+    if vr6 >= volRatioTh
+        agreeNow += 1
+        buyAgreeCnt += dir6 > 0 ? 1 : 0
+        sellAgreeCnt += dir6 < 0 ? 1 : 0
+if f_isValid(vr7)
+    ashaEnabled += 1
+    if vr7 >= volRatioTh
+        agreeNow += 1
+        buyAgreeCnt += dir7 > 0 ? 1 : 0
+        sellAgreeCnt += dir7 < 0 ? 1 : 0
+if f_isValid(vr8)
+    ashaEnabled += 1
+    if vr8 >= volRatioTh
+        agreeNow += 1
+        buyAgreeCnt += dir8 > 0 ? 1 : 0
+        sellAgreeCnt += dir8 < 0 ? 1 : 0
+if f_isValid(vr9)
+    ashaEnabled += 1
+    if vr9 >= volRatioTh
+        agreeNow += 1
+        buyAgreeCnt += dir9 > 0 ? 1 : 0
+        sellAgreeCnt += dir9 < 0 ? 1 : 0
+if f_isValid(vrC1)
+    ashaEnabled += 1
+    if vrC1 >= volRatioTh
+        agreeNow += 1
+        buyAgreeCnt += dirC1 > 0 ? 1 : 0
+        sellAgreeCnt += dirC1 < 0 ? 1 : 0
+if f_isValid(vrC2)
+    ashaEnabled += 1
+    if vrC2 >= volRatioTh
+        agreeNow += 1
+        buyAgreeCnt += dirC2 > 0 ? 1 : 0
+        sellAgreeCnt += dirC2 < 0 ? 1 : 0
+
+int binanceAgreeRaw = (f_isValid(vr2) and vr2 >= volRatioTh ? 1 : 0) + (f_isValid(vr3) and vr3 >= volRatioTh ? 1 : 0) + (f_isValid(vr4) and vr4 >= volRatioTh ? 1 : 0) + (f_isValid(vr5) and vr5 >= volRatioTh ? 1 : 0)
+int agreeNowRaw = agreeNow
+agreeNow := agreeNow - binanceAgreeRaw + (binanceAgreeRaw > 0 ? 1 : 0)
+
+float trAtr = ta.tr(true) / math.max(atrV, syminfo.mintick)
+bool compressed = (high - low) <= atrV * churnTrAtrMax
+bool ashaChurn = agreeNow >= churnMinAgree and buyAgreeCnt > 0 and sellAgreeCnt > 0 and math.abs(buyAgreeCnt - sellAgreeCnt) <= 1 and compressed and trAtr <= churnTrAtrMax
+float ashaNorm = 0.0
+if not ashaChurn and agreeNow >= churnMinAgree
+    float ashaDenom = math.max(float(ashaEnabled), 1.0)
+    ashaNorm := buyAgreeCnt > sellAgreeCnt ? float(agreeNow) / ashaDenom : sellAgreeCnt > buyAgreeCnt ? -float(agreeNow) / ashaDenom : 0.0
+ashaNorm := f_clamp(ashaNorm, -1.0, 1.0)
+
+string oiBnU = "BINANCE:" + base + "USDT.P_OI"
+string oiBnC = "BINANCE:" + base + "USDC.P_OI"
+string oiByb = "BYBIT:" + base + "USDT.P_OI"
+string oiOkx = "OKX:" + base + "USDT.P_OI"
+string oiBtg = "BITGET:" + base + "USDT.P_OI"
+
+float oi1 = useAutoHet ? f_oi(oiBnU) : na
+float oi2 = useAutoHet ? f_oi(oiBnC) : na
+float oi3 = useAutoHet ? f_oi(oiByb) : na
+float oi4 = useAutoHet ? f_oi(oiOkx) : na
+float oi5 = useAutoHet ? f_oi(oiBtg) : na
+float oiC = cusOiOn and cusOi != "" ? f_oi(cusOi) : na
+bool oiV1 = f_isValid(oi1)
+bool oiV2 = f_isValid(oi2)
+bool oiV3 = f_isValid(oi3)
+bool oiV4 = f_isValid(oi4)
+bool oiV5 = f_isValid(oi5)
+bool oiVC = f_isValid(oiC)
+int oiValidN = (oiV1 ? 1 : 0) + (oiV2 ? 1 : 0) + (oiV3 ? 1 : 0) + (oiV4 ? 1 : 0) + (oiV5 ? 1 : 0) + (oiVC ? 1 : 0)
+float oiCh1 = ta.change(oi1)
+float oiCh2 = ta.change(oi2)
+float oiCh3 = ta.change(oi3)
+float oiCh4 = ta.change(oi4)
+float oiCh5 = ta.change(oi5)
+float oiChC = ta.change(oiC)
+float dOi1 = oiV1 ? oiCh1 : 0.0
+float dOi2 = oiV2 ? oiCh2 : 0.0
+float dOi3 = oiV3 ? oiCh3 : 0.0
+float dOi4 = oiV4 ? oiCh4 : 0.0
+float dOi5 = oiV5 ? oiCh5 : 0.0
+float dOiC = oiVC ? oiChC : 0.0
+float hetRaw = nz(dOi1, 0.0) + nz(dOi2, 0.0) + nz(dOi3, 0.0) + nz(dOi4, 0.0) + nz(dOi5, 0.0) + nz(dOiC, 0.0)
+float priceDir = close > open ? 1.0 : close < open ? -1.0 : 0.0
+float hetBaseline = ta.sma(math.abs(hetRaw), hetLen)
+float hetMoveNorm = hetBaseline > 0.0 ? f_clamp01(math.abs(hetRaw) / (hetBaseline * hetMinMult)) : 0.0
+bool oiExpanding = hetRaw > 0.0 and hetMoveNorm > 0.15
+bool oiContracting = hetRaw < 0.0 and hetMoveNorm > 0.15
+float hetNormRaw = oiExpanding ? f_clamp(priceDir * hetMoveNorm, -1.0, 1.0) : 0.0
+bool hetReady = oiValidN >= 2 and not ashaChurn
+float hetNorm = hetReady ? hetNormRaw : 0.0
+
+float trSum = ta.sma(ta.tr(true), chopLen) * chopLen
+float chopRange = math.max(ta.highest(high, chopLen) - ta.lowest(low, chopLen), syminfo.mintick)
+float ciRaw = 100.0 * (math.log10(math.max(trSum / chopRange, 1.0)) / math.log10(float(chopLen)))
+float chopN = f_clamp01((ciRaw - chopLo) / math.max(chopHi - chopLo, 0.0001))
+float bbMid = ta.sma(close, squeezeLen)
+float bbDev = ta.stdev(close, squeezeLen) * bbMult
+float bbUp = bbMid + bbDev
+float bbDn = bbMid - bbDev
+float kcMid = ta.ema(close, squeezeLen)
+float kcAtr = ta.atr(squeezeLen)
+float kcUp = kcMid + kcAtr * kcMult
+float kcDn = kcMid - kcAtr * kcMult
+bool squeezeOn = bbUp < kcUp and bbDn > kcDn
+float kcW = math.max(kcUp - kcDn, syminfo.mintick)
+float bbW = math.max(bbUp - bbDn, syminfo.mintick)
+float pressureN = f_clamp01(math.max(0.0, (kcW - bbW) / kcW) * pressureK)
+float gerChopPenalty = chopN
+float gerSqueezeBst = squeezeOn ? pressureN : 0.0
+
+bool passAgree = agreeNow >= bauAgreeMin and not ashaChurn
+[h1BullTop, h1BullBot, h1BearTop, h1BearBot] = request.security(syminfo.tickerid, "60", f_ob(obPivotLen), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+[h4BullTop, h4BullBot, h4BearTop, h4BearBot] = request.security(syminfo.tickerid, "240", f_ob(obPivotLen), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+bool aboveBullOB = passAgree and ((not na(h1BullTop) and close > h1BullTop) or (not na(h4BullTop) and close > h4BullTop))
+bool belowBearOB = passAgree and ((not na(h1BearBot) and close < h1BearBot) or (not na(h4BearBot) and close < h4BearBot))
+bool insideBullOB = passAgree and ((not na(h1BullTop) and not na(h1BullBot) and close <= h1BullTop and close >= h1BullBot) or (not na(h4BullTop) and not na(h4BullBot) and close <= h4BullTop and close >= h4BullBot))
+bool insideBearOB = passAgree and ((not na(h1BearTop) and not na(h1BearBot) and close <= h1BearTop and close >= h1BearBot) or (not na(h4BearTop) and not na(h4BearBot) and close <= h4BearTop and close >= h4BearBot))
+float bauNorm = aboveBullOB ? 0.6 : belowBearOB ? -0.6 : insideBullOB or insideBearOB ? 0.0 : 0.0
+
+float btcD = f_dom(btcSym)
+float usdtD = f_dom(usdtSym)
+float usdcD = f_dom(usdcSym)
+float btcSm = ta.ema(nz(btcD, 0.0), domSmoothLen)
+float stableSm = ta.ema(nz(usdtD, 0.0) + nz(usdcD, 0.0), domSmoothLen)
+float btcDelta = ta.change(btcSm, domSmoothLen)
+float stableDelta = ta.change(stableSm, domSmoothLen)
+float domBias = 0.0
+if btcDelta > 0.0 and stableDelta < 0.0
+    domBias := 0.5
+else if btcDelta < 0.0 and stableDelta > 0.0
+    domBias := -0.5
+else if btcDelta < 0.0 and stableDelta < 0.0
+    domBias := 0.3
+
+[hourBullRaw, hourBearRaw, currentHourRaw] = request.security(syminfo.tickerid, "60", f_wenutStats(lookbackDays, tz), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+float hourBullPct = nz(hourBullRaw, 0.0)
+float hourBearPct = nz(hourBearRaw, 0.0)
+int currentNyHour = int(nz(currentHourRaw, hour(time, tz)))
+float wenutBias = 0.0
+if hourBullPct >= strongThreshold and hourBullPct - hourBearPct >= leadMargin
+    wenutBias := 0.4
+else if hourBearPct >= strongThreshold and hourBearPct - hourBullPct >= leadMargin
+    wenutBias := -0.4
+else if hourBullPct <= quietThreshold and hourBearPct <= quietThreshold
+    wenutBias := 0.0
+
+float fgMomentum = ta.rsi(close, 14)
+float fgVolatility = atrV / math.max(close, syminfo.mintick) * 100.0
+float fgVolume = ta.sma(nz(volume, 0.0), 5) / math.max(ta.sma(nz(volume, 0.0), 30), 1.0)
+float fearGreedRaw = fgMomentum * 0.5 + (1.0 - math.min(fgVolatility / 5.0, 1.0)) * 30.0 + math.min(math.max(fgVolume - 1.0, 0.0), 1.0) * 20.0
+float fearGreedNorm = f_pct(fearGreedRaw)
+bool greedZone = fearGreedNorm > 65.0
+bool fearZone = fearGreedNorm < 35.0
+float fearGreedBias = greedZone ? 0.25 : fearZone ? -0.25 : 0.0
+
+float sessVwapProxy = ta.vwap(hlc3)
+bool balanceZone = not na(sessVwapProxy) and math.abs(close - sessVwapProxy) <= atrV * 0.50
+
+float ctxRawLong = 0.0
+float ctxRawShort = 0.0
+ctxRawLong += math.max(0.0, ashaNorm) * wAsha
+ctxRawLong += math.max(0.0, hetNorm) * wHet
+ctxRawLong += math.max(0.0, domBias) * wDom
+ctxRawLong += math.max(0.0, bauNorm) * wBau
+ctxRawLong += math.max(0.0, wenutBias) * wWenut
+ctxRawLong += math.max(0.0, fearGreedBias) * wFearGreed
+ctxRawShort += math.max(0.0, -ashaNorm) * wAsha
+ctxRawShort += math.max(0.0, -hetNorm) * wHet
+ctxRawShort += math.max(0.0, -domBias) * wDom
+ctxRawShort += math.max(0.0, -bauNorm) * wBau
+ctxRawShort += math.max(0.0, -wenutBias) * wWenut
+ctxRawShort += math.max(0.0, -fearGreedBias) * wFearGreed
+
+float totalW = math.max(wAsha + wHet + wDom + wBau + wWenut + wFearGreed, 0.0001)
+float gerMul = 1.0 - gerChopPenalty * 0.30
+float gerBst = 1.0 + gerSqueezeBst * 0.20
+float balanceMul = balanceZone ? 0.90 : 1.0
+float ctxLongPct = f_pct(ctxRawLong / totalW * 100.0 * gerMul * gerBst * balanceMul)
+float ctxShortPct = f_pct(ctxRawShort / totalW * 100.0 * gerMul * gerBst * balanceMul)
+
+string noneText = "없음"
+string ctxState = ctxLongPct < 15 and ctxShortPct < 15 ? "방향대기" : ctxLongPct >= 60 and ctxShortPct < 45 ? "상방환경" : ctxShortPct >= 60 and ctxLongPct < 45 ? "하방환경" : ctxLongPct >= 35 and ctxShortPct >= 35 and math.abs(ctxLongPct - ctxShortPct) <= 10 ? "혼합환경" : "중립환경"
+string hetText = not hetReady ? noneText : hetNorm > 0.15 ? "상방 " + str.tostring(math.round(hetNorm * 100.0)) + "%" : hetNorm < -0.15 ? "하방 " + str.tostring(math.round(-hetNorm * 100.0)) + "%" : oiContracting ? "포지션정리" : hetMoveNorm <= 0.15 ? "약함" : noneText
+string gerStatus = squeezeOn ? "압축중" : gerChopPenalty > 0.7 ? "심한횡보" : gerChopPenalty > 0.4 ? "횡보" : "추세중"
+string bauStatus = aboveBullOB ? "상방구조" : belowBearOB ? "하방구조" : insideBullOB ? "상방구역" : insideBearOB ? "하방구역" : passAgree ? "구조안" : "대기"
+string priceStatus = na(sessVwapProxy) ? noneText : balanceZone ? "균형권" : close > sessVwapProxy + atrV * 0.50 ? "상단" : close < sessVwapProxy - atrV * 0.50 ? "하단" : "대기"
+string domFlowText = domBias > 0.0 ? "비트쏠림" : domBias < 0.0 ? "방어모드" : noneText
+string wenutText = wenutBias > 0.0 ? "상방 " + str.tostring(math.round(hourBullPct)) + "%" : wenutBias < 0.0 ? "하방 " + str.tostring(math.round(hourBearPct)) + "%" : noneText
+string fgText = greedZone ? "과열 " + str.tostring(math.round(fearGreedNorm)) : fearZone ? "위축 " + str.tostring(math.round(fearGreedNorm)) : "중립 " + str.tostring(math.round(fearGreedNorm))
+
+int structDirCode = f_dirCode(ctxLongPct, ctxShortPct)
+float structScore = f_clamp(50.0 + (ctxLongPct - ctxShortPct) / 2.0, 0.0, 100.0)
+bool structValid = not na(ctxLongPct) and not na(ctxShortPct) and not na(structScore)
+int structRiskCode = structValid ? f_riskCode(gerChopPenalty, gerSqueezeBst, hetMoveNorm, ctxLongPct, ctxShortPct) : 5
+float structContextPower = structValid ? math.max(ctxLongPct, ctxShortPct) : 0.0
+bool structConflict = structValid and ctxLongPct >= 35.0 and ctxShortPct >= 35.0 and math.abs(ctxLongPct - ctxShortPct) <= 10.0
+bool structChop = structValid and gerChopPenalty > 0.70
+bool structSqueeze = structValid and gerSqueezeBst > 0.65
+bool structBuild = structValid and structContextPower >= 35.0
+bool structExpand = structValid and structContextPower >= 60.0
+bool structUpSupport = structDirCode > 0 and (ashaNorm > 0.15 or hetNorm > 0.15 or bauNorm > 0.15)
+bool structDownSupport = structDirCode < 0 and (ashaNorm < -0.15 or hetNorm < -0.15 or bauNorm < -0.15)
+bool structAshaHetSupport = (structDirCode > 0 and ashaNorm > 0.15 and hetNorm > 0.15) or (structDirCode < 0 and ashaNorm < -0.15 and hetNorm < -0.15)
+bool structSync = structValid and (structUpSupport or structDownSupport)
+int structEventCode = 0
+if not structValid
+    structEventCode := 9
+else if structConflict
+    structEventCode := 5
+else if structChop
+    structEventCode := 6
+else if structSqueeze
+    structEventCode := 7
+else if structRiskCode >= 4
+    structEventCode := 8
+else if structSync
+    structEventCode := 4
+else if structExpand
+    structEventCode := 3
+else if structBuild
+    structEventCode := 2
+else if structContextPower > 0.0
+    structEventCode := 1
+else
+    structEventCode := 0
+int structDirPack = structValid ? (structDirCode > 0 ? 2 : structDirCode < 0 ? 0 : 1) : 1
+int structPackRiskCode = structValid ? structRiskCode : 5
+int structValidCode = structValid ? 1 : 0
+int structPackCode = structDirPack * 10000 + structPackRiskCode * 1000 + structEventCode * 10 + structValidCode
+int structDetailCode = 0
+if not structValid
+    structDetailCode := 90
+else if structConflict
+    structDetailCode := 80
+else if structChop
+    structDetailCode := 60
+else if structSqueeze
+    structDetailCode := 61
+else if structAshaHetSupport
+    structDetailCode := 50
+else if structSync
+    structDetailCode := 40
+else if structBuild
+    structDetailCode := 30
+else if math.abs(domBias) >= 0.30
+    structDetailCode := 70
+else if math.abs(wenutBias) >= 0.30
+    structDetailCode := 71
+else if structDirCode > 0
+    structDetailCode := 20
+else if structDirCode < 0
+    structDetailCode := 10
+else
+    structDetailCode := 0
+
+int T_LAST_COL = 2
+int T_LAST_ROW = 9
+int tableFrameWidth = showTableFrame ? frameWidthOpt : 0
+int tableGridWidth = showTableGrid ? gridWidthOpt : 0
+var table ctxTable = showVisuals ? table.new(f_pos(tablePosOpt), T_LAST_COL + 1, T_LAST_ROW + 1, border_width=tableGridWidth, border_color=tableBorderColor, frame_width=tableFrameWidth, frame_color=tableFrameColor) : na
+
+if barstate.islast and showVisuals
+    table.clear(ctxTable, 0, 0, T_LAST_COL, T_LAST_ROW)
+    if showTable
+        tableSize = f_sizeFromScale(tableSizeScale)
+        string activeMode = debugMode ? "DEBUG" : columnMode
+        color headerBg = color.new(tableHeaderBg, headerBgTransp)
+        color bodyBg = color.new(tableBodyBg, tableBgTransp)
+        color finalBg = color.new(tableFinalBg, tableBgTransp)
+        color sumBg = ctxState == "상방환경" ? color.new(tableLongStateBg, tableBgTransp) : ctxState == "하방환경" ? color.new(tableShortStateBg, tableBgTransp) : color.new(tableNeutralStateBg, tableBgTransp)
+        color riskBg = structRiskCode >= 3 ? color.new(tableWarnColor, riskBgTransp) : bodyBg
+        color hetColor = hetNorm > 0.15 ? tableLongColor : hetNorm < -0.15 ? tableShortColor : oiContracting ? tableWarnColor : tableNeutralColor
+        color gerColor = squeezeOn ? color.yellow : gerChopPenalty > 0.7 ? tableWarnColor : tableNeutralColor
+        color bauColor = aboveBullOB or insideBullOB ? tableLongColor : belowBearOB or insideBearOB ? tableShortColor : tableNeutralColor
+        color priceColor = balanceZone ? tableNeutralColor : priceStatus == "상단" ? tableLongColor : priceStatus == "하단" ? tableShortColor : tableNeutralColor
+        color fgColor = greedZone ? color.yellow : fearZone ? tableInfoColor : tableNeutralColor
+        int row = 0
+        if showStateRow
+            f_row3(ctxTable, row, "STRUCT", f_stateText(ctxState, langMode), f_dirText(structDirCode, langMode), tableTextColor, tableTextColor, structDirCode > 0 ? tableLongColor : structDirCode < 0 ? tableShortColor : tableNeutralColor, headerBg, tableSize)
+            row := row + 1
+        if showLongRow
+            string longTxt = activeMode == "DEBUG" ? str.tostring(ctxLongPct) + "% / ASHA " + str.tostring(math.round(ashaNorm * 100.0)) : str.tostring(ctxLongPct) + "%"
+            f_row3(ctxTable, row, activeMode == "COMPACT" ? "L" : "LONG", longTxt, ashaNorm > 0.0 ? str.tostring(math.round(ashaNorm * 100.0)) + "%" : noneText, tableTextColor, tableLongColor, ashaNorm > 0.0 ? tableLongColor : tableNeutralColor, bodyBg, tableSize)
+            row := row + 1
+        if showShortRow
+            string shortTxt = activeMode == "DEBUG" ? str.tostring(ctxShortPct) + "% / HET " + str.tostring(math.round(hetNorm * 100.0)) : str.tostring(ctxShortPct) + "%"
+            f_row3(ctxTable, row, activeMode == "COMPACT" ? "S" : "SHORT", shortTxt, hetText, tableTextColor, tableShortColor, hetColor, bodyBg, tableSize)
+            row := row + 1
+        if showRiskRow
+            string riskTxt = activeMode == "DEBUG" ? f_riskText(structRiskCode, langMode) + " / GER " + gerStatus : f_riskText(structRiskCode, langMode)
+            f_row3(ctxTable, row, "RISK", riskTxt, gerStatus, tableTextColor, structRiskCode >= 3 ? tableWarnColor : tableNeutralColor, gerColor, riskBg, tableSize)
+            row := row + 1
+        if showEventRow and activeMode != "COMPACT"
+            f_row3(ctxTable, row, "EVENT", f_eventText(structEventCode, langMode), bauStatus + " / " + priceStatus, tableTextColor, tableTextColor, bauColor, bodyBg, tableSize)
+            row := row + 1
+            f_row3(ctxTable, row, "FLOW", domFlowText, wenutText, tableTextColor, domBias > 0.0 ? tableWarnColor : tableNeutralColor, wenutBias > 0.0 ? tableLongColor : wenutBias < 0.0 ? tableShortColor : tableNeutralColor, bodyBg, tableSize)
+            row := row + 1
+        if showBusRow
+            string busText = "D" + str.tostring(structDirCode) + " S" + str.tostring(math.round(structScore)) + " R" + str.tostring(structRiskCode) + " E" + str.tostring(structEventCode)
+            string metaText = activeMode == "DEBUG" ? fgText : f_eventText(structEventCode, "CODE")
+            f_row3(ctxTable, row, "BUS", busText, metaText, tableTextColor, tableTextColor, fgColor, finalBg, tableSize)
+
+bool ctxUpCross = ctxLongPct >= alertLevel and nz(ctxLongPct[1], 0.0) < alertLevel
+bool ctxDownCross = ctxShortPct >= alertLevel and nz(ctxShortPct[1], 0.0) < alertLevel
+alertcondition(ctxUpCross, title="AL HUB2 | Up context", message="{\"hub\":\"AL_HUB2\",\"event\":\"UP_CONTEXT\",\"symbol\":\"{{ticker}}\",\"close\":\"{{close}}\",\"ctx_up\":\"{{plot(\"AL_HUB2_CTX_UP\")}}\",\"ctx_down\":\"{{plot(\"AL_HUB2_CTX_DOWN\")}}\"}")
+
+alertcondition(ctxDownCross, title="AL HUB2 | Down context", message="{\"hub\":\"AL_HUB2\",\"event\":\"DOWN_CONTEXT\",\"symbol\":\"{{ticker}}\",\"close\":\"{{close}}\",\"ctx_up\":\"{{plot(\"AL_HUB2_CTX_UP\")}}\",\"ctx_down\":\"{{plot(\"AL_HUB2_CTX_DOWN\")}}\"}")
+
+string hub2StateSignature = "CTX_UP_" + f_band(ctxLongPct) + "|CTX_DOWN_" + f_band(ctxShortPct) + "|CTX_" + ctxState + "|ASHA_" + f_signedBand(ashaNorm) + "|HET_" + f_signedBand(hetNorm) + "|GER_" + gerStatus + "|BAU_" + bauStatus + "|PRICE_" + priceStatus + "|DOM_" + f_signedBand(domBias) + "|WENUT_" + f_signedBand(wenutBias) + "|FG_" + f_band(fearGreedNorm)
+string hub2SnapshotKey = syminfo.tickerid + "|" + timeframe.period + "|" + str.tostring(time) + "|HUB2_CONTEXT_SNAPSHOT"
+string hub2SnapshotEventSig = "HUB2_CONTEXT_SNAPSHOT|" + hub2StateSignature
+string hub2SnapshotJson = "{"
+hub2SnapshotJson += f_kv("source", "TRADINGVIEW") + ","
+hub2SnapshotJson += f_kv("system", "AL_AILYNX") + ","
+hub2SnapshotJson += f_kv("engine", "HUB") + ","
+hub2SnapshotJson += f_kv("observer", "HORUS") + ","
+hub2SnapshotJson += f_kv("group", "CTX") + ","
+hub2SnapshotJson += f_kv("layer", "CONTEXT_ENV") + ","
+hub2SnapshotJson += f_kv("alert_kind", "SNAPSHOT") + ","
+hub2SnapshotJson += f_kv("event", "HUB2_CONTEXT_SNAPSHOT") + ","
+hub2SnapshotJson += f_kv("trigger", "BAR_CLOSE") + ","
+hub2SnapshotJson += f_kv("bar_status", "CLOSED") + ","
+hub2SnapshotJson += f_kv("symbol", syminfo.tickerid) + ","
+hub2SnapshotJson += f_kv("tf", timeframe.period) + ","
+hub2SnapshotJson += f_kv("time", str.tostring(time)) + ","
+hub2SnapshotJson += f_kvNum("open", open) + ","
+hub2SnapshotJson += f_kvNum("high", high) + ","
+hub2SnapshotJson += f_kvNum("low", low) + ","
+hub2SnapshotJson += f_kvNum("close", close) + ","
+hub2SnapshotJson += f_kvNum("volume", nz(volume, 0.0)) + ","
+hub2SnapshotJson += f_kvNum("ctx_up_pct", ctxLongPct) + ","
+hub2SnapshotJson += f_kvNum("ctx_down_pct", ctxShortPct) + ","
+hub2SnapshotJson += f_kv("ctx_state", ctxState) + ","
+hub2SnapshotJson += f_kvNum("agree_now", float(agreeNow)) + ","
+hub2SnapshotJson += f_kvNum("agree_now_raw", float(agreeNowRaw)) + ","
+hub2SnapshotJson += f_kvNum("binance_agree_raw", float(binanceAgreeRaw)) + ","
+hub2SnapshotJson += f_kvNum("asha", ashaNorm) + ","
+hub2SnapshotJson += f_kvNum("het", hetNorm) + ","
+hub2SnapshotJson += f_kv("ger", gerStatus) + ","
+hub2SnapshotJson += f_kv("bau", bauStatus) + ","
+hub2SnapshotJson += f_kv("price_zone", priceStatus) + ","
+hub2SnapshotJson += f_kv("dom_flow", domFlowText) + ","
+hub2SnapshotJson += f_kv("wenut_hour", wenutText) + ","
+hub2SnapshotJson += f_kv("fear_greed", fgText) + ","
+hub2SnapshotJson += f_kv("state_signature", hub2StateSignature) + ","
+hub2SnapshotJson += f_kv("event_signature", hub2SnapshotEventSig) + ","
+hub2SnapshotJson += f_kv("dedup_key", hub2SnapshotKey) + ","
+hub2SnapshotJson += f_kv("brief_policy", briefPolicy) + ","
+hub2SnapshotJson += f_kvBool("gpt_allowed", false) + ","
+hub2SnapshotJson += f_kvBool("voice_allowed", false) + ","
+hub2SnapshotJson += f_kv("version", "HUB_ALERT_BUS_V1")
+hub2SnapshotJson += "}"
+
+bool hub2CtxStateShift = bar_index > 0 and ctxState != ctxState[1]
+bool hub2OiContractingOn = bar_index > 0 and oiContracting and not oiContracting[1]
+bool hub2SqueezeOn = bar_index > 0 and squeezeOn and not squeezeOn[1]
+bool hub2DomFlowShift = bar_index > 0 and domFlowText != domFlowText[1]
+bool hub2StructureZoneShift = bar_index > 0 and bauStatus != bauStatus[1]
+string hub2TriggerEvent = ""
+if hub2SqueezeOn
+    hub2TriggerEvent := "HUB2_SQUEEZE_ON"
+else if hub2OiContractingOn
+    hub2TriggerEvent := "HUB2_OI_CONTRACTING_ON"
+else if hub2StructureZoneShift
+    hub2TriggerEvent := "HUB2_STRUCTURE_ZONE_SHIFT"
+else if hub2DomFlowShift
+    hub2TriggerEvent := "HUB2_DOM_FLOW_SHIFT"
+else if hub2CtxStateShift
+    hub2TriggerEvent := "HUB2_CONTEXT_STATE_SHIFT"
+bool hub2TriggerCondition = hub2TriggerEvent != ""
+string hub2TriggerSig = hub2TriggerEvent + "|" + hub2StateSignature
+string hub2TriggerKey = syminfo.tickerid + "|" + timeframe.period + "|" + str.tostring(time) + "|" + hub2TriggerEvent
+string hub2TriggerJson = "{"
+hub2TriggerJson += f_kv("source", "TRADINGVIEW") + ","
+hub2TriggerJson += f_kv("system", "AL_AILYNX") + ","
+hub2TriggerJson += f_kv("engine", "HUB") + ","
+hub2TriggerJson += f_kv("observer", "HORUS") + ","
+hub2TriggerJson += f_kv("group", "CTX") + ","
+hub2TriggerJson += f_kv("layer", "CONTEXT_ENV") + ","
+hub2TriggerJson += f_kv("alert_kind", "TRIGGER") + ","
+hub2TriggerJson += f_kv("event", hub2TriggerEvent) + ","
+hub2TriggerJson += f_kv("trigger", hub2TriggerEvent) + ","
+hub2TriggerJson += f_kv("bar_status", barstate.isconfirmed ? "CLOSED" : "LIVE") + ","
+hub2TriggerJson += f_kv("symbol", syminfo.tickerid) + ","
+hub2TriggerJson += f_kv("tf", timeframe.period) + ","
+hub2TriggerJson += f_kv("time", str.tostring(time)) + ","
+hub2TriggerJson += f_kvNum("open", open) + ","
+hub2TriggerJson += f_kvNum("high", high) + ","
+hub2TriggerJson += f_kvNum("low", low) + ","
+hub2TriggerJson += f_kvNum("close", close) + ","
+hub2TriggerJson += f_kvNum("volume", nz(volume, 0.0)) + ","
+hub2TriggerJson += f_kvNum("ctx_up_pct", ctxLongPct) + ","
+hub2TriggerJson += f_kvNum("ctx_down_pct", ctxShortPct) + ","
+hub2TriggerJson += f_kv("ctx_state", ctxState) + ","
+hub2TriggerJson += f_kvNum("agree_now", float(agreeNow)) + ","
+hub2TriggerJson += f_kvNum("agree_now_raw", float(agreeNowRaw)) + ","
+hub2TriggerJson += f_kvNum("binance_agree_raw", float(binanceAgreeRaw)) + ","
+hub2TriggerJson += f_kvNum("asha", ashaNorm) + ","
+hub2TriggerJson += f_kvNum("het", hetNorm) + ","
+hub2TriggerJson += f_kv("ger", gerStatus) + ","
+hub2TriggerJson += f_kv("bau", bauStatus) + ","
+hub2TriggerJson += f_kv("price_zone", priceStatus) + ","
+hub2TriggerJson += f_kv("dom_flow", domFlowText) + ","
+hub2TriggerJson += f_kv("wenut_hour", wenutText) + ","
+hub2TriggerJson += f_kv("fear_greed", fgText) + ","
+hub2TriggerJson += f_kv("state_signature", hub2StateSignature) + ","
+hub2TriggerJson += f_kv("event_signature", hub2TriggerSig) + ","
+hub2TriggerJson += f_kv("dedup_key", hub2TriggerKey) + ","
+hub2TriggerJson += f_kv("brief_policy", briefPolicy) + ","
+hub2TriggerJson += f_kvBool("gpt_allowed", false) + ","
+hub2TriggerJson += f_kvBool("voice_allowed", false) + ","
+hub2TriggerJson += f_kv("version", "HUB_ALERT_BUS_V1")
+hub2TriggerJson += "}"
+
+var string lastSnapshotKey = ""
+var string lastEventSignature = ""
+if enableAlertBus and sendSnapshots and barstate.isconfirmed and barstate.isrealtime and hub2SnapshotKey != lastSnapshotKey
+    alert(hub2SnapshotJson, alert.freq_once_per_bar_close)
+    lastSnapshotKey := hub2SnapshotKey
+if enableAlertBus and sendTriggers and barstate.isrealtime and hub2TriggerCondition and hub2TriggerSig != lastEventSignature
+    alert(hub2TriggerJson, alert.freq_once_per_bar)
+    lastEventSignature := hub2TriggerSig
+
+plot(ctxLongPct, "AL_HUB2_CTX_UP", color=showVisuals ? color.lime : color.new(color.gray, 100), linewidth=2)
+plot(ctxShortPct, "AL_HUB2_CTX_DOWN", color=showVisuals ? color.red : color.new(color.gray, 100), linewidth=2)
+hline(60.0, "Context threshold", color=showVisuals ? color.new(color.gray, 60) : color.new(color.gray, 100))
+plot(gerChopPenalty, "AL_HUB2_GER_CHOP", display=display.data_window)
+plot(gerSqueezeBst, "AL_HUB2_GER_SQ", display=display.data_window)
+plot(ashaNorm, "AL_HUB2_ASHA_NORM", display=display.none)
+plot(hetNorm, "AL_HUB2_HET_NORM", display=display.none)
+plot(hetMoveNorm, "AL_HUB2_HET_MOVE", display=display.none)
+plot(domBias, "AL_HUB2_DOM_BIAS", display=display.none)
+plot(bauNorm, "AL_HUB2_BAU_NORM", display=display.none)
+plot(wenutBias, "AL_HUB2_WENUT_BIAS", display=display.none)
+plot(fearGreedNorm, "AL_HUB2_FEAR_GREED", display=display.none)
+plot(float(structPackCode), title="AL_STRUCT_PACK_CODE", display=display.none)
+plot(float(structDirCode), title="AL_STRUCT_DIR_CODE", display=display.none)
+plot(structScore, title="AL_STRUCT_SCORE", display=display.none)
+plot(float(structDetailCode), title="AL_STRUCT_DETAIL_CODE", display=display.none)
+plot(structContextPower, title="AL_STRUCT_CONTEXT_POWER", display=display.none)
+plot(float(structRiskCode), title="AL_STRUCT_RISK_CODE", display=display.none)
+plot(float(structEventCode), title="AL_STRUCT_EVENT_CODE", display=display.none)

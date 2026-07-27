@@ -1,0 +1,162 @@
+//@version=6
+indicator("AL GER GPT", overlay=true, max_bars_back=3000)
+
+string GROUP_CORE = "게르 G | 코어"
+int   chopLen   = input.int(14, "CHOP 길이", minval=5, maxval=200, group=GROUP_CORE, display=display.none)
+float chopLo    = input.float(38.0, "CHOP 하단", step=0.5, group=GROUP_CORE, display=display.none)
+float chopHi    = input.float(62.0, "CHOP 상단", step=0.5, group=GROUP_CORE, display=display.none)
+int   sqLen     = input.int(20, "스퀴즈 길이", minval=5, maxval=200, group=GROUP_CORE, display=display.none)
+float bbMult    = input.float(2.0, "BB 배수", step=0.1, group=GROUP_CORE, display=display.none)
+float kcMult    = input.float(1.5, "KC 배수", step=0.1, group=GROUP_CORE, display=display.none)
+int   smoothLen = input.int(5, "부드럽게", minval=1, maxval=50, group=GROUP_CORE, display=display.none)
+float pressureK = input.float(2.5, "압축 배수", step=0.1, group=GROUP_CORE, display=display.none)
+float gateMin   = input.float(0.18, "게이트 최소", step=0.01, group=GROUP_CORE, display=display.none)
+
+string GROUP_ALERT = "게르 G | 얼러트"
+bool useAlerts = input.bool(true, "GPT 얼러트 사용", group=GROUP_ALERT, display=display.none)
+
+f_clamp100(float x) =>
+    math.max(0.0, math.min(100.0, x))
+
+int ST_IDLE = 0
+int ST_SET = 1
+int ST_TRIG = 2
+int ST_HOLD = 3
+int ST_FAIL = 4
+
+float trNow = ta.tr(true)
+float trSum = ta.sma(trNow, chopLen) * chopLen
+float hh = ta.highest(high, chopLen)
+float ll = ta.lowest(low, chopLen)
+float rng = math.max(hh - ll, syminfo.mintick)
+float ciRaw = trSum > 0 ? 100.0 * (math.log10(trSum / rng) / math.log10(float(chopLen))) : 50.0
+float ciDen = math.max(chopHi - chopLo, 0.0001)
+float chopN = math.max(0.0, math.min(1.0, (ciRaw - chopLo) / ciDen))
+
+float basis = ta.sma(close, sqLen)
+float dev = ta.stdev(close, sqLen)
+float bbUp = basis + dev * bbMult
+float bbDn = basis - dev * bbMult
+float bbW = math.max(bbUp - bbDn, syminfo.mintick)
+float atrNow = ta.atr(sqLen)
+float kcMid = ta.ema(close, sqLen)
+float kcUp = kcMid + atrNow * kcMult
+float kcDn = kcMid - atrNow * kcMult
+float kcW = math.max(kcUp - kcDn, syminfo.mintick)
+
+bool squeezeOn = (bbUp < kcUp) and (bbDn > kcDn)
+bool prevSqueezeOn = bar_index > 0 ? squeezeOn[1] : false
+bool squeezeReleased = (not squeezeOn) and prevSqueezeOn
+float pressureRaw = math.max(0.0, (kcW - bbW) / kcW)
+float pressureN = math.max(0.0, math.min(1.0, pressureRaw * pressureK))
+
+float tension = chopN * pressureN * (squeezeOn ? 1.0 : 0.85)
+float tensionSm = ta.ema(tension, smoothLen)
+float tensionDelta = tensionSm - nz(tensionSm[1], tensionSm)
+bool gate = tensionSm >= gateMin
+
+float emaTrend = ta.ema(close, 34)
+float drift = emaTrend - nz(emaTrend[1], emaTrend)
+float driftAtr = atrNow > 0 ? math.abs(drift) / atrNow : 0.0
+int driftDir = drift > 0 ? 1 : drift < 0 ? -1 : 0
+bool aboveBasis = close > basis
+bool belowBasis = close < basis
+
+float rangeScore = f_clamp100(chopN * 100.0)
+float chopScore = f_clamp100(chopN * 70.0 + pressureN * 30.0)
+float compressionScore = f_clamp100(pressureN * 65.0 + (squeezeOn ? 35.0 : 0.0))
+float expansionScore = f_clamp100((1.0 - pressureN) * 35.0 + (squeezeReleased ? 45.0 : 0.0) + driftAtr * 80.0)
+
+bool structureCompression = gate and squeezeOn and pressureN >= 0.35
+bool transitionAttempt = gate and (squeezeReleased or (tensionDelta < -0.015 and pressureN < nz(pressureN[1], pressureN))) and driftDir != 0
+bool acceptedUp = transitionAttempt and driftDir > 0 and aboveBasis and chopN < 0.70 and driftAtr >= 0.015
+bool acceptedDn = transitionAttempt and driftDir < 0 and belowBasis and chopN < 0.70 and driftAtr >= 0.015
+bool transitionAccepted = acceptedUp or acceptedDn
+bool rangeChopWarn = chopN >= 0.78 or (gate and pressureN >= 0.55 and driftAtr < 0.010)
+bool weakContinuation = gate and driftDir != 0 and not transitionAccepted and chopN >= 0.55
+bool structureConflict = (driftDir > 0 and belowBasis) or (driftDir < 0 and aboveBasis)
+bool transitionFail = transitionAttempt and not transitionAccepted and (structureConflict or rangeChopWarn)
+bool fakeTransition = squeezeReleased and not transitionAccepted and (close < basis and driftDir > 0 or close > basis and driftDir < 0)
+
+float structureScore = f_clamp100((1.0 - chopN) * 42.0 + expansionScore * 0.32 + compressionScore * 0.18 + driftAtr * 180.0)
+float transitionScore = transitionAttempt ? f_clamp100(48.0 + expansionScore * 0.34 + driftAtr * 160.0) : 0.0
+float conflictScore = structureConflict or rangeChopWarn ? f_clamp100(math.max(rangeScore, structureConflict ? 58.0 : 0.0)) : 0.0
+float fakeTransitionScore = fakeTransition ? f_clamp100(66.0 + rangeScore * 0.22) : 0.0
+float weakContinuationScore = weakContinuation ? f_clamp100(42.0 + chopScore * 0.28) : 0.0
+
+int gerDir = transitionAccepted ? (acceptedUp ? 1 : -1) : 0
+int gerState = ST_IDLE
+if transitionFail or fakeTransition
+    gerState := ST_FAIL
+else if transitionAccepted
+    gerState := ST_HOLD
+else if transitionAttempt
+    gerState := ST_TRIG
+else if structureCompression or rangeChopWarn or weakContinuation
+    gerState := ST_SET
+int gerActive = gerState != ST_IDLE or gate or rangeChopWarn ? 1 : 0
+float gerScore = f_clamp100(math.max(math.max(structureScore, transitionScore), math.max(conflictScore, math.max(fakeTransitionScore, weakContinuationScore))))
+
+int prevGerActive = bar_index > 0 ? gerActive[1] : 0
+int prevGerState = bar_index > 0 ? gerState[1] : 0
+bool prevTransitionAccepted = bar_index > 0 ? transitionAccepted[1] : false
+bool prevTransitionFail = bar_index > 0 ? transitionFail[1] : false
+bool prevFakeTransition = bar_index > 0 ? fakeTransition[1] : false
+bool prevRangeChopWarn = bar_index > 0 ? rangeChopWarn[1] : false
+
+bool transitionAcceptedOn = transitionAccepted and not prevTransitionAccepted
+bool transitionFailOn = transitionFail and not prevTransitionFail
+bool fakeTransitionOn = fakeTransition and not prevFakeTransition
+bool rangeChopWarnOn = rangeChopWarn and not prevRangeChopWarn
+
+float gerEvent = 0.0
+if transitionAcceptedOn and acceptedUp
+    gerEvent := 51.0
+else if transitionAcceptedOn and acceptedDn
+    gerEvent := 52.0
+else if transitionFailOn
+    gerEvent := 60.0
+else if fakeTransitionOn
+    gerEvent := 70.0
+else if transitionAttempt and driftDir > 0 and gerState == ST_TRIG
+    gerEvent := 21.0
+else if transitionAttempt and driftDir < 0 and gerState == ST_TRIG
+    gerEvent := 22.0
+else if rangeChopWarnOn
+    gerEvent := 30.0
+else if structureConflict and gerState == ST_SET
+    gerEvent := 40.0
+else if structureCompression and gerState == ST_SET
+    gerEvent := 10.0
+else
+    gerEvent := 0.0
+
+bool gerStructureForming = useAlerts and gerState == ST_SET and prevGerState == ST_IDLE
+bool gerTransitionUp = useAlerts and gerEvent == 21.0
+bool gerTransitionDn = useAlerts and gerEvent == 22.0
+bool gerRangeWarn = useAlerts and gerEvent == 30.0
+bool gerConflict = useAlerts and gerEvent == 40.0
+bool gerAccepted = useAlerts and transitionAcceptedOn
+bool gerFailed = useAlerts and transitionFailOn
+bool gerFake = useAlerts and fakeTransitionOn
+bool gerActiveOn = useAlerts and gerActive == 1 and prevGerActive == 0
+bool gerActiveOff = useAlerts and gerActive == 0 and prevGerActive == 1
+
+plot(gerScore,         title="AL_GER_SCORE",       display=display.none)
+plot(float(gerDir),    title="AL_GER_DIRECTION",   display=display.none)
+plot(float(gerState),  title="AL_GER_STATE",       display=display.none)
+plot(float(gerActive), title="AL_GER_ACTIVE_FLAG", display=display.none)
+plot(float(gerEvent),  title="AL_GER_EVENT",       display=display.none)
+plot(conflictScore, title="AL_GER_CONFLICT_SCORE", display=display.none)
+plot(fakeTransitionScore, title="AL_GER_FAKE_TRANSITION_SCORE", display=display.none)
+
+alertcondition(gerStructureForming, title="AL GER G | STRUCTURE FORMING", message="AL_GER_G,STRUCTURE_FORMING")
+alertcondition(gerTransitionUp,     title="AL GER G | TRANSITION UP",     message="AL_GER_G,TRANSITION_UP")
+alertcondition(gerTransitionDn,     title="AL GER G | TRANSITION DOWN",   message="AL_GER_G,TRANSITION_DOWN")
+alertcondition(gerRangeWarn,        title="AL GER G | RANGE CHOP",        message="AL_GER_G,RANGE_CHOP")
+alertcondition(gerConflict,         title="AL GER G | CONFLICT",          message="AL_GER_G,CONFLICT")
+alertcondition(gerAccepted,         title="AL GER G | ACCEPTED",          message="AL_GER_G,ACCEPTED")
+alertcondition(gerFailed,           title="AL GER G | FAILED",            message="AL_GER_G,FAILED")
+alertcondition(gerFake,             title="AL GER G | FAKE TRANSITION",   message="AL_GER_G,FAKE_TRANSITION")
+alertcondition(gerActiveOn,         title="AL GER G | ACTIVE ON",         message="AL_GER_G,ACTIVE_ON")
+alertcondition(gerActiveOff,        title="AL GER G | ACTIVE OFF",        message="AL_GER_G,ACTIVE_OFF")

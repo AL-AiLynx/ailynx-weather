@@ -1,0 +1,406 @@
+//@version=6
+indicator("AL GLOVE GPT", overlay=true, max_labels_count=0, max_bars_back=3000)
+
+//==================================================
+// [0] GPT 표
+//==================================================
+string GROUP_PANEL = "장갑 G | 표"
+
+bool   showTable      = input.bool(false, "GPT 표 표시", group=GROUP_PANEL, display=display.none)
+string tablePosOpt    = input.string("TR", "표 위치", options=["TL","TC","TR","ML","MC","MR","BL","BC","BR"], group=GROUP_PANEL, display=display.none)
+string tableSizeOpt   = input.string("SMALL", "표 크기", options=["TINY","SMALL","NORMAL","LARGE"], group=GROUP_PANEL, display=display.none)
+color  headerBg       = input.color(color.new(color.black, 0), "헤더 배경", group=GROUP_PANEL, display=display.none)
+color  cellBg         = input.color(color.new(color.black, 8), "셀 배경", group=GROUP_PANEL, display=display.none)
+color  headerText     = input.color(color.white, "헤더 글자색", group=GROUP_PANEL, display=display.none)
+color  keyTextColor   = input.color(color.silver, "KEY 글자색", group=GROUP_PANEL, display=display.none)
+color  codeTextColor  = input.color(color.white, "CODE 글자색", group=GROUP_PANEL, display=display.none)
+color  numTextColor   = input.color(color.orange, "NUM 글자색", group=GROUP_PANEL, display=display.none)
+color  noteTextColor  = input.color(color.aqua, "NOTE 글자색", group=GROUP_PANEL, display=display.none)
+
+//==================================================
+// [1] 핵심
+//==================================================
+string GROUP_CORE = "장갑 G | 핵심"
+int   emaFastLen        = input.int(21, "EMA 빠름", minval=1, group=GROUP_CORE, display=display.none)
+int   emaSlowLen        = input.int(55, "EMA 느림", minval=2, group=GROUP_CORE, display=display.none)
+int   dmiLen            = input.int(14, "DMI 길이", minval=1, group=GROUP_CORE, display=display.none)
+int   dmiSmooth         = input.int(14, "DMI 스무딩", minval=1, group=GROUP_CORE, display=display.none)
+float adxMin            = input.float(18.0, "ADX 최소", minval=1.0, maxval=80.0, step=0.5, group=GROUP_CORE, display=display.none)
+int   atrLen            = input.int(14, "ATR 길이", minval=1, group=GROUP_CORE, display=display.none)
+int   volLen            = input.int(20, "Volume 기준 길이", minval=2, group=GROUP_CORE, display=display.none)
+float atrMinPct         = input.float(0.15, "ATR% 최소", minval=0.01, maxval=10.0, step=0.01, group=GROUP_CORE, display=display.none)
+float zoneAtrMult       = input.float(0.65, "중간 구간 ATR 배수", minval=0.10, maxval=3.0, step=0.05, group=GROUP_CORE, display=display.none)
+int   weakScoreMin      = input.int(55, "약화 점수 기준", minval=1, maxval=100, group=GROUP_CORE, display=display.none)
+int   strongScoreMin    = input.int(78, "강약화 점수 기준", minval=1, maxval=100, group=GROUP_CORE, display=display.none)
+
+string GROUP_TF = "장갑 G | 타임프레임"
+bool  useAutoTFAdjust   = input.bool(true, "타임프레임 자동 보정", group=GROUP_TF, display=display.none)
+
+string GROUP_ALERT = "장갑 G | 얼러트"
+bool  useAlertConditions = input.bool(true, "얼러트 사용", group=GROUP_ALERT, display=display.none)
+
+//==================================================
+// [2] 헬퍼
+//==================================================
+f_clamp01(x) =>
+    math.max(0.0, math.min(1.0, x))
+
+f_clampInt(x, lo, hi) =>
+    math.max(lo, math.min(hi, x))
+
+f_tablePos(opt) =>
+    pos = position.top_right
+    if opt == "TL"
+        pos := position.top_left
+    else if opt == "TC"
+        pos := position.top_center
+    else if opt == "TR"
+        pos := position.top_right
+    else if opt == "ML"
+        pos := position.middle_left
+    else if opt == "MC"
+        pos := position.middle_center
+    else if opt == "MR"
+        pos := position.middle_right
+    else if opt == "BL"
+        pos := position.bottom_left
+    else if opt == "BC"
+        pos := position.bottom_center
+    else
+        pos := position.bottom_right
+    pos
+
+f_textSize(opt) =>
+    sz = size.small
+    if opt == "TINY"
+        sz := size.tiny
+    else if opt == "SMALL"
+        sz := size.small
+    else if opt == "NORMAL"
+        sz := size.normal
+    else
+        sz := size.large
+    sz
+
+f_dirCode(dir) =>
+    out = "FLAT"
+    if dir > 0
+        out := "UP"
+    else if dir < 0
+        out := "DOWN"
+    else
+        out := "FLAT"
+    out
+
+f_stateCode(state) =>
+    out = "IDLE"
+    if state == 1
+        out := "SET"
+    else if state == 2
+        out := "TRIG"
+    else if state == 3
+        out := "HOLD"
+    else if state == 4
+        out := "FAIL"
+    else
+        out := "IDLE"
+    out
+
+f_scoreCode(k) =>
+    out = "LOW"
+    if k >= 80
+        out := "STR"
+    else if k >= 55
+        out := "MID"
+    else
+        out := "LOW"
+    out
+
+f_evtCode(evt) =>
+    out = "NONE"
+    if evt == 10
+        out := "HANDOFF"
+    else if evt == 20
+        out := "MOM_FADE"
+    else if evt == 21
+        out := "MID_WEAK"
+    else if evt == 22
+        out := "FLOW_FAT"
+    else if evt == 23
+        out := "TRANSFER"
+    else if evt == 40
+        out := "INVALID"
+    else if evt == 30
+        out := "ACTIVE"
+    else
+        out := "NONE"
+    out
+
+f_note(dir, state, tfTag, midZone, adxWeak, diWeak, slopeWeak) =>
+    out = "WAIT"
+    if state == 4
+        out := "HANDOFF INVALIDATED"
+    else if state == 3
+        out := "FATIGUE HOLD"
+    else if state == 2 and dir != 0
+        out := "FLOW FATIGUE BIAS"
+    else if state == 2
+        out := "TRANSFER PRESSURE"
+    else if state == 1
+        out := "HANDOFF WATCH"
+    else if midZone and (adxWeak or diWeak or slopeWeak)
+        out := "MID-ZONE WEAKNESS"
+    else
+        out := tfTag
+    out
+
+//==================================================
+// [3] 타임프레임 자동 보정
+//==================================================
+int sec = timeframe.in_seconds()
+float tfAdj = 1.0
+if useAutoTFAdjust
+    if sec <= 300
+        tfAdj := 1.00
+    else if sec <= 900
+        tfAdj := 1.08
+    else if sec <= 3600
+        tfAdj := 1.18
+    else if sec <= 14400
+        tfAdj := 1.32
+    else
+        tfAdj := 1.48
+
+float adxMinEff      = adxMin * (1.0 + (tfAdj - 1.0) * 0.18)
+float atrMinPctEff   = atrMinPct * (1.0 + (tfAdj - 1.0) * 0.22)
+float zoneAtrEff     = zoneAtrMult * (1.0 + (tfAdj - 1.0) * 0.18)
+int weakScoreMinEff  = f_clampInt(int(math.round(weakScoreMin  * (1.0 + (tfAdj - 1.0) * 0.08))), 1, 100)
+int strongScoreMinEff= f_clampInt(int(math.round(strongScoreMin * (1.0 + (tfAdj - 1.0) * 0.06))), 1, 100)
+
+string tfTag = "AUTO TF"
+if sec <= 300
+    tfTag := "TF 5M"
+else if sec <= 900
+    tfTag := "TF 15M"
+else if sec <= 3600
+    tfTag := "TF 1H"
+else if sec <= 14400
+    tfTag := "TF 4H"
+else
+    tfTag := "TF 1D+"
+
+//==================================================
+// [4] 기본 계산
+//==================================================
+float emaFast = ta.ema(close, emaFastLen)
+float emaSlow = ta.ema(close, emaSlowLen)
+float emaGap  = emaFast - emaSlow
+float emaSlope = emaFast - nz(emaFast[1], emaFast)
+float atrV = ta.atr(atrLen)
+float atrPct = (atrV / math.max(close, 1e-6)) * 100.0
+[pdiV, mdiV, adxV] = ta.dmi(dmiLen, dmiSmooth)
+float volBase = ta.sma(nz(volume, 0.0), volLen)
+float volRatio = not na(volBase) and volBase > 0.0 ? nz(volume, 0.0) / volBase : 1.0
+
+float diGap = math.abs(pdiV - mdiV)
+float emaGapAbs = math.abs(emaGap)
+float zoneDist = math.abs(close - emaFast)
+float zoneLimit = atrV * zoneAtrEff
+bool  zoneOK = zoneDist <= zoneLimit
+bool  betweenEma = close <= math.max(emaFast, emaSlow) and close >= math.min(emaFast, emaSlow)
+bool  atrOK = atrPct >= atrMinPctEff
+bool  adxBaseOK = adxV >= adxMinEff
+
+bool trendUp = emaFast > emaSlow and close >= emaSlow
+bool trendDn = emaFast < emaSlow and close <= emaSlow
+
+bool adxWeak = adxV < nz(adxV[1], adxV) and adxV <= nz(adxV[2], adxV)
+bool diWeakLong = trendUp and diGap < nz(diGap[1], diGap) and pdiV <= nz(pdiV[1], pdiV)
+bool diWeakShort = trendDn and diGap < nz(diGap[1], diGap) and mdiV <= nz(mdiV[1], mdiV)
+bool slopeWeakLong = trendUp and emaSlope <= nz(emaSlope[1], emaSlope)
+bool slopeWeakShort = trendDn and emaSlope >= nz(emaSlope[1], emaSlope)
+
+float closeChange = close - nz(close[1], close)
+float mom3 = close - nz(close[3], close)
+float mom3Prev = nz(mom3[1], mom3)
+bool momentumFadeLong = trendUp and (closeChange <= 0.0 or mom3 <= mom3Prev)
+bool momentumFadeShort = trendDn and (closeChange >= 0.0 or mom3 >= mom3Prev)
+
+bool fatigueRawLong = trendUp and (zoneOK or betweenEma) and atrOK and (adxWeak or diWeakLong or slopeWeakLong or momentumFadeLong)
+bool fatigueRawShort = trendDn and (zoneOK or betweenEma) and atrOK and (adxWeak or diWeakShort or slopeWeakShort or momentumFadeShort)
+
+float adxPart = f_clamp01((nz(adxV[1], adxV) - adxV + math.max(nz(adxV[2], adxV) - adxV, 0.0) * 0.50) / math.max(adxMinEff * 0.45, 1.0))
+float diPart  = f_clamp01((nz(diGap[1], diGap) - diGap) / math.max(nz(diGap[1], diGap), 1.0))
+float slopePartLong = f_clamp01((-emaSlope + math.max(nz(emaSlope[1], emaSlope), 0.0)) / math.max(emaGapAbs, syminfo.mintick))
+float slopePartShort = f_clamp01((emaSlope + math.max(-nz(emaSlope[1], emaSlope), 0.0)) / math.max(emaGapAbs, syminfo.mintick))
+float zonePart = f_clamp01(1.0 - zoneDist / math.max(zoneLimit, syminfo.mintick))
+float atrPart = f_clamp01(atrPct / math.max(atrMinPctEff * 2.0, 0.01))
+float volumeFadePart = f_clamp01((1.0 - volRatio) / 0.45)
+float preVolumeShiftScore = 100.0 * f_clamp01(0.44 * volumeFadePart + 0.24 * diPart + 0.20 * adxPart + 0.12 * zonePart)
+
+float longWeakScoreF = fatigueRawLong ? 100.0 * f_clamp01(0.26 * adxPart + 0.22 * diPart + 0.22 * slopePartLong + 0.16 * zonePart + 0.08 * atrPart + 0.06 * volumeFadePart) : 0.0
+float shortWeakScoreF = fatigueRawShort ? 100.0 * f_clamp01(0.26 * adxPart + 0.22 * diPart + 0.22 * slopePartShort + 0.16 * zonePart + 0.08 * atrPart + 0.06 * volumeFadePart) : 0.0
+float momentumFadeScore = 100.0 * f_clamp01(0.34 * math.max(slopePartLong, slopePartShort) + 0.28 * math.max(momentumFadeLong ? 1.0 : 0.0, momentumFadeShort ? 1.0 : 0.0) + 0.20 * diPart + 0.18 * adxPart)
+float midzoneWeaknessScore = (zoneOK or betweenEma) ? 100.0 * f_clamp01(0.42 * zonePart + 0.22 * diPart + 0.20 * adxPart + 0.16 * preVolumeShiftScore / 100.0) : 0.0
+float flowFatigueScore = math.max(longWeakScoreF, shortWeakScoreF)
+float handoffScore = 100.0 * f_clamp01(0.34 * midzoneWeaknessScore / 100.0 + 0.24 * flowFatigueScore / 100.0 + 0.20 * diPart + 0.14 * preVolumeShiftScore / 100.0 + 0.08 * atrPart)
+float transferPressureScore = 100.0 * f_clamp01(0.32 * handoffScore / 100.0 + 0.28 * flowFatigueScore / 100.0 + 0.20 * momentumFadeScore / 100.0 + 0.20 * (betweenEma ? 1.0 : zonePart))
+
+int gloveDir = 0
+if trendUp and (flowFatigueScore >= strongScoreMinEff or transferPressureScore >= strongScoreMinEff) and (momentumFadeLong or close < emaFast)
+    gloveDir := -1
+else if trendDn and (flowFatigueScore >= strongScoreMinEff or transferPressureScore >= strongScoreMinEff) and (momentumFadeShort or close > emaFast)
+    gloveDir := 1
+else
+    gloveDir := 0
+
+float gloveScoreF = math.max(handoffScore, math.max(momentumFadeScore, math.max(midzoneWeaknessScore, math.max(flowFatigueScore, math.max(transferPressureScore, preVolumeShiftScore)))))
+int gloveScore = f_clampInt(int(math.round(gloveScoreF)), 0, 100)
+
+bool handoffWatch = handoffScore >= 45.0 or midzoneWeaknessScore >= 45.0
+bool fatigueTrigger = flowFatigueScore >= weakScoreMinEff or transferPressureScore >= weakScoreMinEff
+int barsSinceFatigue = ta.barssince(fatigueTrigger)
+bool fatigueHold = barsSinceFatigue >= 0 and barsSinceFatigue <= 5 and gloveScore >= 45 and not fatigueTrigger
+float priorFlowFatigue = nz(ta.highest(flowFatigueScore[1], 4), 0.0)
+bool handoffInvalid = priorFlowFatigue >= weakScoreMinEff and not zoneOK and not betweenEma and adxV > nz(adxV[1], adxV) and diGap > nz(diGap[1], diGap) and flowFatigueScore < 40.0
+
+int gloveState = 0
+if handoffInvalid
+    gloveState := 4
+else if fatigueTrigger
+    gloveState := 2
+else if fatigueHold
+    gloveState := 3
+else if handoffWatch
+    gloveState := 1
+else
+    gloveState := 0
+
+int gloveRes = 0
+if transferPressureScore >= strongScoreMinEff or flowFatigueScore >= strongScoreMinEff
+    gloveRes := 4
+else if fatigueTrigger
+    gloveRes := 3
+else if handoffWatch
+    gloveRes := 2
+else if gloveScore >= 35
+    gloveRes := 1
+else
+    gloveRes := 0
+if gloveRes >= 4 and gloveScore >= 88
+    gloveRes += 1
+gloveRes := f_clampInt(gloveRes, 0, 5)
+
+int gloveEvt = 0
+int prevState = bar_index > 0 ? gloveState[1] : 0
+if handoffInvalid
+    gloveEvt := 40
+else if transferPressureScore >= weakScoreMinEff
+    gloveEvt := 23
+else if flowFatigueScore >= weakScoreMinEff
+    gloveEvt := 22
+else if momentumFadeScore >= 55.0
+    gloveEvt := 20
+else if midzoneWeaknessScore >= 55.0
+    gloveEvt := 21
+else if handoffWatch
+    gloveEvt := 10
+else if gloveState != 0
+    gloveEvt := 30
+else if gloveState == 0 and prevState != 0
+    gloveEvt := 40
+else
+    gloveEvt := 0
+
+int gloveActiveFlag = (gloveState != 0 or gloveScore >= 35 or gloveEvt != 0) ? 1 : 0
+int gloveRisk = (gloveState == 2 or gloveState == 3) ? 2 : gloveState == 1 ? 1 : 0
+int gloveSigDir = gloveDir > 0 ? 1 : gloveDir < 0 ? -1 : 0
+int gloveSig = gloveSigDir == 0 ? 0 : (gloveSigDir * 100 + gloveRes)
+int gloveStage = gloveState
+
+//==================================================
+// [5] GPT 표
+//==================================================
+textSz = f_textSize(tableSizeOpt)
+var table gloveTable = table.new(f_tablePos(tablePosOpt), 4, 9, border_width=1)
+
+if barstate.islast and showTable
+    table.cell(gloveTable, 0, 0, "KEY",  text_color=headerText, bgcolor=headerBg, text_size=textSz)
+    table.cell(gloveTable, 1, 0, "CODE", text_color=headerText, bgcolor=headerBg, text_size=textSz)
+    table.cell(gloveTable, 2, 0, "NUM",  text_color=numTextColor, bgcolor=headerBg, text_size=textSz)
+    table.cell(gloveTable, 3, 0, "NOTE", text_color=headerText, bgcolor=headerBg, text_size=textSz)
+
+    table.cell(gloveTable, 0, 1, "DIR", text_color=keyTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(gloveTable, 1, 1, f_dirCode(gloveDir), text_color=codeTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(gloveTable, 2, 1, str.tostring(gloveDir), text_color=numTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(gloveTable, 3, 1, gloveDir == 0 ? "handoff context" : "fatigue bias", text_color=noteTextColor, bgcolor=cellBg, text_size=textSz)
+
+    table.cell(gloveTable, 0, 2, "STATE", text_color=keyTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(gloveTable, 1, 2, f_stateCode(gloveState), text_color=codeTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(gloveTable, 2, 2, str.tostring(gloveState), text_color=numTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(gloveTable, 3, 2, f_note(gloveDir, gloveState, tfTag, zoneOK, adxWeak, diWeakLong or diWeakShort, slopeWeakLong or slopeWeakShort), text_color=noteTextColor, bgcolor=cellBg, text_size=textSz)
+
+    table.cell(gloveTable, 0, 3, "SCORE", text_color=keyTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(gloveTable, 1, 3, f_scoreCode(gloveScore), text_color=codeTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(gloveTable, 2, 3, str.tostring(gloveScore), text_color=numTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(gloveTable, 3, 3, "handoff/fatigue score", text_color=noteTextColor, bgcolor=cellBg, text_size=textSz)
+
+    table.cell(gloveTable, 0, 4, "RES", text_color=keyTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(gloveTable, 1, 4, gloveRes >= 4 ? "STRONG" : gloveRes >= 2 ? "READY" : "LOW", text_color=codeTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(gloveTable, 2, 4, str.tostring(gloveRes), text_color=numTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(gloveTable, 3, 4, "0-5", text_color=noteTextColor, bgcolor=cellBg, text_size=textSz)
+
+    table.cell(gloveTable, 0, 5, "ZONE", text_color=keyTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(gloveTable, 1, 5, zoneOK ? "MID" : "OUT", text_color=codeTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(gloveTable, 2, 5, zoneOK ? "1" : "0", text_color=numTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(gloveTable, 3, 5, tfTag, text_color=noteTextColor, bgcolor=cellBg, text_size=textSz)
+
+    table.cell(gloveTable, 0, 6, "ACTIVE", text_color=keyTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(gloveTable, 1, 6, gloveActiveFlag == 1 ? "ON" : "OFF", text_color=codeTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(gloveTable, 2, 6, str.tostring(gloveActiveFlag), text_color=numTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(gloveTable, 3, 6, gloveRisk == 0 ? "stable" : gloveRisk == 1 ? "mid" : "high", text_color=noteTextColor, bgcolor=cellBg, text_size=textSz)
+
+    table.cell(gloveTable, 0, 7, "BIAS", text_color=keyTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(gloveTable, 1, 7, gloveSig == 0 ? "NONE" : gloveSig > 0 ? "UP_PRS" : "DN_PRS", text_color=codeTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(gloveTable, 2, 7, str.tostring(gloveSig), text_color=numTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(gloveTable, 3, 7, "confirmed fatigue only", text_color=noteTextColor, bgcolor=cellBg, text_size=textSz)
+
+    table.cell(gloveTable, 0, 8, "EVENT", text_color=keyTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(gloveTable, 1, 8, f_evtCode(gloveEvt), text_color=codeTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(gloveTable, 2, 8, str.tostring(gloveEvt), text_color=numTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(gloveTable, 3, 8, "stage " + str.tostring(gloveStage), text_color=noteTextColor, bgcolor=cellBg, text_size=textSz)
+else if barstate.islast and not showTable
+    table.clear(gloveTable, 0, 0, 3, 8)
+
+//==================================================
+// [6] 얼러트
+//==================================================
+bool gloveHandoffWatch = useAlertConditions and gloveEvt == 10 and prevState == 0
+bool gloveMomentumFade = useAlertConditions and gloveEvt == 20
+bool gloveMidWeak      = useAlertConditions and gloveEvt == 21
+bool gloveFlowFatigue  = useAlertConditions and gloveEvt == 22
+bool gloveTransfer     = useAlertConditions and gloveEvt == 23
+bool gloveInvalid      = useAlertConditions and gloveEvt == 40 and prevState != 0
+bool gloveActiveOn     = useAlertConditions and gloveState != 0 and prevState == 0
+bool gloveRelease      = useAlertConditions and gloveState == 0 and prevState != 0
+bool gloveStrongRes    = useAlertConditions and gloveRes >= 4 and (bar_index > 0 ? gloveRes[1] : 0) < 4
+
+alertcondition(gloveHandoffWatch, title="AL GLOVE G | HANDOFF WATCH", message="AL_GLOVE_G,HANDOFF_WATCH")
+alertcondition(gloveMomentumFade, title="AL GLOVE G | MOMENTUM FADE", message="AL_GLOVE_G,MOMENTUM_FADE")
+alertcondition(gloveMidWeak,      title="AL GLOVE G | MID WEAK",      message="AL_GLOVE_G,MID_WEAK")
+alertcondition(gloveFlowFatigue,  title="AL GLOVE G | FLOW FATIGUE",  message="AL_GLOVE_G,FLOW_FATIGUE")
+alertcondition(gloveTransfer,     title="AL GLOVE G | TRANSFER",      message="AL_GLOVE_G,TRANSFER")
+alertcondition(gloveInvalid,      title="AL GLOVE G | INVALID",       message="AL_GLOVE_G,INVALID")
+alertcondition(gloveActiveOn,     title="AL GLOVE G | ACTIVE ON",     message="AL_GLOVE_G,ACTIVE_ON")
+alertcondition(gloveRelease,      title="AL GLOVE G | RELEASE",       message="AL_GLOVE_G,RELEASE")
+alertcondition(gloveStrongRes,    title="AL GLOVE G | STRONG RES",    message="AL_GLOVE_G,STRONG_RES")
+
+//==================================================
+// 숨김 출력 (A 링크 경량)
+//==================================================
+plot(float(gloveDir),        title="AL_GLOVE_DIRECTION",   display=display.none)
+plot(float(gloveState),      title="AL_GLOVE_STATE",       display=display.none)
+plot(float(gloveScore),      title="AL_GLOVE_SCORE",       display=display.none)
+plot(float(gloveRes),        title="AL_GLOVE_RESISTANCE",  display=display.none)
+plot(float(gloveEvt),        title="AL_GLOVE_EVENT",       display=display.none)
+plot(float(gloveActiveFlag), title="AL_GLOVE_ACTIVE_FLAG", display=display.none)

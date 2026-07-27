@@ -1,0 +1,451 @@
+//@version=6
+indicator("AL RING GPT", overlay=true, max_bars_back=3000, max_labels_count=0)
+
+//==================================================
+// [0] GPT 표
+//==================================================
+string GROUP_PANEL = "반지 G | 표"
+
+bool   showTable      = input.bool(true, "GPT 표 표시", group=GROUP_PANEL, display=display.none)
+string tablePosOpt    = input.string("TR", "표 위치", options=["TL","TC","TR","ML","MC","MR","BL","BC","BR"], group=GROUP_PANEL, display=display.none)
+string tableSizeOpt   = input.string("SMALL", "표 크기", options=["TINY","SMALL","NORMAL","LARGE"], group=GROUP_PANEL, display=display.none)
+color  headerBg       = input.color(color.new(color.black, 0), "헤더 배경", group=GROUP_PANEL, display=display.none)
+color  cellBg         = input.color(color.new(color.black, 8), "셀 배경", group=GROUP_PANEL, display=display.none)
+color  headerText     = input.color(color.white, "헤더 글자색", group=GROUP_PANEL, display=display.none)
+color  keyTextColor   = input.color(color.silver, "KEY 글자색", group=GROUP_PANEL, display=display.none)
+color  codeTextColor  = input.color(color.white, "CODE 글자색", group=GROUP_PANEL, display=display.none)
+color  numTextColor   = input.color(color.aqua, "NUM 글자색", group=GROUP_PANEL, display=display.none)
+color  noteTextColor  = input.color(color.orange, "NOTE 글자색", group=GROUP_PANEL, display=display.none)
+
+//==================================================
+// [1] 핵심
+//==================================================
+string GROUP_CORE = "반지 G | 핵심"
+string GROUP_BLUE = "반지 G | 블루바"
+string GROUP_FILTER = "반지 G | 필터"
+string GROUP_CONFIRM = "반지 G | 확인"
+string GROUP_TF = "반지 G | 타임프레임"
+string GROUP_ALERT = "반지 G | 얼러트"
+
+bool  useAutoTFAdjust = input.bool(true, "타임프레임 자동 보정", group=GROUP_TF, display=display.none)
+bool  useCloseBasis   = input.bool(true, "종가 기준 사용", group=GROUP_CORE, display=display.none)
+int   fadeBars        = input.int(24, "감쇠 구간 봉 수", minval=5, maxval=300, group=GROUP_CORE, display=display.none)
+
+int   blueLookback = input.int(40, "블루바 룩백", minval=10, maxval=500, group=GROUP_BLUE, display=display.none)
+int   volBaseLen   = input.int(50, "거래량 SMA 길이", minval=5, maxval=500, group=GROUP_BLUE, display=display.none)
+float volMultMin   = input.float(1.80, "최소 거래량 비율", minval=1.05, step=0.05, group=GROUP_BLUE, display=display.none)
+int   blueWeight   = input.int(45, "블루바 가중치", minval=0, maxval=70, group=GROUP_BLUE, display=display.none)
+
+int   emaFastLen       = input.int(21, "빠른 EMA", minval=2, maxval=200, group=GROUP_FILTER, display=display.none)
+int   emaSlowLen       = input.int(55, "느린 EMA", minval=2, maxval=400, group=GROUP_FILTER, display=display.none)
+bool  requireAboveFast = input.bool(true, "종가가 빠른 EMA 위 필요", group=GROUP_FILTER, display=display.none)
+bool  requireTrendUp   = input.bool(false, "빠른 EMA > 느린 EMA 필요", group=GROUP_FILTER, display=display.none)
+float bodyATRMin       = input.float(0.10, "최소 몸통 크기 (ATR x)", minval=0.0, step=0.02, group=GROUP_FILTER, display=display.none)
+
+bool useBullEngulf      = input.bool(true,  "상승 장악형 사용", group=GROUP_CONFIRM, display=display.none)
+bool useRsiDiv          = input.bool(false, "RSI 상승 다이버전스 사용", group=GROUP_CONFIRM, display=display.none)
+bool useStochDiv        = input.bool(false, "스토캐스틱 RSI 상승 다이버전스 사용", group=GROUP_CONFIRM, display=display.none)
+bool useRsiFailSwing    = input.bool(true,  "RSI 실패 스윙 사용", group=GROUP_CONFIRM, display=display.none)
+bool requireConfirmIfOn = input.bool(true,  "확인 조건 켜지면 1개 이상 필수", group=GROUP_CONFIRM, display=display.none)
+int  minKToFire         = input.int(55, "이벤트 최소 K", minval=0, maxval=100, group=GROUP_CONFIRM, display=display.none)
+int  cooldownBars       = input.int(18, "쿨다운 봉 수", minval=0, maxval=300, group=GROUP_CONFIRM, display=display.none)
+
+bool useAlertConditions = input.bool(true, "얼러트 사용", group=GROUP_ALERT, display=display.none)
+
+//==================================================
+// [2] 헬퍼
+//==================================================
+f_clampInt(v, minV, maxV) =>
+    math.max(minV, math.min(maxV, v))
+
+f_clamp01(x) =>
+    math.max(0.0, math.min(1.0, x))
+
+f_tablePos(opt) =>
+    pos = position.top_right
+    if opt == "TL"
+        pos := position.top_left
+    else if opt == "TC"
+        pos := position.top_center
+    else if opt == "TR"
+        pos := position.top_right
+    else if opt == "ML"
+        pos := position.middle_left
+    else if opt == "MC"
+        pos := position.middle_center
+    else if opt == "MR"
+        pos := position.middle_right
+    else if opt == "BL"
+        pos := position.bottom_left
+    else if opt == "BC"
+        pos := position.bottom_center
+    else
+        pos := position.bottom_right
+    pos
+
+f_textSize(opt) =>
+    sz = size.small
+    if opt == "TINY"
+        sz := size.tiny
+    else if opt == "SMALL"
+        sz := size.small
+    else if opt == "NORMAL"
+        sz := size.normal
+    else
+        sz := size.large
+    sz
+
+f_dirCode(dir) =>
+    out = "FLAT"
+    if dir > 0
+        out := "UP"
+    else if dir < 0
+        out := "DOWN"
+    else
+        out := "FLAT"
+    out
+
+f_stateCode(state) =>
+    out = "IDLE"
+    if state == 2
+        out := "TRIGGER"
+    else if state == 1
+        out := "FADE"
+    else
+        out := "IDLE"
+    out
+
+f_scoreCode(k) =>
+    out = "LOW"
+    if k >= 80
+        out := "STR"
+    else if k >= 55
+        out := "MID"
+    else
+        out := "LOW"
+    out
+
+f_evtCode(evt) =>
+    out = "NONE"
+    if evt == 1
+        out := "FIRE"
+    else if evt == 2
+        out := "TRIGGER"
+    else if evt == 3
+        out := "FAIL"
+    else if evt == 4
+        out := "ACTIVE"
+    else if evt == 5
+        out := "CLEAR"
+    else
+        out := "NONE"
+    out
+
+f_riskCode(risk) =>
+    out = "MID"
+    if risk == 0
+        out := "SAFE"
+    else if risk == 2
+        out := "RISK"
+    else
+        out := "MID"
+    out
+
+f_note(state, evt, res, blue, gateOK, confirmOK, tfTag) =>
+    out = "WAIT"
+    if evt == 1
+        out := "EVENT FIRE"
+    else if state == 2
+        out := "BLUE TRIGGER"
+    else if state == 1
+        out := "FADE WATCH"
+    else if blue and not gateOK
+        out := "BLUE FAIL"
+    else if blue and gateOK and not confirmOK
+        out := "CONFIRM MISS"
+    else if res >= 4
+        out := "STRONG RES"
+    else
+        out := tfTag
+    out
+
+//==================================================
+// [3] 타임프레임 자동 보정
+//==================================================
+int sec = timeframe.in_seconds()
+float tfAdj = 1.0
+if useAutoTFAdjust
+    if sec <= 300
+        tfAdj := 1.00
+    else if sec <= 900
+        tfAdj := 1.06
+    else if sec <= 3600
+        tfAdj := 1.14
+    else if sec <= 14400
+        tfAdj := 1.24
+    else
+        tfAdj := 1.36
+
+int blueLookbackEff = f_clampInt(int(math.round(blueLookback * tfAdj)), 10, 800)
+int volBaseLenEff   = f_clampInt(int(math.round(volBaseLen * math.min(tfAdj, 1.25))), 5, 800)
+float volMultMinEff = volMultMin * (1.0 + (tfAdj - 1.0) * 0.10)
+float bodyATRMinEff = bodyATRMin * (1.0 + (tfAdj - 1.0) * 0.18)
+int minKToFireEff   = f_clampInt(int(math.round(minKToFire * (1.0 + (tfAdj - 1.0) * 0.10))), 0, 100)
+int cooldownEff     = f_clampInt(int(math.round(cooldownBars * (1.0 + (tfAdj - 1.0) * 0.30))), 0, 400)
+int fadeBarsEff     = f_clampInt(int(math.round(fadeBars * (1.0 + (tfAdj - 1.0) * 0.15))), 5, 400)
+
+string tfTag = "AUTO TF"
+if sec <= 300
+    tfTag := "TF 5M"
+else if sec <= 900
+    tfTag := "TF 15M"
+else if sec <= 3600
+    tfTag := "TF 1H"
+else if sec <= 14400
+    tfTag := "TF 4H"
+else
+    tfTag := "TF 1D+"
+
+//==================================================
+// [4] 기본 계산
+//==================================================
+float basis = useCloseBasis ? close : hlc3
+float emaFast = ta.ema(close, emaFastLen)
+float emaSlow = ta.ema(close, emaSlowLen)
+float emaGap = emaFast - emaSlow
+float atrValue = ta.atr(14)
+
+bool trendUp = emaFast > emaSlow
+float candleBody = math.abs(close - open)
+bool bodyOK = atrValue > 0 ? (candleBody >= atrValue * bodyATRMinEff) : true
+bool bullBody = close > open
+
+float volBase = ta.sma(volume, volBaseLenEff)
+float volBaseSafe = math.max(nz(volBase, volume), 1.0)
+float volRatio = volume / volBaseSafe
+float volumeHighestPrev = ta.highest(volume[1], blueLookbackEff)
+bool blueByHigh  = (not na(volumeHighestPrev)) and (volume > volumeHighestPrev)
+bool blueByRatio = volRatio >= volMultMinEff
+bool blueBar = blueByHigh and blueByRatio
+
+bool bullEngulf = useBullEngulf and close > open and close[1] < open[1] and close > open[1] and open < close[1]
+
+int rsiLen = 14
+float rsiValue = ta.rsi(basis, rsiLen)
+int pivotLen = 5
+
+float rsiPivotLow = ta.pivotlow(rsiValue, pivotLen, pivotLen)
+float pxPivotLow  = ta.pivotlow(basis, pivotLen, pivotLen)
+
+var float lastPriceLowRsi = na
+var float lastRsiLow = na
+bool rsiBullDiv = false
+if useRsiDiv and not na(pxPivotLow) and not na(rsiPivotLow)
+    float currentPriceLow = pxPivotLow
+    float currentRsiLow = rsiPivotLow
+    if not na(lastPriceLowRsi) and not na(lastRsiLow)
+        rsiBullDiv := (currentPriceLow < lastPriceLowRsi) and (currentRsiLow > lastRsiLow)
+    lastPriceLowRsi := currentPriceLow
+    lastRsiLow := currentRsiLow
+
+float rsiBase = ta.rsi(basis, rsiLen)
+int stochLen = 14
+float stochRsi = ta.stoch(rsiBase, rsiBase, rsiBase, stochLen) * 100.0
+float stochPivotLow = ta.pivotlow(stochRsi, pivotLen, pivotLen)
+float pxPivotLow2   = ta.pivotlow(basis, pivotLen, pivotLen)
+
+var float lastPriceLowStoch = na
+var float lastStochLow = na
+bool stochBullDiv = false
+if useStochDiv and not na(pxPivotLow2) and not na(stochPivotLow)
+    float currentPriceLow2 = pxPivotLow2
+    float currentStochLow = stochPivotLow
+    if not na(lastPriceLowStoch) and not na(lastStochLow)
+        stochBullDiv := (currentPriceLow2 < lastPriceLowStoch) and (currentStochLow > lastStochLow)
+    lastPriceLowStoch := currentPriceLow2
+    lastStochLow := currentStochLow
+
+float recentLowPrev = ta.lowest(low[1], 5)
+float recentRsiLowPrev = ta.lowest(rsiValue[1], 5)
+bool priceFlush = low < recentLowPrev
+bool rsiRecovery = rsiValue > recentRsiLowPrev and rsiValue > rsiValue[1] and rsiValue > 35
+bool rsiFailSwing = useRsiFailSwing and priceFlush and bullBody and rsiRecovery
+
+bool anyConfirmEnabled = useBullEngulf or useRsiDiv or useStochDiv or useRsiFailSwing
+bool confirmHit = bullEngulf or rsiBullDiv or stochBullDiv or rsiFailSwing
+bool confirmOK = true
+if anyConfirmEnabled and requireConfirmIfOn
+    confirmOK := confirmHit
+
+bool gateOK = bodyOK and bullBody
+if requireAboveFast
+    gateOK := gateOK and (close >= emaFast)
+if requireTrendUp
+    gateOK := gateOK and trendUp
+
+bool ringFilter = gateOK and confirmOK
+bool ringTriggerRaw = blueBar and ringFilter
+bool ringFailRaw = blueBar and not ringFilter
+
+var int lastTriggerBar = na
+if ringTriggerRaw
+    lastTriggerBar := bar_index
+
+int barsSinceTrigger = na(lastTriggerBar) ? 999999 : (bar_index - lastTriggerBar)
+bool inFade = (barsSinceTrigger >= 0) and (barsSinceTrigger <= fadeBarsEff)
+
+int ringKRaw = 0
+if inFade
+    ringKRaw += blueBar ? blueWeight : 0
+    ringKRaw += bullEngulf ? 20 : 0
+    ringKRaw += rsiBullDiv ? 15 : 0
+    ringKRaw += stochBullDiv ? 15 : 0
+    ringKRaw += rsiFailSwing ? 15 : 0
+    int volumeBonus = int(math.round(math.min(10.0, math.max(0.0, (volRatio - volMultMinEff) * 10.0))))
+    if volumeBonus > 0
+        ringKRaw += volumeBonus
+    int trendBonus = 0
+    if trendUp and close >= emaFast and emaGap > 0
+        trendBonus := 5
+    ringKRaw += trendBonus
+
+int ringK = f_clampInt(ringKRaw, 0, 100)
+
+int ringState = 0
+if ringTriggerRaw
+    ringState := 2
+else if inFade
+    ringState := 1
+else
+    ringState := 0
+
+var int lastEventBar = na
+bool cooldownOK = cooldownEff <= 0 ? true : (na(lastEventBar) or (bar_index - lastEventBar >= cooldownEff))
+bool kEnough = ringK >= minKToFireEff
+bool ringEventFire = ringTriggerRaw and cooldownOK and kEnough
+
+int prevRingStateBase = bar_index > 0 ? ringState[1] : 0
+int ringEvt = 0
+if ringEventFire
+    ringEvt := 1
+else if ringState == 2 and prevRingStateBase != 2
+    ringEvt := 2
+else if ringFailRaw
+    ringEvt := 3
+else if ringState != 0
+    ringEvt := 4
+else if ringState == 0 and prevRingStateBase != 0
+    ringEvt := 5
+else
+    ringEvt := 0
+
+int ringDir = ringState > 0 ? 1 : 0
+int ringRes = 0
+if ringState == 2
+    ringRes += 3
+else if ringState == 1
+    ringRes += 2
+if ringK >= 90
+    ringRes += 2
+else if ringK >= 75
+    ringRes += 1
+ringRes := f_clampInt(ringRes, 0, 5)
+
+if ringEventFire
+    lastEventBar := bar_index
+
+int ringSigDir = ringDir > 0 ? 1 : 0
+int ringSigRes = f_clampInt(ringRes, 0, 5)
+int ringSig = ringSigDir == 0 ? 0 : (ringSigDir * 100 + ringSigRes)
+int ringActiveFlag = (ringState != 0 or ringK >= 35 or ringEvt != 0) ? 1 : 0
+int ringRisk = ringRes >= 4 ? 0 : ringState != 0 ? 1 : 2
+int ringStage = ringState == 0 ? 0 : math.abs(ringState)
+
+//==================================================
+// [5] GPT 표
+//==================================================
+textSz = f_textSize(tableSizeOpt)
+var table ringTable = table.new(f_tablePos(tablePosOpt), 4, 9, border_width=1)
+
+if barstate.islast and showTable
+    table.cell(ringTable, 0, 0, "KEY",  text_color=headerText, bgcolor=headerBg, text_size=textSz)
+    table.cell(ringTable, 1, 0, "CODE", text_color=headerText, bgcolor=headerBg, text_size=textSz)
+    table.cell(ringTable, 2, 0, "NUM",  text_color=numTextColor, bgcolor=headerBg, text_size=textSz)
+    table.cell(ringTable, 3, 0, "NOTE", text_color=headerText, bgcolor=headerBg, text_size=textSz)
+
+    table.cell(ringTable, 0, 1, "DIR", text_color=keyTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(ringTable, 1, 1, f_dirCode(ringDir), text_color=codeTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(ringTable, 2, 1, str.tostring(ringDir), text_color=numTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(ringTable, 3, 1, blueBar ? "blue seen" : tfTag, text_color=noteTextColor, bgcolor=cellBg, text_size=textSz)
+
+    table.cell(ringTable, 0, 2, "STATE", text_color=keyTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(ringTable, 1, 2, f_stateCode(ringState), text_color=codeTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(ringTable, 2, 2, str.tostring(ringState), text_color=numTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(ringTable, 3, 2, f_note(ringState, ringEvt, ringRes, blueBar, gateOK, confirmOK, tfTag), text_color=noteTextColor, bgcolor=cellBg, text_size=textSz)
+
+    table.cell(ringTable, 0, 3, "SCORE", text_color=keyTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(ringTable, 1, 3, f_scoreCode(ringK), text_color=codeTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(ringTable, 2, 3, str.tostring(ringK), text_color=numTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(ringTable, 3, 3, "0-100", text_color=noteTextColor, bgcolor=cellBg, text_size=textSz)
+
+    table.cell(ringTable, 0, 4, "RES", text_color=keyTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(ringTable, 1, 4, ringRes >= 4 ? "STRONG" : ringRes >= 2 ? "READY" : "LOW", text_color=codeTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(ringTable, 2, 4, str.tostring(ringRes), text_color=numTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(ringTable, 3, 4, "0-5", text_color=noteTextColor, bgcolor=cellBg, text_size=textSz)
+
+    table.cell(ringTable, 0, 5, "ACTIVE", text_color=keyTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(ringTable, 1, 5, ringActiveFlag == 1 ? "ON" : "OFF", text_color=codeTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(ringTable, 2, 5, str.tostring(ringActiveFlag), text_color=numTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(ringTable, 3, 5, f_riskCode(ringRisk), text_color=noteTextColor, bgcolor=cellBg, text_size=textSz)
+
+    table.cell(ringTable, 0, 6, "SIGNAL", text_color=keyTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(ringTable, 1, 6, ringSig == 0 ? "NONE" : "UP_PRS", text_color=codeTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(ringTable, 2, 6, str.tostring(ringSig), text_color=numTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(ringTable, 3, 6, "dir*100+res", text_color=noteTextColor, bgcolor=cellBg, text_size=textSz)
+
+    table.cell(ringTable, 0, 7, "EVENT", text_color=keyTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(ringTable, 1, 7, f_evtCode(ringEvt), text_color=codeTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(ringTable, 2, 7, str.tostring(ringEvt), text_color=numTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(ringTable, 3, 7, "confirm " + (confirmOK ? "ok" : "miss"), text_color=noteTextColor, bgcolor=cellBg, text_size=textSz)
+
+    table.cell(ringTable, 0, 8, "RISK", text_color=keyTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(ringTable, 1, 8, f_riskCode(ringRisk), text_color=codeTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(ringTable, 2, 8, str.tostring(ringRisk), text_color=numTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(ringTable, 3, 8, "stage " + str.tostring(ringStage), text_color=noteTextColor, bgcolor=cellBg, text_size=textSz)
+else if barstate.islast and not showTable
+    table.clear(ringTable, 0, 0, 3, 8)
+
+//==================================================
+// [6] GPT 얼러트
+//==================================================
+int prevRingState = bar_index > 0 ? ringState[1] : 0
+int prevRingEvt   = bar_index > 0 ? ringEvt[1] : 0
+int prevRingRes   = bar_index > 0 ? ringRes[1] : 0
+int prevActive    = bar_index > 0 ? ringActiveFlag[1] : 0
+bool prevRingFail = bar_index > 0 ? ringFailRaw[1] : false
+
+bool ringTriggerStart = useAlertConditions and ringState == 2 and prevRingState != 2
+bool ringEventStart   = useAlertConditions and ringEvt == 1 and prevRingEvt != 1
+bool ringFadeStart    = useAlertConditions and ringState == 1 and prevRingState == 0
+bool ringStrongRes    = useAlertConditions and ringRes >= 4 and prevRingRes < 4
+bool ringActiveOn     = useAlertConditions and ringActiveFlag == 1 and prevActive == 0
+bool ringFailStart    = useAlertConditions and ringFailRaw and not prevRingFail
+bool ringRelease      = useAlertConditions and ringState == 0 and prevRingState != 0
+
+alertcondition(ringTriggerStart, title="AL RING G | TRIGGER",    message="AL_RING_G,TRIGGER")
+alertcondition(ringEventStart,   title="AL RING G | EVENT FIRE", message="AL_RING_G,EVENT_FIRE")
+alertcondition(ringFadeStart,    title="AL RING G | FADE",       message="AL_RING_G,FADE")
+alertcondition(ringStrongRes,    title="AL RING G | STRONG RES", message="AL_RING_G,STRONG_RES")
+alertcondition(ringActiveOn,     title="AL RING G | ACTIVE ON",  message="AL_RING_G,ACTIVE_ON")
+alertcondition(ringFailStart,    title="AL RING G | FAIL",       message="AL_RING_G,FAIL")
+alertcondition(ringRelease,      title="AL RING G | RELEASE",    message="AL_RING_G,RELEASE")
+
+//==================================================
+// 숨김 출력 (A 링크 경량)
+//==================================================
+plot(float(ringDir),        title="AL_RING_DIRECTION",   display=display.none)
+plot(float(ringState),      title="AL_RING_STATE",       display=display.none)
+plot(float(ringK),          title="AL_RING_SCORE",       display=display.none)
+plot(float(ringRes),        title="AL_RING_RESISTANCE",  display=display.none)
+plot(float(ringEvt),        title="AL_RING_EVENT",       display=display.none)
+plot(float(ringActiveFlag), title="AL_RING_ACTIVE_FLAG", display=display.none)

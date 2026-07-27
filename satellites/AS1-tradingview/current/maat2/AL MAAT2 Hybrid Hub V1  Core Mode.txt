@@ -1,0 +1,1004 @@
+//@version=6
+indicator("AL MAAT2 Hybrid Hub V1 | Core Mode", shorttitle="M2HUBV1", overlay=false, max_labels_count=50, max_lines_count=10)
+
+showVisuals = input.bool(true, "DISPLAY: FULL (끄면 HEADLESS)", group="00. Render")
+
+// MAAT2 Hub V1 Core Mode
+// - Reads only WAS + TRUE VOL Compact BUS.
+// - Produces verification states only, not execution instructions.
+// - HIT/MISS is not finalized here; this hub records verification candidates.
+
+const int WAS_EVENT_NONE = 0
+const int WAS_EVENT_MEMORY = 1
+const int WAS_EVENT_TOUCH = 2
+const int WAS_EVENT_ABSORB = 3
+const int WAS_EVENT_REJECT = 4
+const int WAS_EVENT_CLOSE_BREAK = 5
+const int WAS_EVENT_RETEST_HOLD = 6
+const int WAS_EVENT_SHIFT = 7
+const int WAS_EVENT_NOISE = 8
+
+const int TV_EVENT_NONE = 0
+const int TV_EVENT_DRY = 1
+const int TV_EVENT_BUILD = 2
+const int TV_EVENT_EXPAND = 3
+const int TV_EVENT_ABSORB = 4
+const int TV_EVENT_CLIMAX = 5
+const int TV_EVENT_DELTA_BULL = 6
+const int TV_EVENT_DELTA_BEAR = 7
+const int TV_EVENT_MIXED = 8
+const int TV_EVENT_NOISE = 9
+
+const int PHASE_QUIET = 0
+const int PHASE_WATCH = 1
+const int PHASE_STRUCTURE_MEMORY = 2
+const int PHASE_STRUCTURE_TOUCH = 3
+const int PHASE_VOL_BUILD = 4
+const int PHASE_VOL_TRIGGER_WAIT = 5
+const int PHASE_WINDOW_OPEN = 6
+const int PHASE_FORCE_EVENT = 7
+const int PHASE_ABSORB_CANDIDATE = 8
+const int PHASE_CLIMAX_RISK = 9
+const int PHASE_NOISE_ONLY = 10
+const int PHASE_RESET_REQUIRED = 11
+
+const int RESULT_WATCH = 0
+const int RESULT_WINDOW_OPEN = 1
+const int RESULT_FORCE_EVENT = 2
+const int RESULT_NOISE_ONLY = 3
+const int RESULT_RESET = 4
+
+const int TV_DETAIL_NONE = 0
+const int TV_DETAIL_DRY = 10
+const int TV_DETAIL_BUILD = 20
+const int TV_DETAIL_EXPAND = 30
+const int TV_DETAIL_ABSORB_UPPER = 40
+const int TV_DETAIL_ABSORB_LOWER = 41
+const int TV_DETAIL_CLIMAX_UP = 50
+const int TV_DETAIL_CLIMAX_DOWN = 51
+const int TV_DETAIL_DELTA_BULL = 60
+const int TV_DETAIL_DELTA_BEAR = 61
+const int TV_DETAIL_CONFLICT = 80
+const int TV_DETAIL_NOISE = 90
+
+const int NOTE_CORE_WATCH = 0
+const int NOTE_STRUCT_FORCE_WAIT = 1
+const int NOTE_STRUCT_RVOL_SYNC = 2
+const int NOTE_ABSORB_DETAIL = 3
+const int NOTE_CLIMAX_RISK = 4
+const int NOTE_NOISE_RESET = 5
+
+const int RSIGATE_EVENT_OVERBOUGHT = 4
+const int RSIGATE_EVENT_OVERSOLD = 5
+const int RSIGATE_EVENT_DIVERGENCE = 6
+const int RSIGATE_EVENT_GATE_OPEN = 7
+const int RSIGATE_EVENT_GATE_BLOCK = 8
+const int RSIGATE_EVENT_NOISE = 9
+
+const int HUD_EVENT_LIQUIDITY_SUPPORT = 2
+const int HUD_EVENT_LIQUIDITY_STRESS = 3
+const int HUD_EVENT_BTC_M2_COUPLING = 4
+const int HUD_EVENT_BTC_M2_DECOUPLING = 5
+const int HUD_EVENT_GATE_SUPPORT = 6
+const int HUD_EVENT_GATE_BLOCK = 7
+const int HUD_EVENT_LEAN_RISK = 8
+const int HUD_EVENT_NOISE = 9
+
+string G_BUS = "01. Core BUS"
+float wasPackInput = input.source(close, "AL_WAS_PACK_CODE", group=G_BUS, display=display.none)
+float wasScoreInput = input.source(close, "AL_WAS_SCORE", group=G_BUS, display=display.none)
+float tvPackInput = input.source(close, "AL_TV_PACK_CODE", group=G_BUS, display=display.none)
+float tvScoreInput = input.source(close, "AL_TV_SCORE", group=G_BUS, display=display.none)
+float wasLinePriceInput = input.source(close, "AL_WAS_LINE_PRICE", group=G_BUS, display=display.none)
+float wasDistPctInput = input.source(close, "AL_WAS_DIST_PCT", group=G_BUS, display=display.none)
+float tvRvolInput = input.source(close, "AL_TV_RVOL", group=G_BUS, display=display.none)
+float tvDetailInput = input.source(close, "AL_TV_DETAIL_CODE", group=G_BUS, display=display.none)
+
+string G_FULL_LITE = "Full Mode Lite"
+bool useFullLite = input.bool(false, "Use Full Mode Lite", group=G_FULL_LITE)
+
+string G_EXPANSION = "Core Expansion"
+bool useCoreExpansion = input.bool(false, "Use Core Expansion: RPC + STRUCT + WENUT", group=G_EXPANSION)
+float rpcPackInput = input.source(close, "AL_RPC_PACK_CODE", group=G_EXPANSION, display=display.none)
+float rpcScoreInput = input.source(close, "AL_RPC_SCORE", group=G_EXPANSION, display=display.none)
+float structPackInput = input.source(close, "AL_STRUCT_PACK_CODE", group=G_EXPANSION, display=display.none)
+float structScoreInput = input.source(close, "AL_STRUCT_SCORE", group=G_EXPANSION, display=display.none)
+float wenutPackInput = input.source(close, "AL_WENUT_PACK_CODE", group=G_EXPANSION, display=display.none)
+float wenutScoreInput = input.source(close, "AL_WENUT_SCORE", group=G_EXPANSION, display=display.none)
+
+string G_PERIPHERAL = "Peripheral Expansion"
+bool usePeripheralExpansion = input.bool(false, "Use Peripheral Expansion: RSI GATE + HUD", group=G_PERIPHERAL)
+float rsiGatePackInput = input.source(close, "AL_RSIGATE_PACK_CODE", group=G_PERIPHERAL)
+float rsiGateScoreInput = input.source(close, "AL_RSIGATE_SCORE", group=G_PERIPHERAL)
+float hudPackInput = input.source(close, "AL_HUD_PACK_CODE", group=G_PERIPHERAL)
+float hudScoreInput = input.source(close, "AL_HUD_CONTEXT_SCORE", group=G_PERIPHERAL)
+
+string G_TABLE = "03. Table"
+bool showTable = input.bool(true, "Show MAAT2 Core table", group=G_TABLE)
+string tablePosOpt = input.string("top_right", "Table position", options=["top_left", "top_center", "top_right", "middle_left", "middle_center", "middle_right", "bottom_left", "bottom_center", "bottom_right"], group=G_TABLE)
+string tableSizeOpt = input.string("small", "Table size", options=["tiny", "small", "normal", "large"], group=G_TABLE)
+
+f_clamp(float x, float lo, float hi) =>
+    math.min(hi, math.max(lo, x))
+
+f_pack_abs(float pack) =>
+    math.max(nz(pack, 0.0), 0.0)
+
+f_dir(float pack) =>
+    int(math.floor(f_pack_abs(pack) / 10000.0))
+
+f_risk(float pack) =>
+    int(math.floor(f_pack_abs(pack) / 1000.0)) % 10
+
+f_event(float pack) =>
+    int(math.floor(f_pack_abs(pack) / 10.0)) % 100
+
+f_valid(float pack) =>
+    int(math.round(f_pack_abs(pack))) % 10
+
+f_linked(float value) =>
+    not na(value) and math.abs(value - close) > 0.000001
+
+f_score(float value, bool ok) =>
+    ok ? f_clamp(nz(value, 0.0), 0.0, 100.0) : 0.0
+
+f_pos(string p) =>
+    out = position.top_right
+    if p == "top_left"
+        out := position.top_left
+    else if p == "top_center"
+        out := position.top_center
+    else if p == "top_right"
+        out := position.top_right
+    else if p == "middle_left"
+        out := position.middle_left
+    else if p == "middle_center"
+        out := position.middle_center
+    else if p == "middle_right"
+        out := position.middle_right
+    else if p == "bottom_left"
+        out := position.bottom_left
+    else if p == "bottom_center"
+        out := position.bottom_center
+    else if p == "bottom_right"
+        out := position.bottom_right
+    out
+
+f_size(string s) =>
+    out = size.small
+    if s == "tiny"
+        out := size.tiny
+    else if s == "normal"
+        out := size.normal
+    else if s == "large"
+        out := size.large
+    out
+
+f_dirText(int dirPack) =>
+    string out = "NEUTRAL"
+    if dirPack == 0
+        out := "BEAR"
+    else if dirPack == 2
+        out := "BULL"
+    out
+
+f_wasEventText(int eventCode) =>
+    string out = "NONE"
+    if eventCode == WAS_EVENT_MEMORY
+        out := "MEMORY"
+    else if eventCode == WAS_EVENT_TOUCH
+        out := "TOUCH"
+    else if eventCode == WAS_EVENT_ABSORB
+        out := "ABSORB"
+    else if eventCode == WAS_EVENT_REJECT
+        out := "REJECT"
+    else if eventCode == WAS_EVENT_CLOSE_BREAK
+        out := "CLOSE_BREAK"
+    else if eventCode == WAS_EVENT_RETEST_HOLD
+        out := "RETEST_HOLD"
+    else if eventCode == WAS_EVENT_SHIFT
+        out := "SHIFT"
+    else if eventCode == WAS_EVENT_NOISE
+        out := "NOISE"
+    out
+
+f_tvEventText(int eventCode) =>
+    string out = "NONE"
+    if eventCode == TV_EVENT_DRY
+        out := "VOL_DRY"
+    else if eventCode == TV_EVENT_BUILD
+        out := "VOL_BUILD"
+    else if eventCode == TV_EVENT_EXPAND
+        out := "VOL_EXPAND"
+    else if eventCode == TV_EVENT_ABSORB
+        out := "ABSORB"
+    else if eventCode == TV_EVENT_CLIMAX
+        out := "CLIMAX"
+    else if eventCode == TV_EVENT_DELTA_BULL
+        out := "DELTA_BULL"
+    else if eventCode == TV_EVENT_DELTA_BEAR
+        out := "DELTA_BEAR"
+    else if eventCode == TV_EVENT_MIXED
+        out := "MIXED_CONFLICT"
+    else if eventCode == TV_EVENT_NOISE
+        out := "NOISE"
+    out
+
+f_tvDetailText(int detailCode) =>
+    string out = "NONE"
+    if detailCode == TV_DETAIL_DRY
+        out := "DRY"
+    else if detailCode == TV_DETAIL_BUILD
+        out := "BUILD"
+    else if detailCode == TV_DETAIL_EXPAND
+        out := "EXPAND"
+    else if detailCode == TV_DETAIL_ABSORB_UPPER
+        out := "ABSORB_UPPER"
+    else if detailCode == TV_DETAIL_ABSORB_LOWER
+        out := "ABSORB_LOWER"
+    else if detailCode == TV_DETAIL_CLIMAX_UP
+        out := "CLIMAX_UP"
+    else if detailCode == TV_DETAIL_CLIMAX_DOWN
+        out := "CLIMAX_DOWN"
+    else if detailCode == TV_DETAIL_DELTA_BULL
+        out := "DELTA_BULL"
+    else if detailCode == TV_DETAIL_DELTA_BEAR
+        out := "DELTA_BEAR"
+    else if detailCode == TV_DETAIL_CONFLICT
+        out := "CONFLICT"
+    else if detailCode == TV_DETAIL_NOISE
+        out := "NOISE"
+    out
+
+f_phaseText(int code) =>
+    string out = "QUIET"
+    if code == PHASE_WATCH
+        out := "WATCH"
+    else if code == PHASE_STRUCTURE_MEMORY
+        out := "STRUCTURE_MEMORY"
+    else if code == PHASE_STRUCTURE_TOUCH
+        out := "STRUCTURE_TOUCH"
+    else if code == PHASE_VOL_BUILD
+        out := "VOL_BUILD"
+    else if code == PHASE_VOL_TRIGGER_WAIT
+        out := "VOL_TRIGGER_WAIT"
+    else if code == PHASE_WINDOW_OPEN
+        out := "WINDOW_OPEN"
+    else if code == PHASE_FORCE_EVENT
+        out := "FORCE_EVENT"
+    else if code == PHASE_ABSORB_CANDIDATE
+        out := "ABSORB_CANDIDATE"
+    else if code == PHASE_CLIMAX_RISK
+        out := "CLIMAX_RISK"
+    else if code == PHASE_NOISE_ONLY
+        out := "NOISE_ONLY"
+    else if code == PHASE_RESET_REQUIRED
+        out := "RESET_REQUIRED"
+    out
+
+f_resultText(int code) =>
+    string out = "WATCH"
+    if code == RESULT_WINDOW_OPEN
+        out := "WINDOW_OPEN"
+    else if code == RESULT_FORCE_EVENT
+        out := "FORCE_EVENT"
+    else if code == RESULT_NOISE_ONLY
+        out := "NOISE_ONLY"
+    else if code == RESULT_RESET
+        out := "RESET"
+    out
+
+f_noteText(int code) =>
+    string out = "CORE WATCH"
+    if code == NOTE_STRUCT_FORCE_WAIT
+        out := "STRUCT OK / FORCE WAIT"
+    else if code == NOTE_STRUCT_RVOL_SYNC
+        out := "STRUCT + RVOL SYNC"
+    else if code == NOTE_ABSORB_DETAIL
+        out := "ABSORB DETAIL"
+    else if code == NOTE_CLIMAX_RISK
+        out := "CLIMAX RISK"
+    else if code == NOTE_NOISE_RESET
+        out := "NOISE / RESET"
+    out
+
+f_boolText(bool value) =>
+    value ? "1" : "0"
+
+f_floatText(float value) =>
+    na(value) ? "NA" : str.tostring(value, "#.##")
+
+f_rpcEventText(int code) =>
+    string out = "E" + str.tostring(code)
+    if code == 0
+        out := "NONE"
+    else if code == 1
+        out := "SYNC_PRESSURE"
+    else if code == 2
+        out := "CONFLICT"
+    else if code == 3
+        out := "NO_ENERGY"
+    else if code == 4
+        out := "WATCH"
+    else if code == 8
+        out := "RISK_BLOCK"
+    else if code == 9
+        out := "POWER_SURGE"
+    out
+
+f_structEventText(int code) =>
+    string out = "E" + str.tostring(code)
+    if code == 0
+        out := "NONE"
+    else if code == 1
+        out := "STRUCT_MEMORY"
+    else if code == 2
+        out := "STRUCT_BUILD"
+    else if code == 3
+        out := "STRUCT_EXPAND"
+    else if code == 4
+        out := "STRUCT_SYNC"
+    else if code == 5
+        out := "STRUCT_CONFLICT"
+    else if code == 6
+        out := "CHOP"
+    else if code == 7
+        out := "SQUEEZE"
+    else if code == 8
+        out := "RISK_BLOCK"
+    else if code == 9
+        out := "NOISE"
+    out
+
+f_wenutEventText(int code) =>
+    string out = "E" + str.tostring(code)
+    if code == 0
+        out := "NONE"
+    else if code == 1
+        out := "TIME_QUIET"
+    else if code == 2
+        out := "TIME_BUILD"
+    else if code == 3
+        out := "HOT_WINDOW_NEAR"
+    else if code == 4
+        out := "HOT_WINDOW_NOW"
+    else if code == 5
+        out := "WINDOW_OPEN"
+    else if code == 6
+        out := "WINDOW_DECAY"
+    else if code == 7
+        out := "TF_UNRELIABLE"
+    else if code == 8
+        out := "TIME_CONFLICT"
+    else if code == 9
+        out := "NOISE"
+    out
+
+f_rsiGateEventText(int code) =>
+    code == 1 ? "RSI_NEUTRAL" : code == 2 ? "RSI_BUILD" : code == 3 ? "RSI_EXPAND" : code == 4 ? "OVERBOUGHT" : code == 5 ? "OVERSOLD" : code == 6 ? "DIVERGENCE" : code == 7 ? "GATE_OPEN" : code == 8 ? "GATE_BLOCK" : code == 9 ? "NOISE" : "NONE"
+
+f_hudEventText(int code) =>
+    code == 1 ? "WEATHER_QUIET" : code == 2 ? "LIQ_SUPPORT" : code == 3 ? "LIQ_STRESS" : code == 4 ? "M2_COUPLING" : code == 5 ? "M2_DECOUPLE" : code == 6 ? "GATE_SUPPORT" : code == 7 ? "GATE_BLOCK" : code == 8 ? "LEAN_RISK" : code == 9 ? "NOISE" : "NONE"
+
+f_expSensorText(bool expOn, bool linked, bool valid, int dirCode, int riskCode, string eventText, float scoreValue) =>
+    string out = "OFF"
+    if expOn
+        if not linked
+            out := "NA"
+        else if not valid
+            out := "INVALID"
+        else
+            out := f_dirText(dirCode) + " R" + str.tostring(riskCode) + " " + eventText + " S" + str.tostring(math.round(scoreValue)) + " V1"
+    out
+
+int wasDir = f_dir(wasPackInput)
+int wasRisk = f_risk(wasPackInput)
+int wasEvent = f_event(wasPackInput)
+int wasValidRaw = f_valid(wasPackInput)
+bool wasPackOk = f_linked(wasPackInput) and wasDir >= 0 and wasDir <= 2 and wasRisk >= 0 and wasRisk <= 5 and wasEvent >= 0 and wasEvent <= 99
+bool wasValid = wasPackOk and wasValidRaw == 1
+float wasScore = f_score(wasScoreInput, wasValid)
+
+int tvDir = f_dir(tvPackInput)
+int tvRisk = f_risk(tvPackInput)
+int tvEvent = f_event(tvPackInput)
+int tvValidRaw = f_valid(tvPackInput)
+bool tvPackOk = f_linked(tvPackInput) and tvDir >= 0 and tvDir <= 2 and tvRisk >= 0 and tvRisk <= 5 and tvEvent >= 0 and tvEvent <= 99
+bool tvValid = tvPackOk and tvValidRaw == 1
+float tvScore = f_score(tvScoreInput, tvValid)
+
+bool fullLiteOn = useFullLite
+int fullLiteOnCode = fullLiteOn ? 1 : 0
+bool wasDistSourceOk = fullLiteOn and wasValid and f_linked(wasDistPctInput) and not na(wasDistPctInput)
+float wasDistUsed = wasDistSourceOk ? math.abs(wasDistPctInput) : na
+bool tvRvolSourceOk = fullLiteOn and tvValid and f_linked(tvRvolInput) and not na(tvRvolInput) and tvRvolInput >= 0.0
+float tvRvolUsed = tvRvolSourceOk ? tvRvolInput : na
+bool tvDetailSourceOk = fullLiteOn and tvValid and f_linked(tvDetailInput) and not na(tvDetailInput)
+int tvDetailCode = tvDetailSourceOk ? int(math.round(tvDetailInput)) : TV_DETAIL_NONE
+bool tvDetailDry = tvDetailCode == TV_DETAIL_DRY
+bool tvDetailBuild = tvDetailCode == TV_DETAIL_BUILD
+bool tvDetailExpand = tvDetailCode == TV_DETAIL_EXPAND
+bool tvDetailAbsorb = tvDetailCode == TV_DETAIL_ABSORB_UPPER or tvDetailCode == TV_DETAIL_ABSORB_LOWER
+bool tvDetailClimax = tvDetailCode == TV_DETAIL_CLIMAX_UP or tvDetailCode == TV_DETAIL_CLIMAX_DOWN
+bool tvDetailDelta = tvDetailCode == TV_DETAIL_DELTA_BULL or tvDetailCode == TV_DETAIL_DELTA_BEAR
+bool tvDetailConflict = tvDetailCode == TV_DETAIL_CONFLICT
+bool tvDetailNoise = tvDetailCode == TV_DETAIL_NOISE
+
+bool coreExpansionOn = useCoreExpansion
+int coreExpansionOnCode = coreExpansionOn ? 1 : 0
+
+int rpcDir = f_dir(rpcPackInput)
+int rpcRisk = f_risk(rpcPackInput)
+int rpcEvent = f_event(rpcPackInput)
+int rpcValidRaw = f_valid(rpcPackInput)
+bool rpcPackLinked = coreExpansionOn and f_linked(rpcPackInput)
+bool rpcScoreLinked = coreExpansionOn and f_linked(rpcScoreInput)
+bool rpcAnyLinked = rpcPackLinked or rpcScoreLinked
+bool rpcLinked = rpcPackLinked and rpcScoreLinked
+bool rpcPackOk = rpcPackLinked and rpcDir >= 0 and rpcDir <= 2 and rpcRisk >= 0 and rpcRisk <= 5 and rpcEvent >= 0 and rpcEvent <= 99
+bool rpcScoreOk = rpcScoreLinked and not na(rpcScoreInput)
+bool rpcValid = rpcPackOk and rpcScoreOk and rpcValidRaw == 1
+float rpcScoreUsed = f_score(rpcScoreInput, rpcValid)
+
+int structDir = f_dir(structPackInput)
+int structRisk = f_risk(structPackInput)
+int structEvent = f_event(structPackInput)
+int structValidRaw = f_valid(structPackInput)
+bool structPackLinked = coreExpansionOn and f_linked(structPackInput)
+bool structScoreLinked = coreExpansionOn and f_linked(structScoreInput)
+bool structAnyLinked = structPackLinked or structScoreLinked
+bool structLinked = structPackLinked and structScoreLinked
+bool structPackOk = structPackLinked and structDir >= 0 and structDir <= 2 and structRisk >= 0 and structRisk <= 5 and structEvent >= 0 and structEvent <= 99
+bool structScoreOk = structScoreLinked and not na(structScoreInput)
+bool structValid = structPackOk and structScoreOk and structValidRaw == 1
+float structScoreUsed = f_score(structScoreInput, structValid)
+
+int wenutDir = f_dir(wenutPackInput)
+int wenutRisk = f_risk(wenutPackInput)
+int wenutEvent = f_event(wenutPackInput)
+int wenutValidRaw = f_valid(wenutPackInput)
+bool wenutPackLinked = coreExpansionOn and f_linked(wenutPackInput)
+bool wenutScoreLinked = coreExpansionOn and f_linked(wenutScoreInput)
+bool wenutAnyLinked = wenutPackLinked or wenutScoreLinked
+bool wenutLinked = wenutPackLinked and wenutScoreLinked
+bool wenutPackOk = wenutPackLinked and wenutDir >= 0 and wenutDir <= 2 and wenutRisk >= 0 and wenutRisk <= 5 and wenutEvent >= 0 and wenutEvent <= 99
+bool wenutScoreOk = wenutScoreLinked and not na(wenutScoreInput)
+bool wenutValid = wenutPackOk and wenutScoreOk and wenutValidRaw == 1
+float wenutScoreUsed = f_score(wenutScoreInput, wenutValid)
+bool expAnyLinked = coreExpansionOn and (rpcAnyLinked or structAnyLinked or wenutAnyLinked)
+bool expAllLinked = coreExpansionOn and rpcLinked and structLinked and wenutLinked
+bool expAllValid = coreExpansionOn and expAllLinked and rpcValid and structValid and wenutValid
+bool expHardInvalid = coreExpansionOn and expAllLinked and not expAllValid
+bool expPartialValid = coreExpansionOn and not expAllLinked
+int expansionStateCode = not coreExpansionOn ? 0 : expAllValid ? 1 : expPartialValid ? 2 : 3
+bool expansionSourcesReady = not coreExpansionOn or expAllValid
+
+bool peripheralOff = not usePeripheralExpansion
+int rsiGateDir = f_dir(rsiGatePackInput)
+int rsiGateRisk = f_risk(rsiGatePackInput)
+int rsiGateEvent = f_event(rsiGatePackInput)
+int rsiGateValidRaw = f_valid(rsiGatePackInput)
+bool rsiGatePackLinked = usePeripheralExpansion and f_linked(rsiGatePackInput)
+bool rsiGateScoreLinked = usePeripheralExpansion and f_linked(rsiGateScoreInput)
+bool rsiGateLinked = rsiGatePackLinked and rsiGateScoreLinked
+bool rsiGatePackOk = rsiGatePackLinked and rsiGateDir >= 0 and rsiGateDir <= 2 and rsiGateRisk >= 0 and rsiGateRisk <= 5 and rsiGateEvent >= 0 and rsiGateEvent <= 9
+bool rsiGateValid = rsiGatePackOk and rsiGateScoreLinked and not na(rsiGateScoreInput) and rsiGateValidRaw == 1
+float rsiGateScoreUsed = f_score(rsiGateScoreInput, rsiGateValid)
+
+int hudDir = f_dir(hudPackInput)
+int hudRisk = f_risk(hudPackInput)
+int hudEvent = f_event(hudPackInput)
+int hudValidRaw = f_valid(hudPackInput)
+bool hudPackLinked = usePeripheralExpansion and f_linked(hudPackInput)
+bool hudScoreLinked = usePeripheralExpansion and f_linked(hudScoreInput)
+bool hudLinked = hudPackLinked and hudScoreLinked
+bool hudPackOk = hudPackLinked and hudDir >= 0 and hudDir <= 2 and hudRisk >= 0 and hudRisk <= 5 and hudEvent >= 0 and hudEvent <= 9
+bool hudValid = hudPackOk and hudScoreLinked and not na(hudScoreInput) and hudValidRaw == 1
+float hudScoreUsed = f_score(hudScoreInput, hudValid)
+
+bool peripheralAllLinked = usePeripheralExpansion and rsiGateLinked and hudLinked
+bool peripheralAllValid = peripheralAllLinked and rsiGateValid and hudValid
+bool peripheralPartial = usePeripheralExpansion and not peripheralAllLinked
+bool peripheralHardInvalid = usePeripheralExpansion and peripheralAllLinked and not peripheralAllValid
+int peripheralStateCode = peripheralOff ? 0 : peripheralAllValid ? 1 : peripheralPartial ? 2 : 3
+
+bool rsiGateOpen = peripheralAllValid and rsiGateEvent == RSIGATE_EVENT_GATE_OPEN and rsiGateRisk <= 3
+bool rsiGateBlock = peripheralAllValid and (rsiGateEvent == RSIGATE_EVENT_GATE_BLOCK or rsiGateEvent == RSIGATE_EVENT_DIVERGENCE or rsiGateEvent == RSIGATE_EVENT_OVERBOUGHT or rsiGateEvent == RSIGATE_EVENT_OVERSOLD or rsiGateEvent == RSIGATE_EVENT_NOISE or rsiGateRisk >= 4)
+bool backgroundSupportFlag = peripheralAllValid and hudScoreUsed >= 65.0 and hudRisk <= 2 and (hudEvent == HUD_EVENT_LIQUIDITY_SUPPORT or hudEvent == HUD_EVENT_BTC_M2_COUPLING or hudEvent == HUD_EVENT_GATE_SUPPORT)
+bool hudMacroStress = peripheralAllValid and (hudEvent == HUD_EVENT_LIQUIDITY_STRESS or hudEvent == HUD_EVENT_BTC_M2_DECOUPLING or hudEvent == HUD_EVENT_GATE_BLOCK or hudEvent == HUD_EVENT_LEAN_RISK or hudEvent == HUD_EVENT_NOISE or hudRisk >= 4)
+bool peripheralRiskBlock = peripheralAllValid and (rsiGateBlock or hudMacroStress)
+
+bool rpcConflict = rpcValid and (rpcEvent == 2 or rpcEvent == 8 or rpcRisk >= 4)
+bool rpcForceOk = rpcValid and rpcScoreUsed >= 65.0 and rpcRisk <= 2
+bool rpcPowerSurge = rpcValid and rpcScoreUsed >= 75.0 and rpcEvent == 9 and rpcRisk <= 2
+float rpcForceBoost = expAllValid ? (rpcPowerSurge ? 8.0 : rpcForceOk ? 5.0 : 0.0) : 0.0
+
+bool structConflict = structValid and (structEvent == 5 or structEvent == 6 or structEvent == 7 or structEvent == 8 or structEvent == 9 or structRisk >= 4)
+bool structSyncOrExpand = structValid and (structEvent == 3 or structEvent == 4)
+bool structLayerOk = structValid and structScoreUsed >= 65.0 and structRisk <= 2
+float structScoreBoost = expAllValid ? (structValid and structScoreUsed >= 75.0 and structSyncOrExpand and structRisk <= 2 ? 8.0 : structLayerOk ? 5.0 : 0.0) : 0.0
+
+bool wenutUnreliable = wenutValid and (wenutEvent == 7 or wenutEvent == 8 or wenutEvent == 9 or wenutRisk >= 3)
+bool wenutHotNear = wenutValid and wenutEvent == 3 and wenutRisk <= 2
+bool wenutHotNowOrOpen = wenutValid and (wenutEvent == 4 or wenutEvent == 5) and wenutScoreUsed >= 75.0 and wenutRisk <= 2
+bool wenutLayerOk = wenutValid and wenutScoreUsed >= 60.0 and wenutRisk <= 2
+float wenutWindowBoost = expAllValid ? (wenutHotNowOrOpen ? 10.0 : wenutHotNear ? 5.0 : wenutLayerOk ? 5.0 : 0.0) : 0.0
+
+bool wasMemory = wasValid and wasEvent == WAS_EVENT_MEMORY
+bool wasTouchLike = wasValid and (wasEvent == WAS_EVENT_TOUCH or wasEvent == WAS_EVENT_ABSORB or wasEvent == WAS_EVENT_REJECT or wasEvent == WAS_EVENT_CLOSE_BREAK or wasEvent == WAS_EVENT_RETEST_HOLD or wasEvent == WAS_EVENT_SHIFT)
+bool wasReaction = wasValid and (wasEvent == WAS_EVENT_ABSORB or wasEvent == WAS_EVENT_REJECT or wasEvent == WAS_EVENT_CLOSE_BREAK or wasEvent == WAS_EVENT_RETEST_HOLD or wasEvent == WAS_EVENT_SHIFT)
+bool wasNoise = wasValid and (wasEvent == WAS_EVENT_NOISE or wasRisk >= 5)
+
+bool tvDry = tvValid and tvEvent == TV_EVENT_DRY
+bool tvBuild = tvValid and tvEvent == TV_EVENT_BUILD
+bool tvExpand = tvValid and tvEvent == TV_EVENT_EXPAND
+bool tvAbsorb = tvValid and tvEvent == TV_EVENT_ABSORB
+bool tvClimax = tvValid and tvEvent == TV_EVENT_CLIMAX
+bool tvDelta = tvValid and (tvEvent == TV_EVENT_DELTA_BULL or tvEvent == TV_EVENT_DELTA_BEAR)
+bool tvMixed = tvValid and tvEvent == TV_EVENT_MIXED
+bool tvNoise = tvValid and (tvEvent == TV_EVENT_NOISE or tvRisk >= 5)
+bool tvForceEvent = tvExpand or tvAbsorb or tvClimax or tvDelta
+bool tvBuildLike = tvBuild or tvDetailBuild
+bool tvExpandLike = tvExpand or tvDetailExpand
+bool tvAbsorbLike = tvAbsorb or tvDetailAbsorb
+bool tvClimaxLike = tvClimax or tvDetailClimax
+bool tvDeltaLike = tvDelta or tvDetailDelta
+bool tvNoiseLike = tvNoise or tvDetailNoise
+bool tvConflictLike = tvMixed or tvDetailConflict
+bool tvForceEventLike = tvForceEvent or tvDetailExpand or tvDetailAbsorb or tvDetailClimax or tvDetailDelta
+
+float wasEventBoost = 0.0
+if wasEvent == WAS_EVENT_MEMORY
+    wasEventBoost := 5.0
+else if wasEvent == WAS_EVENT_TOUCH
+    wasEventBoost := 12.0
+else if wasEvent == WAS_EVENT_ABSORB or wasEvent == WAS_EVENT_REJECT
+    wasEventBoost := 18.0
+else if wasEvent == WAS_EVENT_CLOSE_BREAK
+    wasEventBoost := 20.0
+else if wasEvent == WAS_EVENT_RETEST_HOLD
+    wasEventBoost := 22.0
+else if wasEvent == WAS_EVENT_SHIFT
+    wasEventBoost := 24.0
+else if wasEvent == WAS_EVENT_NOISE
+    wasEventBoost := -12.0
+float structureScore = wasValid ? f_clamp(wasScore + wasEventBoost - float(wasRisk) * 6.0, 0.0, 100.0) : 0.0
+float wasDistBoost = 0.0
+if not na(wasDistUsed)
+    if wasDistUsed <= 0.15
+        wasDistBoost := 8.0
+    else if wasDistUsed <= 0.30
+        wasDistBoost := 5.0
+    else if wasDistUsed <= 0.60
+        wasDistBoost := 2.0
+structureScore := f_clamp(structureScore + wasDistBoost + structScoreBoost, 0.0, 100.0)
+
+float tvEventBoost = 0.0
+if tvEvent == TV_EVENT_BUILD
+    tvEventBoost := 8.0
+else if tvEvent == TV_EVENT_EXPAND
+    tvEventBoost := 16.0
+else if tvEvent == TV_EVENT_ABSORB
+    tvEventBoost := 20.0
+else if tvEvent == TV_EVENT_CLIMAX
+    tvEventBoost := 22.0
+else if tvEvent == TV_EVENT_DELTA_BULL or tvEvent == TV_EVENT_DELTA_BEAR
+    tvEventBoost := 14.0
+else if tvEvent == TV_EVENT_MIXED
+    tvEventBoost := 8.0
+else if tvEvent == TV_EVENT_DRY
+    tvEventBoost := -5.0
+else if tvEvent == TV_EVENT_NOISE
+    tvEventBoost := -15.0
+float tvRiskPenalty = tvRisk >= 5 ? 15.0 : tvRisk >= 4 ? 8.0 : 0.0
+float forceScore = tvValid ? f_clamp(tvScore + tvEventBoost - tvRiskPenalty, 0.0, 100.0) : 0.0
+float tvRvolBoost = 0.0
+if not na(tvRvolUsed)
+    if tvRvolUsed >= 2.5
+        tvRvolBoost := 12.0
+    else if tvRvolUsed >= 1.8
+        tvRvolBoost := 8.0
+    else if tvRvolUsed >= 1.2
+        tvRvolBoost := 4.0
+    else if tvRvolUsed < 0.7
+        tvRvolBoost := -5.0
+forceScore := f_clamp(forceScore + tvRvolBoost + rpcForceBoost, 0.0, 100.0)
+bool forceWeak = forceScore < 20.0
+
+bool anyValid = wasValid or tvValid
+bool bothValid = wasValid and tvValid
+bool anyCoreEvent = wasMemory or wasTouchLike or tvBuildLike or tvForceEventLike
+float windowBase = bothValid ? 30.0 : anyValid ? 10.0 : 0.0
+float windowEventScore = 0.0
+if bothValid and wasTouchLike and tvForceEventLike
+    windowEventScore := 50.0
+else if bothValid and (wasTouchLike or tvForceEventLike)
+    windowEventScore := 30.0
+else if bothValid and (wasMemory or tvBuildLike)
+    windowEventScore := 20.0
+float windowScore = f_clamp(windowBase + windowEventScore + math.min(structureScore, forceScore) * 0.2, 0.0, 100.0)
+bool expansionWindowBoostAllowed = expAllValid and tvValid and not tvDry and not tvNoiseLike and not rpcConflict and not structConflict and not wenutUnreliable
+if expansionWindowBoostAllowed
+    windowScore := f_clamp(windowScore + wenutWindowBoost, 0.0, 100.0)
+if tvDry
+    windowScore := math.min(windowScore, 45.0)
+if forceWeak
+    windowScore := math.min(windowScore, 50.0)
+if not tvValid
+    windowScore := math.min(windowScore, 40.0)
+if expPartialValid
+    windowScore := math.min(windowScore, 55.0)
+if peripheralPartial
+    windowScore := math.min(windowScore, 55.0)
+
+float avgRisk = float(wasRisk + tvRisk) * 0.5
+float maxRisk = math.max(float(wasRisk), float(tvRisk))
+float invalidPenalty = (wasValid ? 0.0 : 12.0) + (tvValid ? 0.0 : 12.0)
+float eventRiskPenalty = (wasNoise or tvNoiseLike ? 20.0 : 0.0) + (tvClimaxLike and not wasTouchLike ? 12.0 : 0.0) + (tvConflictLike ? 8.0 : 0.0) + (tvDetailConflict ? 12.0 : 0.0) + (tvDetailNoise ? 10.0 : 0.0)
+float expansionRiskPenalty = (expAllValid and rpcConflict ? 8.0 : 0.0) + (expAllValid and structConflict ? 8.0 : 0.0) + (expAllValid and wenutUnreliable ? 8.0 : 0.0) + (expHardInvalid ? 10.0 : 0.0)
+float peripheralRiskPenalty = math.min(15.0, (rsiGateBlock ? 8.0 : 0.0) + (hudMacroStress ? 8.0 : 0.0) + (peripheralHardInvalid ? 10.0 : 0.0))
+float riskScore = f_clamp(maxRisk * 14.0 + avgRisk * 6.0 + invalidPenalty + eventRiskPenalty + expansionRiskPenalty + peripheralRiskPenalty, 0.0, 100.0)
+bool expansionWindowOpenOk = not coreExpansionOn or (expAllValid and structureScore >= 60.0 and forceScore >= 25.0 and windowScore >= 60.0 and tvValid and not tvDry and not tvNoiseLike and riskScore < 75.0 and wenutRisk <= 3)
+
+int phaseCode = PHASE_QUIET
+if not wasValid and not tvValid
+    phaseCode := PHASE_RESET_REQUIRED
+else if wasNoise or tvNoiseLike or tvDetailConflict
+    phaseCode := PHASE_NOISE_ONLY
+else if (tvRisk >= 4 or tvDetailClimax) and not wasTouchLike
+    phaseCode := PHASE_CLIMAX_RISK
+else if wasTouchLike and tvAbsorbLike
+    phaseCode := PHASE_ABSORB_CANDIDATE
+else if wasTouchLike and (tvAbsorbLike or tvClimaxLike or tvDeltaLike)
+    phaseCode := PHASE_FORCE_EVENT
+else if wasTouchLike and tvExpandLike and not forceWeak and expansionWindowOpenOk
+    phaseCode := PHASE_WINDOW_OPEN
+else if tvExpandLike and not forceWeak
+    phaseCode := PHASE_VOL_TRIGGER_WAIT
+else if tvBuildLike
+    phaseCode := PHASE_VOL_BUILD
+else if wasTouchLike
+    phaseCode := PHASE_STRUCTURE_TOUCH
+else if wasMemory
+    phaseCode := PHASE_STRUCTURE_MEMORY
+else if anyValid and (structureScore >= 40.0 or forceScore >= 40.0 or anyCoreEvent)
+    phaseCode := PHASE_WATCH
+
+int rawPhaseCode = phaseCode
+int candidateResultCode = RESULT_WATCH
+if phaseCode == PHASE_RESET_REQUIRED
+    candidateResultCode := RESULT_RESET
+else if phaseCode == PHASE_NOISE_ONLY or phaseCode == PHASE_CLIMAX_RISK
+    candidateResultCode := RESULT_NOISE_ONLY
+else if phaseCode == PHASE_FORCE_EVENT or phaseCode == PHASE_ABSORB_CANDIDATE
+    candidateResultCode := RESULT_FORCE_EVENT
+else if phaseCode == PHASE_WINDOW_OPEN
+    candidateResultCode := RESULT_WINDOW_OPEN
+
+int noteCode = NOTE_CORE_WATCH
+if phaseCode == PHASE_RESET_REQUIRED or phaseCode == PHASE_NOISE_ONLY or tvDetailConflict or tvDetailNoise
+    noteCode := NOTE_NOISE_RESET
+else if phaseCode == PHASE_CLIMAX_RISK or tvDetailClimax
+    noteCode := NOTE_CLIMAX_RISK
+else if tvDetailAbsorb
+    noteCode := NOTE_ABSORB_DETAIL
+else if fullLiteOn and not na(wasDistUsed) and not na(tvRvolUsed) and structureScore >= 45.0 and forceScore >= 40.0
+    noteCode := NOTE_STRUCT_RVOL_SYNC
+else if structureScore >= 40.0 and forceScore < 40.0
+    noteCode := NOTE_STRUCT_FORCE_WAIT
+
+bool expansionSourceInvalid = expHardInvalid
+bool expansionRiskBlock = expAllValid and (rpcConflict or structConflict or wenutUnreliable)
+bool forceLayerOk = rpcForceOk or forceScore >= 50.0
+bool structureLayerOk = structLayerOk or structureScore >= 60.0
+bool timeLayerOk = wenutLayerOk or (wenutValid and wenutEvent == 3)
+int layerNoteCode = 0
+if coreExpansionOn
+    if expHardInvalid
+        layerNoteCode := 8
+    else if expPartialValid
+        layerNoteCode := 7
+    else if expansionRiskBlock
+        layerNoteCode := 5
+    else if forceLayerOk and structureLayerOk and timeLayerOk and not tvDry
+        layerNoteCode := 4
+    else if structureLayerOk and timeLayerOk and (tvDry or forceScore < 25.0)
+        layerNoteCode := 3
+    else if timeLayerOk and forceScore < 25.0
+        layerNoteCode := 2
+    else if forceLayerOk and structureLayerOk and not timeLayerOk
+        layerNoteCode := 1
+    else
+        layerNoteCode := 6
+int filterNoteCode = peripheralOff ? 0 : peripheralPartial ? 7 : peripheralHardInvalid ? 8 : rsiGateBlock ? 3 : hudMacroStress ? 5 : backgroundSupportFlag ? 4 : rsiGateOpen ? 2 : 9
+bool canWindowAlertBase = tvValid and wasValid and forceScore >= 25.0 and windowScore >= 60.0 and not tvDry and not tvNoiseLike and not tvDetailNoise and not tvDetailConflict and riskScore < 75.0
+bool canForceAlertBase = tvValid and forceScore >= 50.0 and not tvDry and not tvNoiseLike and not tvDetailNoise and riskScore < 80.0
+bool canNoiseAlertBase = phaseCode == PHASE_NOISE_ONLY or phaseCode == PHASE_CLIMAX_RISK or tvDetailConflict or tvDetailNoise or riskScore >= 75.0
+bool canResetAlertBase = phaseCode == PHASE_RESET_REQUIRED or not wasValid or not tvValid
+bool canWindowAlert = canWindowAlertBase and not expPartialValid and not expHardInvalid and (not coreExpansionOn or wenutRisk <= 3) and not peripheralPartial and not peripheralHardInvalid and (peripheralOff or (rsiGateRisk <= 3 and hudRisk <= 3 and not rsiGateBlock and not hudMacroStress)) and not tvDry
+bool canForceAlert = canForceAlertBase and not expPartialValid and not expHardInvalid and (not coreExpansionOn or rpcRisk <= 3) and not peripheralPartial and not peripheralHardInvalid and (peripheralOff or (rsiGateRisk <= 3 and hudRisk <= 3 and not rsiGateBlock and not hudMacroStress)) and not tvDry
+bool canNoiseAlert = canNoiseAlertBase or expansionRiskBlock or peripheralRiskBlock
+bool canResetAlert = (canResetAlertBase or expansionSourceInvalid or peripheralHardInvalid) and not peripheralPartial
+int finalResultCode = RESULT_WATCH
+if peripheralPartial
+    finalResultCode := RESULT_WATCH
+else if (phaseCode == PHASE_RESET_REQUIRED or expHardInvalid or peripheralHardInvalid) and canResetAlert
+    finalResultCode := RESULT_RESET
+else if (phaseCode == PHASE_NOISE_ONLY or phaseCode == PHASE_CLIMAX_RISK) and canNoiseAlert
+    finalResultCode := RESULT_NOISE_ONLY
+else if phaseCode == PHASE_WINDOW_OPEN and canWindowAlert
+    finalResultCode := RESULT_WINDOW_OPEN
+else if (phaseCode == PHASE_FORCE_EVENT or phaseCode == PHASE_ABSORB_CANDIDATE) and canForceAlert
+    finalResultCode := RESULT_FORCE_EVENT
+bool windowOpenCond = barstate.isconfirmed and phaseCode == PHASE_WINDOW_OPEN and canWindowAlert
+bool forceEventCond = barstate.isconfirmed and (phaseCode == PHASE_FORCE_EVENT or phaseCode == PHASE_ABSORB_CANDIDATE) and canForceAlert
+bool noiseOnlyCond = barstate.isconfirmed and canNoiseAlert
+bool resetCond = barstate.isconfirmed and canResetAlert and not peripheralPartial
+plot(showVisuals ? structureScore : na, title="MAAT2 STRUCTURE", color=color.new(color.aqua, 0), linewidth=2)
+plot(showVisuals ? forceScore : na, title="MAAT2 FORCE", color=color.new(color.orange, 0), linewidth=2)
+plot(showVisuals ? windowScore : na, title="MAAT2 WINDOW", color=color.new(color.lime, 0), linewidth=2)
+plot(showVisuals ? riskScore : na, title="MAAT2 RISK", color=color.new(color.red, 0), linewidth=1)
+hline(70, "70", color=showVisuals ? color.new(color.white, 80) : color.new(color.gray, 100))
+hline(40, "40", color=showVisuals ? color.new(color.white, 88) : color.new(color.gray, 100))
+
+var table coreTable = showVisuals ? table.new(f_pos(tablePosOpt), 2, 26, frame_color=color.new(color.white, 80), frame_width=1, border_color=color.new(color.white, 88), border_width=1) : na
+
+if barstate.islast and showVisuals
+    table.set_position(coreTable, f_pos(tablePosOpt))
+    table.clear(coreTable, 0, 0, 1, 25)
+    if showTable
+        string phaseText = f_phaseText(rawPhaseCode)
+        string modeText = fullLiteOn ? "FULL_LITE" : "CORE"
+        string tvDetailTableText = tvDetailCode == TV_DETAIL_NONE ? "NONE" : f_tvDetailText(tvDetailCode) + " (" + str.tostring(tvDetailCode) + ")"
+        string expansionText = expansionStateCode == 0 ? "OFF" : expansionStateCode == 1 ? "ON VALID" : expansionStateCode == 2 ? "ON PARTIAL" : "ON INVALID"
+        string rpcTableText = f_expSensorText(coreExpansionOn, rpcLinked, rpcValid, rpcDir, rpcRisk, f_rpcEventText(rpcEvent), rpcScoreUsed)
+        string structTableText = f_expSensorText(coreExpansionOn, structLinked, structValid, structDir, structRisk, f_structEventText(structEvent), structScoreUsed)
+        string wenutTableText = f_expSensorText(coreExpansionOn, wenutLinked, wenutValid, wenutDir, wenutRisk, f_wenutEventText(wenutEvent), wenutScoreUsed)
+        string peripheralText = peripheralStateCode == 0 ? "OFF" : peripheralStateCode == 1 ? "ON VALID" : peripheralStateCode == 2 ? "ON PARTIAL" : "ON INVALID"
+        string heruTableText = "EXTERNAL ONLY"
+        string rsiGateTableText = f_expSensorText(usePeripheralExpansion, rsiGateLinked, rsiGateValid, rsiGateDir, rsiGateRisk, f_rsiGateEventText(rsiGateEvent), rsiGateScoreUsed)
+        string hudTableText = f_expSensorText(usePeripheralExpansion, hudLinked, hudValid, hudDir, hudRisk, f_hudEventText(hudEvent), hudScoreUsed)
+        string filterNoteText = filterNoteCode == 0 ? "PERIPH OFF" : filterNoteCode == 2 ? "GATE OPEN" : filterNoteCode == 3 ? "GATE BLOCK" : filterNoteCode == 4 ? "MACRO SUPPORT" : filterNoteCode == 5 ? "MACRO STRESS" : filterNoteCode == 7 ? "PERIPH PARTIAL / WATCH" : filterNoteCode == 8 ? "PERIPH INVALID / CHECK" : "PERIPH VALID"
+        string layerNoteText = "CORE ONLY"
+        if layerNoteCode == 1
+            layerNoteText := "FORCE+STRUCT WAIT TIME"
+        else if layerNoteCode == 2
+            layerNoteText := "TIME OK / FORCE WAIT"
+        else if layerNoteCode == 3
+            layerNoteText := "STRUCT+TIME / FORCE DRY"
+        else if layerNoteCode == 4
+            layerNoteText := "FORCE STRUCT TIME SYNC"
+        else if layerNoteCode == 5
+            layerNoteText := "EXPANSION RISK BLOCK"
+        else if layerNoteCode == 6
+            layerNoteText := "EXPANSION WATCH"
+        else if layerNoteCode == 7
+            layerNoteText := "EXPANSION PARTIAL / WATCH"
+        else if layerNoteCode == 8
+            layerNoteText := "EXPANSION INVALID / CHECK SOURCE"
+        string noteText = f_noteText(noteCode)
+        if peripheralHardInvalid
+            noteText := "PERIPH INVALID / CHECK"
+        else if peripheralPartial
+            noteText := "PERIPH PARTIAL / WATCH"
+        else if peripheralRiskBlock and (candidateResultCode == RESULT_WINDOW_OPEN or candidateResultCode == RESULT_FORCE_EVENT)
+            noteText := "PERIPH RISK / ALERT BLOCK"
+        else if expHardInvalid
+            noteText := "EXPANSION INVALID / CHECK SOURCE"
+        else if expPartialValid
+            noteText := "EXPANSION PARTIAL / WATCH"
+        else if finalResultCode == RESULT_WINDOW_OPEN
+            noteText := "WINDOW OPEN / VERIFY"
+        else if finalResultCode == RESULT_FORCE_EVENT
+            noteText := "FORCE EVENT / VERIFY"
+        else if (phaseCode == PHASE_FORCE_EVENT or phaseCode == PHASE_ABSORB_CANDIDATE) and not canForceAlert
+            noteText := "FORCE CANDIDATE / ALERT BLOCK"
+        else if canWindowAlert and phaseCode != PHASE_WINDOW_OPEN
+            noteText := "WINDOW READY / PHASE WAIT"
+        else if structureScore >= 40.0 and forceScore < 40.0
+            noteText := "STRUCT OK / FORCE WAIT"
+        else if tvDry
+            noteText := "VOL DRY / WATCH"
+        string resultText = f_resultText(finalResultCode)
+        string guardText = "WIN " + f_boolText(canWindowAlert) + " / FORCE " + f_boolText(canForceAlert) + " / NOISE " + f_boolText(canNoiseAlert) + " / RESET " + f_boolText(canResetAlert)
+        string alertFireText = "WIN " + f_boolText(windowOpenCond) + " / FORCE " + f_boolText(forceEventCond) + " / NOISE " + f_boolText(noiseOnlyCond) + " / RESET " + f_boolText(resetCond)
+        tsz = f_size(tableSizeOpt)
+        color headBg = color.new(color.rgb(25, 31, 38), 20)
+        color bodyBg = color.new(color.black, 15)
+        color warnBg = color.new(color.orange, 78)
+        color riskBg = color.new(color.red, 80)
+        color okBg = color.new(color.teal, 76)
+        color phaseBg = finalResultCode == RESULT_RESET or finalResultCode == RESULT_NOISE_ONLY ? riskBg : finalResultCode == RESULT_FORCE_EVENT or finalResultCode == RESULT_WINDOW_OPEN ? okBg : bodyBg
+        color expansionBg = expansionStateCode == 3 ? riskBg : expansionStateCode == 2 ? warnBg : coreExpansionOn ? okBg : bodyBg
+        table.cell(coreTable, 0, 0, "MAAT2 HUB", text_color=color.white, bgcolor=headBg, text_size=tsz)
+        table.cell(coreTable, 1, 0, modeText, text_color=color.white, bgcolor=headBg, text_size=tsz)
+        table.cell(coreTable, 0, 1, "MODE", text_color=color.silver, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 1, 1, modeText, text_color=color.white, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 0, 2, "EXPANSION", text_color=color.silver, bgcolor=expansionBg, text_size=tsz)
+        table.cell(coreTable, 1, 2, expansionText, text_color=color.white, bgcolor=expansionBg, text_size=tsz)
+        table.cell(coreTable, 0, 3, "WAS", text_color=color.silver, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 1, 3, f_dirText(wasDir) + " R" + str.tostring(wasRisk) + " " + f_wasEventText(wasEvent) + " S" + str.tostring(math.round(wasScore)) + " V" + f_boolText(wasValid), text_color=color.white, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 0, 4, "TRUE VOL", text_color=color.silver, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 1, 4, f_dirText(tvDir) + " R" + str.tostring(tvRisk) + " " + f_tvEventText(tvEvent) + " S" + str.tostring(math.round(tvScore)) + " V" + f_boolText(tvValid), text_color=color.white, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 0, 5, "RPC", text_color=color.silver, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 1, 5, rpcTableText, text_color=color.white, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 0, 6, "STRUCT", text_color=color.silver, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 1, 6, structTableText, text_color=color.white, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 0, 7, "WENUT", text_color=color.silver, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 1, 7, wenutTableText, text_color=color.white, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 0, 8, "PERIPHERAL", text_color=color.silver, bgcolor=peripheralStateCode == 3 ? riskBg : peripheralStateCode == 2 ? warnBg : usePeripheralExpansion ? okBg : bodyBg, text_size=tsz)
+        table.cell(coreTable, 1, 8, peripheralText, text_color=color.white, bgcolor=peripheralStateCode == 3 ? riskBg : peripheralStateCode == 2 ? warnBg : usePeripheralExpansion ? okBg : bodyBg, text_size=tsz)
+        table.cell(coreTable, 0, 9, "HERU", text_color=color.silver, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 1, 9, heruTableText, text_color=color.white, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 0, 10, "RSIGATE", text_color=color.silver, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 1, 10, rsiGateTableText, text_color=color.white, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 0, 11, "HUD", text_color=color.silver, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 1, 11, hudTableText, text_color=color.white, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 0, 12, "FILTER_NOTE", text_color=color.silver, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 1, 12, filterNoteText, text_color=color.white, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 0, 13, "WAS_DIST", text_color=color.silver, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 1, 13, f_floatText(wasDistUsed), text_color=color.white, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 0, 14, "TV_RVOL", text_color=color.silver, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 1, 14, f_floatText(tvRvolUsed), text_color=color.white, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 0, 15, "TV_DETAIL", text_color=color.silver, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 1, 15, tvDetailTableText, text_color=color.white, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 0, 16, "STRUCTURE_SCORE", text_color=color.silver, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 1, 16, str.tostring(math.round(structureScore)), text_color=color.aqua, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 0, 17, "FORCE_SCORE", text_color=color.silver, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 1, 17, str.tostring(math.round(forceScore)), text_color=color.orange, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 0, 18, "WINDOW_SCORE", text_color=color.silver, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 1, 18, str.tostring(math.round(windowScore)), text_color=color.lime, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 0, 19, "RISK_SCORE", text_color=color.silver, bgcolor=riskScore >= 70 ? riskBg : riskScore >= 45 ? warnBg : bodyBg, text_size=tsz)
+        table.cell(coreTable, 1, 19, str.tostring(math.round(riskScore)), text_color=color.white, bgcolor=riskScore >= 70 ? riskBg : riskScore >= 45 ? warnBg : bodyBg, text_size=tsz)
+        table.cell(coreTable, 0, 20, "PHASE", text_color=color.silver, bgcolor=phaseBg, text_size=tsz)
+        table.cell(coreTable, 1, 20, phaseText, text_color=color.white, bgcolor=phaseBg, text_size=tsz)
+        table.cell(coreTable, 0, 21, "RESULT", text_color=color.silver, bgcolor=phaseBg, text_size=tsz)
+        table.cell(coreTable, 1, 21, resultText, text_color=color.white, bgcolor=phaseBg, text_size=tsz)
+        table.cell(coreTable, 0, 22, "GUARD", text_color=color.silver, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 1, 22, guardText, text_color=color.white, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 0, 23, "ALERT", text_color=color.silver, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 1, 23, alertFireText, text_color=color.white, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 0, 24, "LAYER_NOTE", text_color=color.silver, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 1, 24, layerNoteText, text_color=color.white, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 0, 25, "NOTE", text_color=color.silver, bgcolor=bodyBg, text_size=tsz)
+        table.cell(coreTable, 1, 25, noteText, text_color=color.white, bgcolor=bodyBg, text_size=tsz)
+
+alertcondition(windowOpenCond, title="MAAT2_WINDOW_OPEN", message="MAAT2 WINDOW_OPEN: structure and true volume reaction detected. Record, verify, and wait.")
+alertcondition(forceEventCond, title="MAAT2_FORCE_EVENT", message="MAAT2 FORCE_EVENT: core force reaction candidate detected. Record, verify, and wait.")
+alertcondition(noiseOnlyCond, title="MAAT2_NOISE_ONLY", message="MAAT2 NOISE_ONLY: noisy or overheated core state detected. Record invalidation context.")
+alertcondition(resetCond, title="MAAT2_RESET_REQUIRED", message="MAAT2 RESET_REQUIRED: core inputs are missing or invalid. Reconnect sources and verify.")
+
+// MAAT2 Time Bridge V1: read-only compression of the final Hub state.
+const int BRIDGE_MAGIC = 42
+const int BRIDGE_MAGIC_MULT = 1000000000000
+const int PHASE_MULT = 1000000000
+const int RESULT_MULT = 100000000
+const int RISK_BAND_MULT = 10000000
+const int GUARD_MASK_MULT = 100000
+const int ALERT_MASK_MULT = 1000
+const int CORE_STATE_MULT = 100
+const int PERIPH_STATE_MULT = 10
+const int METRIC_STRUCTURE_MULT = 2097152
+const int METRIC_FORCE_MULT = 16384
+const int METRIC_WINDOW_MULT = 128
+
+bool bridgeScoresPresent = not na(structureScore) and not na(forceScore) and not na(windowScore) and not na(riskScore)
+bool bridgeScoresInRange = bridgeScoresPresent and structureScore >= 0.0 and structureScore <= 100.0 and forceScore >= 0.0 and forceScore <= 100.0 and windowScore >= 0.0 and windowScore <= 100.0 and riskScore >= 0.0 and riskScore <= 100.0
+int bridgeStructure = not na(structureScore) ? int(math.round(math.max(0.0, math.min(100.0, structureScore)))) : 0
+int bridgeForce = not na(forceScore) ? int(math.round(math.max(0.0, math.min(100.0, forceScore)))) : 0
+int bridgeWindow = not na(windowScore) ? int(math.round(math.max(0.0, math.min(100.0, windowScore)))) : 0
+int bridgeRisk = not na(riskScore) ? int(math.round(math.max(0.0, math.min(100.0, riskScore)))) : 0
+
+int timeBridgeRiskBand = bridgeRisk <= 14 ? 0 : bridgeRisk <= 29 ? 1 : bridgeRisk <= 44 ? 2 : bridgeRisk <= 59 ? 3 : bridgeRisk <= 74 ? 4 : 5
+int timeBridgeGuardMask = (canWindowAlert ? 1 : 0) + (canForceAlert ? 2 : 0) + (canNoiseAlert ? 4 : 0) + (canResetAlert ? 8 : 0)
+int timeBridgeAlertMask = (windowOpenCond ? 1 : 0) + (forceEventCond ? 2 : 0) + (noiseOnlyCond ? 4 : 0) + (resetCond ? 8 : 0)
+
+bool bridgeFieldValid = rawPhaseCode >= 0 and rawPhaseCode <= 11 and finalResultCode >= 0 and finalResultCode <= 9 and timeBridgeRiskBand >= 0 and timeBridgeRiskBand <= 5 and timeBridgeGuardMask >= 0 and timeBridgeGuardMask <= 15 and timeBridgeAlertMask >= 0 and timeBridgeAlertMask <= 15 and expansionStateCode >= 0 and expansionStateCode <= 3 and peripheralStateCode >= 0 and peripheralStateCode <= 3 and bridgeScoresInRange and wasValid and tvValid
+int timeBridgeValidDigit = bridgeFieldValid ? 1 : 0
+
+int timeBridgeStatePackCandidate = BRIDGE_MAGIC * BRIDGE_MAGIC_MULT + rawPhaseCode * PHASE_MULT + finalResultCode * RESULT_MULT + timeBridgeRiskBand * RISK_BAND_MULT + timeBridgeGuardMask * GUARD_MASK_MULT + timeBridgeAlertMask * ALERT_MASK_MULT + expansionStateCode * CORE_STATE_MULT + peripheralStateCode * PERIPH_STATE_MULT + timeBridgeValidDigit
+int parsedBridgeMagic = int(math.floor(float(timeBridgeStatePackCandidate) / float(BRIDGE_MAGIC_MULT)))
+int parsedBridgePhase = int(math.floor(float(timeBridgeStatePackCandidate) / float(PHASE_MULT))) % 100
+int parsedBridgeResult = int(math.floor(float(timeBridgeStatePackCandidate) / float(RESULT_MULT))) % 10
+int parsedBridgeRiskBand = int(math.floor(float(timeBridgeStatePackCandidate) / float(RISK_BAND_MULT))) % 10
+int parsedBridgeGuardMask = int(math.floor(float(timeBridgeStatePackCandidate) / float(GUARD_MASK_MULT))) % 100
+int parsedBridgeAlertMask = int(math.floor(float(timeBridgeStatePackCandidate) / float(ALERT_MASK_MULT))) % 100
+int parsedBridgeCoreState = int(math.floor(float(timeBridgeStatePackCandidate) / float(CORE_STATE_MULT))) % 10
+int parsedBridgePeripheralState = int(math.floor(float(timeBridgeStatePackCandidate) / float(PERIPH_STATE_MULT))) % 10
+int parsedBridgeValid = timeBridgeStatePackCandidate % 10
+int repackedBridgeState = parsedBridgeMagic * BRIDGE_MAGIC_MULT + parsedBridgePhase * PHASE_MULT + parsedBridgeResult * RESULT_MULT + parsedBridgeRiskBand * RISK_BAND_MULT + parsedBridgeGuardMask * GUARD_MASK_MULT + parsedBridgeAlertMask * ALERT_MASK_MULT + parsedBridgeCoreState * CORE_STATE_MULT + parsedBridgePeripheralState * PERIPH_STATE_MULT + parsedBridgeValid
+bool stateRoundTripOk = parsedBridgeMagic == BRIDGE_MAGIC and parsedBridgePhase == rawPhaseCode and parsedBridgeResult == finalResultCode and parsedBridgeRiskBand == timeBridgeRiskBand and parsedBridgeGuardMask == timeBridgeGuardMask and parsedBridgeAlertMask == timeBridgeAlertMask and parsedBridgeCoreState == expansionStateCode and parsedBridgePeripheralState == peripheralStateCode and parsedBridgeValid == timeBridgeValidDigit and repackedBridgeState == timeBridgeStatePackCandidate
+float stateBridgeOut = stateRoundTripOk ? float(timeBridgeStatePackCandidate) : na
+
+int timeBridgeMetricsPackCandidate = bridgeStructure * METRIC_STRUCTURE_MULT + bridgeForce * METRIC_FORCE_MULT + bridgeWindow * METRIC_WINDOW_MULT + bridgeRisk
+int parsedBridgeStructure = int(math.floor(float(timeBridgeMetricsPackCandidate) / float(METRIC_STRUCTURE_MULT))) % 128
+int parsedBridgeForce = int(math.floor(float(timeBridgeMetricsPackCandidate) / float(METRIC_FORCE_MULT))) % 128
+int parsedBridgeWindow = int(math.floor(float(timeBridgeMetricsPackCandidate) / float(METRIC_WINDOW_MULT))) % 128
+int parsedBridgeRisk = timeBridgeMetricsPackCandidate % 128
+int repackedBridgeMetrics = parsedBridgeStructure * METRIC_STRUCTURE_MULT + parsedBridgeForce * METRIC_FORCE_MULT + parsedBridgeWindow * METRIC_WINDOW_MULT + parsedBridgeRisk
+bool metricsRoundTripOk = bridgeScoresInRange and parsedBridgeStructure >= 0 and parsedBridgeStructure <= 100 and parsedBridgeForce >= 0 and parsedBridgeForce <= 100 and parsedBridgeWindow >= 0 and parsedBridgeWindow <= 100 and parsedBridgeRisk >= 0 and parsedBridgeRisk <= 100 and parsedBridgeStructure == bridgeStructure and parsedBridgeForce == bridgeForce and parsedBridgeWindow == bridgeWindow and parsedBridgeRisk == bridgeRisk and repackedBridgeMetrics == timeBridgeMetricsPackCandidate
+float metricsBridgeOut = metricsRoundTripOk ? float(timeBridgeMetricsPackCandidate) : na
+
+plot(structureScore, title="AL_MAAT2_STRUCTURE_SCORE", display=display.none)
+plot(forceScore, title="AL_MAAT2_FORCE_SCORE", display=display.none)
+plot(windowScore, title="AL_MAAT2_WINDOW_SCORE", display=display.none)
+plot(riskScore, title="AL_MAAT2_RISK_SCORE", display=display.none)
+plot(canWindowAlert ? 1.0 : 0.0, title="AL_MAAT2_CAN_WINDOW_ALERT", display=display.none)
+plot(canForceAlert ? 1.0 : 0.0, title="AL_MAAT2_CAN_FORCE_ALERT", display=display.none)
+plot(canNoiseAlert ? 1.0 : 0.0, title="AL_MAAT2_CAN_NOISE_ALERT", display=display.none)
+plot(canResetAlert ? 1.0 : 0.0, title="AL_MAAT2_CAN_RESET_ALERT", display=display.none)
+plot(windowOpenCond ? 1.0 : 0.0, title="AL_MAAT2_ALERT_WINDOW_OPEN", display=display.none)
+plot(forceEventCond ? 1.0 : 0.0, title="AL_MAAT2_ALERT_FORCE_EVENT", display=display.none)
+plot(noiseOnlyCond ? 1.0 : 0.0, title="AL_MAAT2_ALERT_NOISE_ONLY", display=display.none)
+plot(resetCond ? 1.0 : 0.0, title="AL_MAAT2_ALERT_RESET", display=display.none)
+plot(float(rawPhaseCode), title="AL_MAAT2_PHASE_CODE", display=display.none)
+plot(float(rawPhaseCode), title="AL_MAAT2_RAW_PHASE_CODE", display=display.none)
+plot(float(candidateResultCode), title="AL_MAAT2_CANDIDATE_RESULT_CODE", display=display.none)
+plot(float(finalResultCode), title="AL_MAAT2_RESULT_CODE", display=display.none)
+plot(float(finalResultCode), title="AL_MAAT2_FINAL_RESULT_CODE", display=display.none)
+plot(wasValid ? 1.0 : 0.0, title="AL_MAAT2_WAS_VALID", display=display.none)
+plot(tvValid ? 1.0 : 0.0, title="AL_MAAT2_TV_VALID", display=display.none)
+plot(rpcValid ? 1.0 : 0.0, title="AL_MAAT2_RPC_VALID", display=display.none)
+plot(structValid ? 1.0 : 0.0, title="AL_MAAT2_STRUCT_VALID", display=display.none)
+plot(wenutValid ? 1.0 : 0.0, title="AL_MAAT2_WENUT_VALID", display=display.none)
+plot(rpcScoreUsed, title="AL_MAAT2_RPC_SCORE_USED", display=display.none)
+plot(structScoreUsed, title="AL_MAAT2_STRUCT_SCORE_USED", display=display.none)
+plot(wenutScoreUsed, title="AL_MAAT2_WENUT_SCORE_USED", display=display.none)
+plot(wasDistUsed, title="AL_MAAT2_WAS_DIST_USED", display=display.data_window)
+plot(tvRvolUsed, title="AL_MAAT2_TV_RVOL_USED", display=display.none)
+plot(float(tvDetailCode), title="AL_MAAT2_TV_DETAIL_CODE", display=display.none)
+plot(float(fullLiteOnCode), title="AL_MAAT2_FULL_LITE_ON", display=display.none)
+plot(float(coreExpansionOnCode), title="AL_MAAT2_CORE_EXPANSION_ON", display=display.none)
+plot(float(expansionStateCode), title="AL_MAAT2_EXPANSION_STATE_CODE", display=display.none)
+plot(expPartialValid ? 1.0 : 0.0, title="AL_MAAT2_EXPANSION_PARTIAL", display=display.none)
+plot(expHardInvalid ? 1.0 : 0.0, title="AL_MAAT2_EXPANSION_HARD_INVALID", display=display.none)
+plot(float(layerNoteCode), title="AL_MAAT2_LAYER_NOTE_CODE", display=display.none)
+plot(float(noteCode), title="AL_MAAT2_NOTE_CODE", display=display.none)
+// HERU is external-only and is not part of Hub validity.
+plot(0.0, title="AL_MAAT2_HERU_VALID", display=display.none)
+plot(rsiGateValid ? 1.0 : 0.0, title="AL_MAAT2_RSIGATE_VALID", display=display.none)
+plot(hudValid ? 1.0 : 0.0, title="AL_MAAT2_HUD_VALID", display=display.none)
+plot(rsiGateScoreUsed, title="AL_MAAT2_RSIGATE_SCORE_USED", display=display.none)
+plot(hudScoreUsed, title="AL_MAAT2_HUD_SCORE_USED", display=display.none)
+plot(float(peripheralStateCode), title="AL_MAAT2_PERIPHERAL_STATE_CODE", display=display.none)
+plot(peripheralPartial ? 1.0 : 0.0, title="AL_MAAT2_PERIPHERAL_PARTIAL", display=display.none)
+plot(peripheralHardInvalid ? 1.0 : 0.0, title="AL_MAAT2_PERIPHERAL_HARD_INVALID", display=display.none)
+plot(float(filterNoteCode), title="AL_MAAT2_FILTER_NOTE_CODE", display=display.none)
+plot(backgroundSupportFlag ? 1.0 : 0.0, title="AL_MAAT2_BACKGROUND_SUPPORT", display=display.none)
+plot(peripheralRiskBlock ? 1.0 : 0.0, title="AL_MAAT2_PERIPHERAL_RISK_BLOCK", display=display.none)
+plot(stateBridgeOut, title="AL_MAAT2_TIME_BRIDGE_STATE_PACK", display=display.data_window)
+plot(metricsBridgeOut, title="AL_MAAT2_TIME_BRIDGE_METRICS_PACK", display=display.data_window)
+
+// SEKHMET P2 LEAN bridge: relay parsed directions without changing Hub decisions.
+int leanWasDir = wasValid ? wasDir : 1
+int leanTvDir = tvValid ? tvDir : 1
+int leanRpcDir = rpcValid ? rpcDir : 1
+int leanStructDir = structValid ? structDir : 1
+int leanWenutDir = wenutValid ? wenutDir : 1
+int leanRsiGateDir = rsiGateValid ? rsiGateDir : 1
+int leanHudDir = hudValid ? hudDir : 1
+int leanDryFlag = tvDry ? 1 : 0
+int leanVoteSignSum = (leanWasDir - 1) + (leanTvDir - 1) + (leanRpcDir - 1) + (leanStructDir - 1) + (leanRsiGateDir - 1)
+int leanOppositeCount = leanVoteSignSum > 0 ? (leanWasDir == 0 ? 1 : 0) + (leanTvDir == 0 ? 1 : 0) + (leanRpcDir == 0 ? 1 : 0) + (leanStructDir == 0 ? 1 : 0) + (leanRsiGateDir == 0 ? 1 : 0) : leanVoteSignSum < 0 ? (leanWasDir == 2 ? 1 : 0) + (leanTvDir == 2 ? 1 : 0) + (leanRpcDir == 2 ? 1 : 0) + (leanStructDir == 2 ? 1 : 0) + (leanRsiGateDir == 2 ? 1 : 0) : int(math.ceil(float((leanWasDir != 1 ? 1 : 0) + (leanTvDir != 1 ? 1 : 0) + (leanRpcDir != 1 ? 1 : 0) + (leanStructDir != 1 ? 1 : 0) + (leanRsiGateDir != 1 ? 1 : 0)) / 2.0))
+int leanValidDigit = wasValid and tvValid ? 1 : 0
+int leanPackCandidate = 77 * 10000000000 + leanWasDir * 1000000000 + leanTvDir * 100000000 + leanRpcDir * 10000000 + leanStructDir * 1000000 + leanWenutDir * 100000 + leanRsiGateDir * 10000 + leanHudDir * 1000 + leanDryFlag * 100 + leanOppositeCount * 10 + leanValidDigit
+int leanParsedMagic = int(math.floor(float(leanPackCandidate) / 10000000000.0))
+int leanParsedWasDir = int(math.floor(float(leanPackCandidate) / 1000000000.0)) % 10
+int leanParsedTvDir = int(math.floor(float(leanPackCandidate) / 100000000.0)) % 10
+int leanParsedRpcDir = int(math.floor(float(leanPackCandidate) / 10000000.0)) % 10
+int leanParsedStructDir = int(math.floor(float(leanPackCandidate) / 1000000.0)) % 10
+int leanParsedWenutDir = int(math.floor(float(leanPackCandidate) / 100000.0)) % 10
+int leanParsedRsiGateDir = int(math.floor(float(leanPackCandidate) / 10000.0)) % 10
+int leanParsedHudDir = int(math.floor(float(leanPackCandidate) / 1000.0)) % 10
+int leanParsedDryFlag = int(math.floor(float(leanPackCandidate) / 100.0)) % 10
+int leanParsedConflict = int(math.floor(float(leanPackCandidate) / 10.0)) % 10
+int leanParsedValid = leanPackCandidate % 10
+int leanRepacked = leanParsedMagic * 10000000000 + leanParsedWasDir * 1000000000 + leanParsedTvDir * 100000000 + leanParsedRpcDir * 10000000 + leanParsedStructDir * 1000000 + leanParsedWenutDir * 100000 + leanParsedRsiGateDir * 10000 + leanParsedHudDir * 1000 + leanParsedDryFlag * 100 + leanParsedConflict * 10 + leanParsedValid
+bool leanRoundTripOk = leanParsedMagic == 77 and leanParsedWasDir == leanWasDir and leanParsedTvDir == leanTvDir and leanParsedRpcDir == leanRpcDir and leanParsedStructDir == leanStructDir and leanParsedWenutDir == leanWenutDir and leanParsedRsiGateDir == leanRsiGateDir and leanParsedHudDir == leanHudDir and leanParsedDryFlag == leanDryFlag and leanParsedConflict == leanOppositeCount and leanParsedValid == leanValidDigit and leanRepacked == leanPackCandidate
+float leanPack = leanRoundTripOk ? float(leanPackCandidate) : na
+plot(leanPack, "AL_MAAT2_LEAN_PACK", display=display.data_window)
+
+// SEKHMET P2 WAS bridge: expose only the Full Mode Lite line actually in use.
+bool wasLineSourceOk = fullLiteOn and f_linked(wasLinePriceInput) and not na(wasLinePriceInput)
+float wasLineUsed = wasLineSourceOk ? wasLinePriceInput : na
+plot(wasLineUsed, "AL_MAAT2_WAS_LINE_USED", display=display.data_window)

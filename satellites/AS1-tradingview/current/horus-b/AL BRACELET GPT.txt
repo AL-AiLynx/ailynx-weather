@@ -1,0 +1,455 @@
+//@version=6
+indicator("AL BRACELET GPT", overlay=true, max_labels_count=0, max_lines_count=20, max_bars_back=3000)
+
+//==================================================
+// [0] 표
+//==================================================
+string GROUP_PANEL = "팔찌 G | 표"
+
+bool   showTable     = input.bool(false, "GPT 표 표시", group=GROUP_PANEL, display=display.none)
+string tablePosOpt   = input.string("TR", "표 위치", options=["TL","TC","TR","ML","MC","MR","BL","BC","BR"], group=GROUP_PANEL, display=display.none)
+string tableSizeOpt  = input.string("SMALL", "표 크기", options=["TINY","SMALL","NORMAL","LARGE"], group=GROUP_PANEL, display=display.none)
+color  headerBg      = input.color(color.new(color.black, 0), "헤더 배경", group=GROUP_PANEL, display=display.none)
+color  cellBg        = input.color(color.new(color.black, 8), "셀 배경", group=GROUP_PANEL, display=display.none)
+color  borderColor   = input.color(color.new(color.gray, 40), "테두리 색상", group=GROUP_PANEL, display=display.none)
+color  headerText    = input.color(color.white, "헤더 글자색", group=GROUP_PANEL, display=display.none)
+color  keyTextColor  = input.color(color.silver, "KEY 글자색", group=GROUP_PANEL, display=display.none)
+color  codeTextColor = input.color(color.white, "CODE 글자색", group=GROUP_PANEL, display=display.none)
+color  numTextColor  = input.color(color.aqua, "NUM 글자색", group=GROUP_PANEL, display=display.none)
+color  noteTextColor = input.color(color.orange, "NOTE 글자색", group=GROUP_PANEL, display=display.none)
+
+//==================================================
+// [1] 핵심
+//==================================================
+string GROUP_CORE = "팔찌 G | 핵심"
+
+int emaFastLen = input.int(21, "빠른 EMA", group=GROUP_CORE, display=display.none)
+int emaSlowLen = input.int(55, "느린 EMA", group=GROUP_CORE, display=display.none)
+int atrLen     = input.int(14, "ATR 길이", group=GROUP_CORE, display=display.none)
+
+//==================================================
+// [2] 국면
+//==================================================
+string GROUP_REGIME = "팔찌 G | 국면"
+
+float stMult        = input.float(2.0, "슈퍼트렌드 배수", step=0.1, group=GROUP_REGIME, display=display.none)
+bool  useRegimeGate = input.bool(true, "국면 게이트 사용", group=GROUP_REGIME, display=display.none)
+
+//==================================================
+// [3] 패턴
+//==================================================
+string GROUP_PATTERN = "팔찌 G | 패턴"
+
+bool   useEngulf     = input.bool(true, "장악형 사용", group=GROUP_PATTERN, display=display.none)
+string engulfMode    = input.string("BODY", "장악형 모드", options=["BODY","FULL"], group=GROUP_PATTERN, display=display.none)
+bool   usePinbar     = input.bool(true, "핀바 사용", group=GROUP_PATTERN, display=display.none)
+float  pinWickMult   = input.float(1.8, "핀바 꼬리/몸통", step=0.1, group=GROUP_PATTERN, display=display.none)
+float  minBodyAtrP   = input.float(0.10, "최소 몸통 ATR 비율", step=0.01, group=GROUP_PATTERN, display=display.none)
+float  minCandleAtrP = input.float(0.22, "최소 캔들 ATR 비율", step=0.01, group=GROUP_PATTERN, display=display.none)
+
+//==================================================
+// [4] 튜닝
+//==================================================
+string GROUP_TUNE = "팔찌 G | 튜닝"
+
+int  cooldownBars      = input.int(6, "쿨다운 봉 수", minval=0, maxval=200, group=GROUP_TUNE, display=display.none)
+int  minKToFire        = input.int(55, "이벤트 최소 K", minval=0, maxval=100, group=GROUP_TUNE, display=display.none)
+bool requireCloseSide  = input.bool(true, "빠른 EMA 방향 위치 확인", group=GROUP_TUNE, display=display.none)
+bool requireBreakSwing = input.bool(false, "직전 스윙 돌파 확인", group=GROUP_TUNE, display=display.none)
+int  swingLB           = input.int(10, "스윙 룩백", minval=3, maxval=100, group=GROUP_TUNE, display=display.none)
+int  confirmBars       = input.int(3, "확인 추적 봉 수", minval=1, maxval=20, group=GROUP_TUNE, display=display.none)
+int  failBars          = input.int(5, "실패 추적 봉 수", minval=1, maxval=30, group=GROUP_TUNE, display=display.none)
+
+//==================================================
+// [5] 갑옷 연동
+//==================================================
+
+
+
+
+string GROUP_ALERT = "팔찌 G | 얼러트"
+bool enableAlerts = input.bool(true, "얼러트 조건 사용", group=GROUP_ALERT, display=display.none)
+
+//==================================================
+// [6] 헬퍼
+//==================================================
+f_clampInt(_x, _lo, _hi) =>
+    math.max(_lo, math.min(_hi, _x))
+
+f_clamp100(float x) =>
+    math.max(0.0, math.min(100.0, x))
+
+f_tablePos(_opt) =>
+    pos = position.top_right
+    if _opt == "TL"
+        pos := position.top_left
+    else if _opt == "TC"
+        pos := position.top_center
+    else if _opt == "TR"
+        pos := position.top_right
+    else if _opt == "ML"
+        pos := position.middle_left
+    else if _opt == "MC"
+        pos := position.middle_center
+    else if _opt == "MR"
+        pos := position.middle_right
+    else if _opt == "BL"
+        pos := position.bottom_left
+    else if _opt == "BC"
+        pos := position.bottom_center
+    else
+        pos := position.bottom_right
+    pos
+
+f_textSize(_opt) =>
+    sz = size.small
+    if _opt == "TINY"
+        sz := size.tiny
+    else if _opt == "SMALL"
+        sz := size.small
+    else if _opt == "NORMAL"
+        sz := size.normal
+    else
+        sz := size.large
+    sz
+
+f_dirCode(_dir) =>
+    string out = "FLAT"
+    if _dir > 0
+        out := "UP"
+    else if _dir < 0
+        out := "DOWN"
+    else
+        out := "FLAT"
+    out
+
+f_stateCode(_state) =>
+    string out = "IDLE"
+    if _state == 4
+        out := "FAIL"
+    else if _state == 3
+        out := "HOLD"
+    else if _state == 2
+        out := "TRIG"
+    else if _state == 1
+        out := "SET"
+    out
+
+f_scoreCode(_score) =>
+    string out = "LOW"
+    if _score >= 85
+        out := "STRONG"
+    else if _score >= 70
+        out := "GOOD"
+    else if _score >= 55
+        out := "READY"
+    else
+        out := "LOW"
+    out
+
+f_evtCode(_evt) =>
+    string out = "NONE"
+    if _evt == 11
+        out := "SOFT_UP"
+    else if _evt == 12
+        out := "SOFT_DN"
+    else if _evt == 21
+        out := "CONF_UP"
+    else if _evt == 22
+        out := "CONF_DN"
+    else if _evt == 31
+        out := "FAIL_UP"
+    else if _evt == 32
+        out := "FAIL_DN"
+    else if _evt == 40
+        out := "REJECT"
+    else if _evt == 50
+        out := "TRAP"
+    else
+        out := "NONE"
+    out
+
+f_riskCode(_risk) =>
+    string out = "MID"
+    if _risk <= 0
+        out := "LOW"
+    else if _risk >= 2
+        out := "HIGH"
+    else
+        out := "MID"
+    out
+
+f_note(_evt, _res, _active) =>
+    string out = "WAIT"
+    if _evt == 21 or _evt == 22
+        out := _res >= 4 ? "CONFIRMED" : "TRIGGER"
+    else if _evt == 31 or _evt == 32
+        out := "FAILED"
+    else if _evt == 40
+        out := "REJECTION"
+    else if _evt == 50
+        out := "TRAP"
+    else if _evt == 11 or _evt == 12
+        out := "SOFT"
+    else if _active == 1
+        out := "WATCH"
+    else
+        out := "WAIT"
+    out
+
+//==================================================
+// [7] 기본 계산
+//==================================================
+float emaF = ta.ema(close, emaFastLen)
+float emaS = ta.ema(close, emaSlowLen)
+bool  trendUp = emaF > emaS
+bool  trendDn = emaF < emaS
+float atrV = ta.atr(atrLen)
+float body = math.abs(close - open)
+float rng  = high - low
+float bodyAtrP = atrV > 0 ? (body / atrV) * 100.0 : 0.0
+float rngAtrP  = atrV > 0 ? (rng  / atrV) * 100.0 : 0.0
+bool bodyOK  = bodyAtrP >= (minBodyAtrP * 100.0)
+bool rangeOK = rngAtrP  >= (minCandleAtrP * 100.0)
+[brStLine, brStDir] = ta.supertrend(stMult, atrLen)
+
+bool regimeUp = (brStDir == 1) and trendUp
+bool regimeDn = (brStDir == -1) and trendDn
+bool gateUp = useRegimeGate ? regimeUp : true
+bool gateDn = useRegimeGate ? regimeDn : true
+
+//==================================================
+// [8] 갑옷 연동 해석
+//==================================================
+//==================================================
+// [9] 팔찌 패턴
+//==================================================
+float wickUp = high - math.max(open, close)
+float wickDn = math.min(open, close) - low
+float bodyN  = math.max(body, syminfo.mintick)
+
+bool pinBull = usePinbar and bodyOK and rangeOK and (wickDn / bodyN >= pinWickMult) and close > open
+bool pinBear = usePinbar and bodyOK and rangeOK and (wickUp / bodyN >= pinWickMult) and close < open
+
+bool isBull   = close > open
+bool isBear   = close < open
+bool prevBear = close[1] < open[1]
+bool prevBull = close[1] > open[1]
+
+bool bodyEngBull = (open < close[1]) and (close > open[1])
+bool bodyEngBear = (open > close[1]) and (close < open[1])
+bool fullEng     = (high > high[1]) and (low < low[1])
+
+bool engBull = useEngulf and bodyOK and rangeOK and prevBear and isBull and (engulfMode == "FULL" ? (fullEng and bodyEngBull) : bodyEngBull)
+bool engBear = useEngulf and bodyOK and rangeOK and prevBull and isBear and (engulfMode == "FULL" ? (fullEng and bodyEngBear) : bodyEngBear)
+
+bool patUpRaw = pinBull or engBull
+bool patDnRaw = pinBear or engBear
+int  candDir  = patUpRaw ? 1 : patDnRaw ? -1 : 0
+
+bool patUpGate = patUpRaw and gateUp
+bool patDnGate = patDnRaw and gateDn
+
+bool closeSideOKUp = (not requireCloseSide) or (close >= emaF)
+bool closeSideOKDn = (not requireCloseSide) or (close <= emaF)
+
+float prevSwingHi = ta.highest(high[1], swingLB)
+float prevSwingLo = ta.lowest(low[1],  swingLB)
+
+bool swingOKUp = (not requireBreakSwing) or (not na(prevSwingHi) and high > prevSwingHi)
+bool swingOKDn = (not requireBreakSwing) or (not na(prevSwingLo) and low  < prevSwingLo)
+
+//==================================================
+// [10] K + 갑옷 강화
+//==================================================
+float kBase = 0.0
+if engBull or engBear
+    kBase += 70.0
+if pinBull or pinBear
+    kBase += 55.0
+kBase += math.min(30.0, rngAtrP)
+
+float kRaw = (patUpRaw or patDnRaw) ? math.max(0.0, math.min(100.0, kBase)) : 0.0
+
+int brK = int(math.round(math.max(0.0, math.min(100.0, kRaw))))
+
+//==================================================
+// [11] 최종 발화
+//==================================================
+var int lastEventBar = na
+bool cooldownOK = cooldownBars <= 0 ? true : (na(lastEventBar) or (bar_index - lastEventBar > cooldownBars))
+bool kOK = brK >= minKToFire
+
+float upperWickRatio = wickUp / math.max(rng, syminfo.mintick)
+float lowerWickRatio = wickDn / math.max(rng, syminfo.mintick)
+float bodyRatio = body / math.max(rng, syminfo.mintick)
+float wickBodyQualityScore = f_clamp100(bodyRatio * 45.0 + math.max(upperWickRatio, lowerWickRatio) * 55.0)
+
+bool softUp = patUpRaw and rangeOK and brK >= 35
+bool softDn = patDnRaw and rangeOK and brK >= 35
+float softPatternScore = (softUp or softDn) ? f_clamp100(30.0 + brK * 0.45 + wickBodyQualityScore * 0.20) : 0.0
+
+bool contextUp = patUpGate and closeSideOKUp
+bool contextDn = patDnGate and closeSideOKDn
+bool strongReactionUp = contextUp and kOK and cooldownOK and (swingOKUp or (brK >= 82 and trendUp))
+bool strongReactionDn = contextDn and kOK and cooldownOK and (swingOKDn or (brK >= 82 and trendDn))
+
+var int patternDirMem = 0
+var int patternBarMem = na
+var float patternHighMem = na
+var float patternLowMem = na
+var bool patternConfirmedMem = false
+var bool patternAcceptedMem = false
+
+bool trackingPattern = patternDirMem != 0 and not na(patternBarMem)
+int patternAge = trackingPattern ? bar_index - patternBarMem : 0
+bool continuationAcceptedUp = trackingPattern and patternDirMem == 1 and patternConfirmedMem and not patternAcceptedMem and patternAge > 0 and patternAge <= confirmBars and close > patternHighMem and close >= emaF
+bool continuationAcceptedDn = trackingPattern and patternDirMem == -1 and patternConfirmedMem and not patternAcceptedMem and patternAge > 0 and patternAge <= confirmBars and close < patternLowMem and close <= emaF
+bool continuationAccepted = continuationAcceptedUp or continuationAcceptedDn
+bool failedBullPattern = trackingPattern and patternDirMem == 1 and not patternAcceptedMem and patternAge > 0 and patternAge <= failBars and close < patternLowMem
+bool failedBearPattern = trackingPattern and patternDirMem == -1 and not patternAcceptedMem and patternAge > 0 and patternAge <= failBars and close > patternHighMem
+bool failedPattern = failedBullPattern or failedBearPattern
+bool continuationFail = failedPattern and patternConfirmedMem
+bool rejectionCandle = (upperWickRatio >= 0.55 and close < open and close < emaF) or (lowerWickRatio >= 0.55 and close > open and close > emaF)
+bool trapPattern = failedPattern or (rejectionCandle and (softUp or softDn or trackingPattern))
+
+bool confirmedUp = strongReactionUp or continuationAcceptedUp
+bool confirmedDn = strongReactionDn or continuationAcceptedDn
+float confirmedPatternScore = (confirmedUp or confirmedDn) ? f_clamp100(55.0 + brK * 0.30 + ((swingOKUp or swingOKDn) ? 8.0 : 0.0) + (continuationAccepted ? 12.0 : 0.0)) : 0.0
+float rejectionScore = rejectionCandle ? f_clamp100(45.0 + math.max(upperWickRatio, lowerWickRatio) * 45.0 + rngAtrP * 0.10) : 0.0
+float trapPressureScore = trapPattern ? f_clamp100(math.max(rejectionScore, failedPattern ? 80.0 : 55.0)) : 0.0
+float fakeoutPressureScore = continuationFail ? 82.0 : failedPattern ? 72.0 : rejectionCandle ? 48.0 : 0.0
+
+int brEvt = continuationFail ? (patternDirMem == 1 ? 31 : 32) : trapPattern and rejectionCandle ? 50 : failedBullPattern ? 31 : failedBearPattern ? 32 : continuationAccepted ? (patternDirMem == 1 ? 21 : 22) : confirmedUp ? 21 : confirmedDn ? 22 : rejectionCandle ? 40 : softUp ? 11 : softDn ? 12 : 0
+int brDir = (confirmedUp or continuationAcceptedUp) ? 1 : (confirmedDn or continuationAcceptedDn) ? -1 : 0
+int brState = continuationFail or failedPattern or trapPattern ? 4 : continuationAccepted ? 3 : confirmedUp or confirmedDn ? 2 : softUp or softDn or rejectionCandle ? 1 : 0
+
+int brRes = 0
+if brState > 0
+    bool inRegime = regimeUp or regimeDn
+    brRes += brState >= 2 ? 2 : 1
+    brRes += inRegime ? 1 : 0
+    brRes += brK >= 85 ? 2 : brK >= 70 ? 1 : 0
+    brRes := f_clampInt(brRes, 0, 5)
+
+float brScore = f_clamp100(math.max(math.max(softPatternScore, confirmedPatternScore), math.max(trapPressureScore, rejectionScore)))
+if brState == 0
+    brScore := 0.0
+
+if brEvt != 0
+    lastEventBar := bar_index
+
+if confirmedUp or confirmedDn or softUp or softDn
+    patternDirMem := confirmedUp or softUp ? 1 : -1
+    patternBarMem := bar_index
+    patternHighMem := high
+    patternLowMem := low
+    patternConfirmedMem := confirmedUp or confirmedDn
+    patternAcceptedMem := false
+
+if continuationAccepted
+    patternAcceptedMem := true
+
+if failedPattern or (trackingPattern and patternAge > failBars and not (confirmedUp or confirmedDn or softUp or softDn))
+    patternDirMem := 0
+    patternBarMem := na
+    patternHighMem := na
+    patternLowMem := na
+    patternConfirmedMem := false
+    patternAcceptedMem := false
+
+int brSigDir = brDir > 0 ? 1 : brDir < 0 ? -1 : 0
+int brSigRes = f_clampInt(brRes, 0, 5)
+int brSig = brSigDir == 0 ? 0 : (brSigDir * 100 + brSigRes)
+
+int braceletStateStd  = brState
+int braceletActiveStd = (braceletStateStd != 0 or softPatternScore >= 35 or brEvt != 0 or trapPressureScore >= 45) ? 1 : 0
+int braceletRiskStd   = trapPressureScore >= 70 or fakeoutPressureScore >= 70 ? 2 : brScore >= 70 ? 0 : brScore >= 45 ? 1 : 2
+
+//==================================================
+// [12] GPT 표
+//==================================================
+var table braceletTable = table.new(f_tablePos(tablePosOpt), 4, 10, border_width=1, border_color=borderColor)
+
+if barstate.islast and showTable
+    table.cell(braceletTable, 0, 0, "KEY",  text_color=headerText, bgcolor=headerBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(braceletTable, 1, 0, "CODE", text_color=headerText, bgcolor=headerBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(braceletTable, 2, 0, "NUM",  text_color=headerText, bgcolor=headerBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(braceletTable, 3, 0, "NOTE", text_color=headerText, bgcolor=headerBg, text_size=f_textSize(tableSizeOpt))
+
+    table.cell(braceletTable, 0, 1, "DIR", text_color=keyTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(braceletTable, 1, 1, f_dirCode(brDir), text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(braceletTable, 2, 1, str.tostring(brDir), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(braceletTable, 3, 1, brDir == 0 ? "diagnostic" : "confirmed", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+
+    table.cell(braceletTable, 0, 2, "STATE", text_color=keyTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(braceletTable, 1, 2, f_stateCode(brState), text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(braceletTable, 2, 2, str.tostring(brState), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(braceletTable, 3, 2, f_note(brEvt, brRes, braceletActiveStd), text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+
+    table.cell(braceletTable, 0, 3, "SCORE", text_color=keyTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(braceletTable, 1, 3, f_scoreCode(brScore), text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(braceletTable, 2, 3, str.tostring(int(math.round(brScore))), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(braceletTable, 3, 3, "base", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+
+    table.cell(braceletTable, 0, 4, "RES", text_color=keyTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(braceletTable, 1, 4, brRes >= 4 ? "STRONG" : brRes >= 2 ? "MID" : "LOW", text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(braceletTable, 2, 4, str.tostring(brRes), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(braceletTable, 3, 4, "0-5", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+
+    table.cell(braceletTable, 0, 5, "SIGNAL", text_color=keyTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(braceletTable, 1, 5, brSig == 0 ? "NONE" : brSig > 0 ? "UP" : "DOWN", text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(braceletTable, 2, 5, str.tostring(brSig), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(braceletTable, 3, 5, "dir*100+res", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+
+    table.cell(braceletTable, 0, 6, "EVENT", text_color=keyTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(braceletTable, 1, 6, f_evtCode(brEvt), text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(braceletTable, 2, 6, str.tostring(brEvt), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(braceletTable, 3, 6, "pattern fire", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+
+    table.cell(braceletTable, 0, 7, "ACTIVE", text_color=keyTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(braceletTable, 1, 7, braceletActiveStd == 1 ? "ON" : "OFF", text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(braceletTable, 2, 7, str.tostring(braceletActiveStd), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(braceletTable, 3, 7, "solo", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+
+    table.cell(braceletTable, 0, 8, "RISK", text_color=keyTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(braceletTable, 1, 8, f_riskCode(braceletRiskStd), text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(braceletTable, 2, 8, str.tostring(braceletRiskStd), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(braceletTable, 3, 8, f_note(brEvt, brRes, braceletActiveStd), text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+
+    table.cell(braceletTable, 0, 9, "MODE", text_color=keyTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(braceletTable, 1, 9, "SOLO", text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(braceletTable, 2, 9, str.tostring(brRes), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(braceletTable, 3, 9, "pattern base", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+//==================================================
+// [13] GPT 얼러트
+//==================================================
+int prevBrEvt = bar_index > 0 ? brEvt[1] : 0
+int prevBrRes = bar_index > 0 ? brRes[1] : 0
+bool softPatternStart = (brEvt == 11 or brEvt == 12) and prevBrEvt != brEvt
+bool confirmedPatternStart = (brEvt == 21 or brEvt == 22) and prevBrEvt != brEvt
+bool failedPatternStart = (brEvt == 31 or brEvt == 32) and prevBrEvt != brEvt
+bool rejectionStart = brEvt == 40 and prevBrEvt != 40
+bool trapPatternStart = brEvt == 50 and prevBrEvt != 50
+bool strongPatternStart = confirmedPatternStart and brRes >= 4 and prevBrRes < 4
+bool releaseStart     = prevBrEvt != 0 and brEvt == 0
+
+alertcondition(enableAlerts and softPatternStart,      title="AL BRACELET G | SOFT PATTERN",      message="AL_BRACELET_G,SOFT_PATTERN")
+alertcondition(enableAlerts and confirmedPatternStart, title="AL BRACELET G | CONFIRMED PATTERN", message="AL_BRACELET_G,CONFIRMED_PATTERN")
+alertcondition(enableAlerts and strongPatternStart,    title="AL BRACELET G | STRONG PATTERN",    message="AL_BRACELET_G,STRONG_PATTERN")
+alertcondition(enableAlerts and failedPatternStart,    title="AL BRACELET G | FAILED PATTERN",    message="AL_BRACELET_G,FAILED_PATTERN")
+alertcondition(enableAlerts and rejectionStart,        title="AL BRACELET G | REJECTION",         message="AL_BRACELET_G,REJECTION")
+alertcondition(enableAlerts and trapPatternStart,      title="AL BRACELET G | TRAP PATTERN",      message="AL_BRACELET_G,TRAP_PATTERN")
+alertcondition(enableAlerts and releaseStart,          title="AL BRACELET G | RELEASE",           message="AL_BRACELET_G,RELEASE")
+
+//==================================================
+// [14] 숨김 출력
+// B그룹 LINK5 최소 출력
+//==================================================
+plot(float(brDir),             title="AL_BRACELET_DIRECTION",   display=display.none)
+plot(brScore,                  title="AL_BRACELET_SCORE",       display=display.none)
+plot(float(brEvt),             title="AL_BRACELET_EVENT",       display=display.none)
+plot(float(braceletStateStd),  title="AL_BRACELET_STATE",       display=display.none)
+plot(float(braceletActiveStd), title="AL_BRACELET_ACTIVE_FLAG", display=display.none)
+plot(rejectionScore, title="AL_BRACELET_REJECTION_SCORE", display=display.none)
+plot(fakeoutPressureScore, title="AL_BRACELET_FAKEOUT_PRESSURE_SCORE", display=display.none)

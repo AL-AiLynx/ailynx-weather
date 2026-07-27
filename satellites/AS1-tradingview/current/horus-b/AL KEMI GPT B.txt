@@ -1,0 +1,502 @@
+//@version=6
+// AL KEMI GPT LINK5
+// Candle-based Delta Proxy sensor for AiLynx/Lynx B-group context.
+// This is not real CVD. It only reads candle body/range/wick/volume behavior.
+indicator("AL KEMI GPT B", overlay=true, max_bars_back=3000, max_labels_count=0, max_lines_count=0, max_boxes_count=0)
+
+//==================================================
+// Constants
+//==================================================
+int DIR_DN = -1
+int DIR_FLAT = 0
+int DIR_UP = 1
+
+int ST_IDLE = 0
+int ST_SET = 1
+int ST_TRIG = 2
+int ST_HOLD = 3
+int ST_FAIL = 4
+
+int EC_NONE = 0
+int EC_ACTIVE_ON = 5
+int EC_DELTA_UP = 11
+int EC_DELTA_DN = 12
+int EC_ABSORB_UP = 21
+int EC_ABSORB_DN = 22
+int EC_DIVERGE_UP = 31
+int EC_DIVERGE_DN = 32
+int EC_EFFORT_WEAK = 41
+int EC_CONFLICT = 51
+int EC_FORCE_UP = 61
+int EC_FORCE_DN = 62
+
+//==================================================
+// Inputs
+//==================================================
+string G_CORE = "KEMI B | Core"
+int coreLen = input.int(20, "Core Length", minval=5, maxval=200, group=G_CORE, display=display.none)
+int smoothLen = input.int(5, "Smooth Length", minval=1, maxval=50, group=G_CORE, display=display.none)
+int pricePushLen = input.int(8, "Price Push Length", minval=2, maxval=80, group=G_CORE, display=display.none)
+float priceAtrMin = input.float(0.25, "Price Push ATR Min", minval=0.01, maxval=5.0, step=0.01, group=G_CORE, display=display.none)
+float deltaDeadband = input.float(12.0, "Delta Proxy Deadband", minval=0.0, maxval=60.0, step=1.0, group=G_CORE, display=display.none)
+float deltaConfirmMin = input.float(32.0, "Delta Proxy Confirm Min", minval=1.0, maxval=100.0, step=1.0, group=G_CORE, display=display.none)
+
+string G_PRESSURE = "KEMI B | Pressure"
+float highVolRatio = input.float(1.55, "High Volume Ratio", minval=1.0, maxval=5.0, step=0.05, group=G_PRESSURE, display=display.none)
+float smallBodyMax = input.float(0.34, "Small Body Max", minval=0.05, maxval=0.80, step=0.01, group=G_PRESSURE, display=display.none)
+float wickMin = input.float(0.28, "Wick Pressure Min", minval=0.05, maxval=0.90, step=0.01, group=G_PRESSURE, display=display.none)
+float effortMin = input.float(52.0, "Effort Min", minval=1.0, maxval=100.0, step=1.0, group=G_PRESSURE, display=display.none)
+float resultMin = input.float(44.0, "Result Confirm Min", minval=1.0, maxval=100.0, step=1.0, group=G_PRESSURE, display=display.none)
+float activeMin = input.float(32.0, "Active Score Min", minval=1.0, maxval=100.0, step=1.0, group=G_PRESSURE, display=display.none)
+float warningMin = input.float(58.0, "Warning Score Min", minval=1.0, maxval=100.0, step=1.0, group=G_PRESSURE, display=display.none)
+float forceConfirmMin = input.float(62.0, "Effort Confirm Score Min", minval=1.0, maxval=100.0, step=1.0, group=G_PRESSURE, display=display.none)
+
+string G_UI = "KEMI B | GPT Table"
+bool showTable = input.bool(true, "Show GPT Table", group=G_UI, display=display.none)
+string tablePosOpt = input.string("TR", "Table Position", options=["TL","TC","TR","ML","MC","MR","BL","BC","BR"], group=G_UI, display=display.none)
+int tableScale = input.int(4, "Table Scale 1-9", minval=1, maxval=9, group=G_UI, display=display.none)
+bool showTableBorder = input.bool(true, "Table Border", group=G_UI, display=display.none)
+
+string G_ALERT = "KEMI B | Alerts"
+bool useJsonAlerts = input.bool(true, "Enable GV3 JSON Alerts", group=G_ALERT, display=display.none)
+string alertFrequencyMode = input.string("BAR_CLOSE", "Alert Frequency", options=["BAR_CLOSE","ONCE_PER_BAR"], group=G_ALERT, display=display.none)
+
+//==================================================
+// Helpers
+//==================================================
+f_clamp(float x, float lo, float hi) =>
+    math.max(lo, math.min(hi, x))
+
+f_clamp100(float x) =>
+    f_clamp(x, 0.0, 100.0)
+
+f_dirByDeadband(float x, float deadband) =>
+    int out = DIR_FLAT
+    if x > deadband
+        out := DIR_UP
+    else if x < -deadband
+        out := DIR_DN
+    out
+
+f_tablePos(string opt) =>
+    pos = position.top_right
+    if opt == "TL"
+        pos := position.top_left
+    else if opt == "TC"
+        pos := position.top_center
+    else if opt == "TR"
+        pos := position.top_right
+    else if opt == "ML"
+        pos := position.middle_left
+    else if opt == "MC"
+        pos := position.middle_center
+    else if opt == "MR"
+        pos := position.middle_right
+    else if opt == "BL"
+        pos := position.bottom_left
+    else if opt == "BC"
+        pos := position.bottom_center
+    else
+        pos := position.bottom_right
+    pos
+
+f_textSize(int sc) =>
+    txtSz = size.normal
+    if sc <= 2
+        txtSz := size.tiny
+    else if sc <= 4
+        txtSz := size.small
+    else if sc <= 6
+        txtSz := size.normal
+    else if sc <= 8
+        txtSz := size.large
+    else
+        txtSz := size.huge
+    txtSz
+
+f_numTxt(float v) =>
+    str.tostring(math.round(nz(v, 0.0) * 10.0) / 10.0)
+
+f_dirText(int d) =>
+    string out = "FLAT"
+    if d > 0
+        out := "UP"
+    else if d < 0
+        out := "DN"
+    out
+
+f_stateText(int s) =>
+    string out = "IDLE"
+    if s == ST_SET
+        out := "SET"
+    else if s == ST_TRIG
+        out := "TRIG"
+    else if s == ST_HOLD
+        out := "HOLD"
+    else if s == ST_FAIL
+        out := "FAIL"
+    out
+
+f_eventText(int ec) =>
+    string out = "NONE"
+    if ec == EC_ACTIVE_ON
+        out := "ACTIVE"
+    else if ec == EC_DELTA_UP
+        out := "DP_UP"
+    else if ec == EC_DELTA_DN
+        out := "DP_DN"
+    else if ec == EC_ABSORB_UP
+        out := "ABS_UP"
+    else if ec == EC_ABSORB_DN
+        out := "ABS_DN"
+    else if ec == EC_DIVERGE_UP
+        out := "DIV_UP"
+    else if ec == EC_DIVERGE_DN
+        out := "DIV_DN"
+    else if ec == EC_EFFORT_WEAK
+        out := "EFF_WEAK"
+    else if ec == EC_CONFLICT
+        out := "CONFLICT"
+    else if ec == EC_FORCE_UP
+        out := "FORCE_UP"
+    else if ec == EC_FORCE_DN
+        out := "FORCE_DN"
+    out
+
+f_jsonPair(string k, string v) =>
+    string safe = str.replace_all(v, "\\", "\\\\")
+    safe := str.replace_all(safe, "\"", "\\\"")
+    "\"" + k + "\":\"" + safe + "\""
+
+f_jsonNumPair(string k, string v) =>
+    "\"" + k + "\":" + v
+
+f_kemiAlertJson(int ec, float es, string gp, float deltaProxy, float absorption, float divergence, float effortResult, int conflictFlag) =>
+    "{" +
+     f_jsonPair("source", "AL_KEMI") + "," +
+     f_jsonPair("gv", "GV3") + "," +
+     f_jsonNumPair("ec", str.tostring(ec)) + "," +
+     f_jsonNumPair("es", f_numTxt(es)) + "," +
+     f_jsonPair("gp", gp) + "," +
+     f_jsonPair("symbol", syminfo.tickerid) + "," +
+     f_jsonPair("timeframe", timeframe.period) + "," +
+     f_jsonPair("time", str.tostring(time)) + "," +
+     f_jsonPair("price", str.tostring(close, format.mintick)) + "," +
+     f_jsonNumPair("delta_proxy_score", f_numTxt(deltaProxy)) + "," +
+     f_jsonNumPair("absorption_score", f_numTxt(absorption)) + "," +
+     f_jsonNumPair("divergence_score", f_numTxt(divergence)) + "," +
+     f_jsonNumPair("effort_result_score", f_numTxt(effortResult)) + "," +
+     f_jsonNumPair("conflict_flag", str.tostring(conflictFlag)) +
+     "}"
+
+//==================================================
+// Candle and volume model
+//==================================================
+float rangeNow = math.max(high - low, syminfo.mintick)
+float bodySigned = close - open
+float bodyAbs = math.abs(bodySigned)
+float bodyNorm = f_clamp(bodyAbs / rangeNow, 0.0, 1.0)
+float closeLoc = f_clamp((close - low) / rangeNow, 0.0, 1.0)
+float closePressure = (closeLoc - 0.5) * 2.0
+float signedBodyNorm = f_clamp(bodySigned / rangeNow, -1.0, 1.0)
+
+float upperWick = math.max(high - math.max(open, close), 0.0)
+float lowerWick = math.max(math.min(open, close) - low, 0.0)
+float upperWickNorm = f_clamp(upperWick / rangeNow, 0.0, 1.0)
+float lowerWickNorm = f_clamp(lowerWick / rangeNow, 0.0, 1.0)
+float dominantWickNorm = math.max(upperWickNorm, lowerWickNorm)
+
+int candleDir = DIR_FLAT
+if bodySigned > 0.0
+    candleDir := DIR_UP
+else if bodySigned < 0.0
+    candleDir := DIR_DN
+else if close > nz(close[1], close)
+    candleDir := DIR_UP
+else if close < nz(close[1], close)
+    candleDir := DIR_DN
+
+float volRaw = nz(volume, 0.0)
+float volAvg = ta.sma(volRaw, coreLen)
+float volRatio = volAvg > 0.0 ? volRaw / volAvg : 1.0
+float volScore = f_clamp100(((volRatio - 1.0) / math.max(highVolRatio - 1.0, 0.0001)) * 100.0)
+float volEnergy = f_clamp((volRatio - 0.60) / 1.80, 0.0, 1.0)
+
+float atrNow = ta.atr(coreLen)
+float rangeAtr = atrNow > 0.0 ? rangeNow / atrNow : 0.0
+float rangeScore = f_clamp100((rangeAtr / 1.80) * 100.0)
+float rangeEnergy = f_clamp(rangeAtr / 1.80, 0.0, 1.0)
+
+//==================================================
+// Delta Proxy
+//==================================================
+float deltaRaw = f_clamp((signedBodyNorm * 0.62) + (closePressure * 0.38), -1.0, 1.0)
+float deltaEnergy = f_clamp(0.55 + (volEnergy * 0.30) + (rangeEnergy * 0.15), 0.25, 1.0)
+float deltaProxyRaw = f_clamp(deltaRaw * deltaEnergy * 100.0, -100.0, 100.0)
+float deltaProxyScore = ta.ema(deltaProxyRaw, smoothLen)
+float deltaProxyAbs = math.abs(deltaProxyScore)
+int deltaProxyDir = f_dirByDeadband(deltaProxyScore, deltaDeadband)
+
+//==================================================
+// Price push and result model
+//==================================================
+float priceBase = bar_index >= pricePushLen ? close[pricePushLen] : nz(close[1], close)
+float pricePushAtr = atrNow > 0.0 ? (close - priceBase) / atrNow : 0.0
+int pricePushDir = f_dirByDeadband(pricePushAtr, priceAtrMin)
+
+float emaFast = ta.ema(close, pricePushLen)
+float emaSlow = ta.ema(close, pricePushLen * 2)
+int structureDir = DIR_FLAT
+if close >= emaFast and emaFast >= emaSlow
+    structureDir := DIR_UP
+else if close <= emaFast and emaFast <= emaSlow
+    structureDir := DIR_DN
+
+int pushDir = pricePushDir != DIR_FLAT ? pricePushDir : structureDir
+float pushScore = f_clamp100(math.abs(pricePushAtr) * 24.0 + rangeScore * 0.26 + bodyNorm * 24.0)
+bool pricePushActive = pushDir != DIR_FLAT and pushScore >= 25.0
+
+float progressAtr = atrNow > 0.0 ? math.abs(close - nz(close[1], close)) / atrNow : 0.0
+float progressScore = f_clamp100((progressAtr / 0.80) * 100.0)
+float closeEdge = 0.50
+if candleDir == DIR_UP
+    closeEdge := closeLoc
+else if candleDir == DIR_DN
+    closeEdge := 1.0 - closeLoc
+float resultScore = f_clamp100(bodyNorm * 45.0 + progressScore * 0.35 + closeEdge * 20.0)
+
+//==================================================
+// Absorption
+//==================================================
+int wickPressureDir = DIR_FLAT
+if upperWickNorm > lowerWickNorm and upperWickNorm >= wickMin
+    wickPressureDir := DIR_UP
+else if lowerWickNorm > upperWickNorm and lowerWickNorm >= wickMin
+    wickPressureDir := DIR_DN
+else
+    wickPressureDir := candleDir
+
+float smallBodyScore = f_clamp100(((smallBodyMax - bodyNorm) / math.max(smallBodyMax, 0.0001)) * 100.0)
+float wickScore = f_clamp100(dominantWickNorm * 100.0)
+float closeOppScore = 0.0
+if wickPressureDir == DIR_UP
+    closeOppScore := f_clamp100((1.0 - closeLoc) * 100.0)
+else if wickPressureDir == DIR_DN
+    closeOppScore := f_clamp100(closeLoc * 100.0)
+
+float absorptionScoreRaw = f_clamp100(volScore * 0.38 + smallBodyScore * 0.24 + wickScore * 0.26 + closeOppScore * 0.12)
+bool absorptionShape = volRatio >= highVolRatio and bodyNorm <= smallBodyMax and dominantWickNorm >= wickMin
+float absorptionScore = absorptionShape ? absorptionScoreRaw : f_clamp100(absorptionScoreRaw * 0.45)
+bool absorptionCandidate = absorptionScore >= warningMin and absorptionShape
+
+//==================================================
+// Divergence
+//==================================================
+bool deltaWeakForPush = deltaProxyDir == DIR_FLAT or deltaProxyAbs < deltaConfirmMin
+bool deltaOpposesPush = pricePushActive and deltaProxyDir != DIR_FLAT and deltaProxyDir != pushDir
+bool deltaDoesNotConfirm = pricePushActive and (deltaWeakForPush or deltaOpposesPush)
+float deltaGapScore = deltaOpposesPush ? 52.0 : f_clamp100(((deltaConfirmMin - deltaProxyAbs) / math.max(deltaConfirmMin, 0.0001)) * 38.0)
+float divergenceScore = deltaDoesNotConfirm ? f_clamp100(pushScore * 0.48 + deltaGapScore + rangeScore * 0.12) : 0.0
+bool divergenceCandidate = divergenceScore >= warningMin and deltaDoesNotConfirm
+
+//==================================================
+// Effort vs Result
+//==================================================
+float effortScore = f_clamp100(math.max(volScore, rangeScore) * 0.64 + volScore * 0.20 + rangeScore * 0.16)
+float effortGap = effortScore - resultScore
+float effortResultScore = effortScore >= effortMin ? f_clamp100(effortGap + smallBodyScore * 0.18 + (closeEdge < 0.58 ? 10.0 : 0.0)) : 0.0
+bool effortWeakCandidate = effortResultScore >= warningMin
+
+//==================================================
+// Conflict and force quality
+//==================================================
+bool priceDeltaConflict = pricePushActive and deltaProxyDir != DIR_FLAT and deltaProxyDir != pushDir
+bool priceNoDeltaConflict = pricePushActive and deltaWeakForPush and pushScore >= 48.0
+bool inefficientPushConflict = pricePushActive and effortWeakCandidate
+bool absorptionPushConflict = pricePushActive and absorptionCandidate
+bool conflictRaw = priceDeltaConflict or priceNoDeltaConflict or inefficientPushConflict or absorptionPushConflict
+int kemiConflictFlag = conflictRaw ? 1 : 0
+float conflictScore = conflictRaw ? f_clamp100(math.max(math.max(absorptionScore, divergenceScore), effortResultScore) + (priceDeltaConflict ? 12.0 : 0.0)) : 0.0
+
+bool forceAligned = pricePushActive and deltaProxyDir == pushDir and deltaProxyAbs >= deltaConfirmMin and resultScore >= resultMin
+float warningPressureScore = math.max(math.max(absorptionScore, divergenceScore), math.max(effortResultScore, conflictScore))
+float forceQualityScore = forceAligned ? f_clamp100(deltaProxyAbs * 0.42 + resultScore * 0.30 + effortScore * 0.20 + pushScore * 0.08 - warningPressureScore * 0.24) : 0.0
+bool forceConfirmed = forceAligned and forceQualityScore >= forceConfirmMin and kemiConflictFlag == 0
+
+//==================================================
+// Standard B-group state
+//==================================================
+float kemiScore = f_clamp100(math.max(math.max(forceQualityScore, warningPressureScore), deltaProxyAbs * 0.65))
+
+int kemiDir = DIR_FLAT
+if forceConfirmed
+    kemiDir := pushDir
+else if divergenceCandidate and pushDir != DIR_FLAT
+    kemiDir := pushDir
+else if absorptionCandidate and wickPressureDir != DIR_FLAT
+    kemiDir := wickPressureDir
+else if deltaProxyAbs >= deltaConfirmMin and deltaProxyDir != DIR_FLAT
+    kemiDir := deltaProxyDir
+
+int kemiState = ST_IDLE
+if kemiConflictFlag == 1 or divergenceCandidate or absorptionCandidate or effortWeakCandidate
+    kemiState := ST_FAIL
+else if forceConfirmed
+    kemiState := ST_HOLD
+else if forceAligned or deltaProxyAbs >= deltaConfirmMin
+    kemiState := ST_TRIG
+else if kemiScore >= activeMin
+    kemiState := ST_SET
+
+int kemiActiveFlag = (kemiState != ST_IDLE or kemiScore >= activeMin) ? 1 : 0
+
+string kemiPolicy = "OBSERVE"
+if kemiConflictFlag == 1
+    kemiPolicy := "CONFLICT"
+else if absorptionCandidate
+    kemiPolicy := "ABSORB"
+else if divergenceCandidate
+    kemiPolicy := "DIVERGE"
+else if effortWeakCandidate
+    kemiPolicy := "INEFFICIENT"
+else if forceConfirmed
+    kemiPolicy := "EFFORT_OK"
+else if deltaProxyDir != DIR_FLAT
+    kemiPolicy := "PROXY_ONLY"
+
+//==================================================
+// Events
+//==================================================
+bool prevAbsorptionCandidate = bar_index > 0 ? absorptionCandidate[1] : false
+bool prevDivergenceCandidate = bar_index > 0 ? divergenceCandidate[1] : false
+bool prevEffortWeakCandidate = bar_index > 0 ? effortWeakCandidate[1] : false
+bool prevConflictRaw = bar_index > 0 ? conflictRaw[1] : false
+bool prevForceConfirmed = bar_index > 0 ? forceConfirmed[1] : false
+int prevDeltaProxyDir = bar_index > 0 ? deltaProxyDir[1] : DIR_FLAT
+int prevKemiActiveFlag = bar_index > 0 ? kemiActiveFlag[1] : 0
+
+bool absorptionOn = absorptionCandidate and not prevAbsorptionCandidate
+bool divergenceOn = divergenceCandidate and not prevDivergenceCandidate
+bool effortWeakOn = effortWeakCandidate and not prevEffortWeakCandidate
+bool conflictOn = conflictRaw and not prevConflictRaw
+bool forceConfirmedOn = forceConfirmed and not prevForceConfirmed
+bool deltaProxyOn = deltaProxyDir != DIR_FLAT and deltaProxyAbs >= deltaConfirmMin and (prevDeltaProxyDir == DIR_FLAT or prevDeltaProxyDir != deltaProxyDir)
+bool activeOn = kemiActiveFlag == 1 and prevKemiActiveFlag == 0
+
+int kemiEvent = EC_NONE
+if conflictOn
+    kemiEvent := EC_CONFLICT
+else if divergenceOn
+    kemiEvent := pushDir > 0 ? EC_DIVERGE_UP : EC_DIVERGE_DN
+else if absorptionOn
+    kemiEvent := wickPressureDir > 0 ? EC_ABSORB_UP : EC_ABSORB_DN
+else if effortWeakOn
+    kemiEvent := EC_EFFORT_WEAK
+else if forceConfirmedOn
+    kemiEvent := pushDir > 0 ? EC_FORCE_UP : EC_FORCE_DN
+else if deltaProxyOn
+    kemiEvent := deltaProxyDir > 0 ? EC_DELTA_UP : EC_DELTA_DN
+else if activeOn
+    kemiEvent := EC_ACTIVE_ON
+
+float eventSeverity = f_clamp100(math.max(kemiScore, warningPressureScore))
+
+//==================================================
+// GV3 alert bus
+//==================================================
+string kemiAlertJson = f_kemiAlertJson(kemiEvent, eventSeverity, kemiPolicy, deltaProxyScore, absorptionScore, divergenceScore, effortResultScore, kemiConflictFlag)
+
+if useJsonAlerts and kemiEvent != EC_NONE
+    if alertFrequencyMode == "BAR_CLOSE"
+        if barstate.isconfirmed
+            alert(kemiAlertJson, alert.freq_once_per_bar_close)
+    else
+        alert(kemiAlertJson, alert.freq_once_per_bar)
+
+//==================================================
+// Compact GPT table
+//==================================================
+var table kemiTable = na
+var string lastTableLayoutKey = ""
+
+color colBg = color.rgb(12, 14, 18)
+color colHead = color.rgb(230, 236, 242)
+color colText = color.rgb(205, 212, 220)
+color colSoft = color.rgb(145, 154, 166)
+color colGood = color.rgb(70, 210, 145)
+color colWarn = color.rgb(245, 185, 70)
+color colBad = color.rgb(245, 95, 95)
+color colInfo = color.rgb(90, 190, 240)
+color colAccent = color.rgb(185, 150, 255)
+color colFrame = color.new(color.white, 50)
+color stateColor = kemiState == ST_HOLD ? colGood : kemiState == ST_FAIL ? colBad : kemiState == ST_TRIG ? colInfo : kemiState == ST_SET ? colWarn : colSoft
+color dirColor = kemiDir > 0 ? colGood : kemiDir < 0 ? colBad : colSoft
+color eventColor = kemiEvent == EC_NONE ? colSoft : stateColor
+color policyColor = kemiPolicy == "EFFORT_OK" ? colGood : kemiPolicy == "OBSERVE" ? colSoft : kemiPolicy == "PROXY_ONLY" ? colInfo : colWarn
+
+int frameWidth = showTableBorder ? 1 : 0
+int borderWidth = showTableBorder ? 1 : 0
+string tableLayoutKey = tablePosOpt + "|" + str.tostring(tableScale) + "|" + (showTableBorder ? "1" : "0")
+txtSz = f_textSize(tableScale)
+
+if showTable and barstate.islast
+    if na(kemiTable) or tableLayoutKey != lastTableLayoutKey
+        if not na(kemiTable)
+            table.delete(kemiTable)
+        kemiTable := table.new(f_tablePos(tablePosOpt), 4, 9, bgcolor=colBg, frame_color=colFrame, frame_width=frameWidth, border_color=colFrame, border_width=borderWidth)
+        lastTableLayoutKey := tableLayoutKey
+    table.clear(kemiTable, 0, 0, 3, 8)
+    table.cell(kemiTable, 0, 0, "KEMI", text_color=colHead, text_size=txtSz)
+    table.cell(kemiTable, 1, 0, "GV3", text_color=colAccent, text_size=txtSz)
+    table.cell(kemiTable, 2, 0, "TF", text_color=colSoft, text_size=txtSz)
+    table.cell(kemiTable, 3, 0, timeframe.period, text_color=colInfo, text_size=txtSz)
+    table.cell(kemiTable, 0, 1, "EC", text_color=colSoft, text_size=txtSz)
+    table.cell(kemiTable, 1, 1, f_eventText(kemiEvent), text_color=eventColor, text_size=txtSz)
+    table.cell(kemiTable, 2, 1, "ES", text_color=colSoft, text_size=txtSz)
+    table.cell(kemiTable, 3, 1, f_numTxt(eventSeverity), text_color=eventColor, text_size=txtSz)
+    table.cell(kemiTable, 0, 2, "DIR", text_color=colSoft, text_size=txtSz)
+    table.cell(kemiTable, 1, 2, f_dirText(kemiDir), text_color=dirColor, text_size=txtSz)
+    table.cell(kemiTable, 2, 2, "ST", text_color=colSoft, text_size=txtSz)
+    table.cell(kemiTable, 3, 2, f_stateText(kemiState), text_color=stateColor, text_size=txtSz)
+    table.cell(kemiTable, 0, 3, "GP", text_color=colSoft, text_size=txtSz)
+    table.cell(kemiTable, 1, 3, kemiPolicy, text_color=policyColor, text_size=txtSz)
+    table.cell(kemiTable, 2, 3, "ACT", text_color=colSoft, text_size=txtSz)
+    table.cell(kemiTable, 3, 3, str.tostring(kemiActiveFlag), text_color=kemiActiveFlag == 1 ? colGood : colSoft, text_size=txtSz)
+    table.cell(kemiTable, 0, 4, "DP", text_color=colSoft, text_size=txtSz)
+    table.cell(kemiTable, 1, 4, f_numTxt(deltaProxyScore), text_color=deltaProxyDir > 0 ? colGood : deltaProxyDir < 0 ? colBad : colSoft, text_size=txtSz)
+    table.cell(kemiTable, 2, 4, "ABS", text_color=colSoft, text_size=txtSz)
+    table.cell(kemiTable, 3, 4, f_numTxt(absorptionScore), text_color=absorptionCandidate ? colWarn : colText, text_size=txtSz)
+    table.cell(kemiTable, 0, 5, "DIV", text_color=colSoft, text_size=txtSz)
+    table.cell(kemiTable, 1, 5, f_numTxt(divergenceScore), text_color=divergenceCandidate ? colWarn : colText, text_size=txtSz)
+    table.cell(kemiTable, 2, 5, "ER", text_color=colSoft, text_size=txtSz)
+    table.cell(kemiTable, 3, 5, f_numTxt(effortResultScore), text_color=effortWeakCandidate ? colWarn : colText, text_size=txtSz)
+    table.cell(kemiTable, 0, 6, "CF", text_color=colSoft, text_size=txtSz)
+    table.cell(kemiTable, 1, 6, str.tostring(kemiConflictFlag), text_color=kemiConflictFlag == 1 ? colBad : colGood, text_size=txtSz)
+    table.cell(kemiTable, 2, 6, "VOL", text_color=colSoft, text_size=txtSz)
+    table.cell(kemiTable, 3, 6, f_numTxt(volRatio), text_color=volRatio >= highVolRatio ? colWarn : colText, text_size=txtSz)
+    table.cell(kemiTable, 0, 7, "PUSH", text_color=colSoft, text_size=txtSz)
+    table.cell(kemiTable, 1, 7, f_dirText(pushDir), text_color=pushDir > 0 ? colGood : pushDir < 0 ? colBad : colSoft, text_size=txtSz)
+    table.cell(kemiTable, 2, 7, "RES", text_color=colSoft, text_size=txtSz)
+    table.cell(kemiTable, 3, 7, f_numTxt(resultScore), text_color=resultScore >= resultMin ? colGood : colSoft, text_size=txtSz)
+    table.cell(kemiTable, 0, 8, "GPT", text_color=colAccent, text_size=txtSz)
+    table.cell(kemiTable, 1, 8, "EC:" + str.tostring(kemiEvent), text_color=eventColor, text_size=txtSz)
+    table.cell(kemiTable, 2, 8, "GP:" + kemiPolicy, text_color=policyColor, text_size=txtSz)
+    table.cell(kemiTable, 3, 8, "CF:" + str.tostring(kemiConflictFlag), text_color=kemiConflictFlag == 1 ? colBad : colGood, text_size=txtSz)
+else if (not showTable) and not na(kemiTable)
+    table.delete(kemiTable)
+    kemiTable := na
+    lastTableLayoutKey := ""
+
+//==================================================
+// Hidden LINK5 outputs
+//==================================================
+plot(float(kemiDir), title="AL_KEMI_DIRECTION", display=display.none)
+plot(float(kemiState), title="AL_KEMI_STATE", display=display.none)
+plot(kemiScore, title="AL_KEMI_SCORE", display=display.none)
+plot(float(kemiActiveFlag), title="AL_KEMI_ACTIVE_FLAG", display=display.none)
+plot(float(kemiEvent), title="AL_KEMI_EVENT", display=display.none)
+plot(deltaProxyScore, title="AL_KEMI_DELTA_PROXY_SCORE", display=display.none)
+plot(absorptionScore, title="AL_KEMI_ABSORPTION_SCORE", display=display.none)
+plot(divergenceScore, title="AL_KEMI_DIVERGENCE_SCORE", display=display.none)
+plot(effortResultScore, title="AL_KEMI_EFFORT_RESULT_SCORE", display=display.none)
+plot(float(kemiConflictFlag), title="AL_KEMI_CONFLICT_FLAG", display=display.none)

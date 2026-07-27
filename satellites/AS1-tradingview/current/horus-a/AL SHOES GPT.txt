@@ -1,0 +1,575 @@
+//@version=6
+indicator("AL SHOES GPT", overlay=true, max_labels_count=0, max_bars_back=3000)
+
+//==================================================
+// [0] GPT 표
+//==================================================
+string GROUP_PANEL = "신발 G | 표"
+
+bool   showTable      = input.bool(false, "GPT 표 표시", group=GROUP_PANEL, display=display.none)
+string tablePosOpt    = input.string("TR", "표 위치", options=["TL","TC","TR","ML","MC","MR","BL","BC","BR"], group=GROUP_PANEL, display=display.none)
+string tableSizeOpt   = input.string("SMALL", "표 크기", options=["TINY","SMALL","NORMAL","LARGE"], group=GROUP_PANEL, display=display.none)
+color  headerBg       = input.color(color.new(color.black, 0), "헤더 배경", group=GROUP_PANEL, display=display.none)
+color  cellBg         = input.color(color.new(color.black, 8), "셀 배경", group=GROUP_PANEL, display=display.none)
+color  headerText     = input.color(color.white, "헤더 글자색", group=GROUP_PANEL, display=display.none)
+color  keyTextColor   = input.color(color.silver, "KEY 글자색", group=GROUP_PANEL, display=display.none)
+color  codeTextColor  = input.color(color.white, "CODE 글자색", group=GROUP_PANEL, display=display.none)
+color  numTextColor   = input.color(color.orange, "NUM 글자색", group=GROUP_PANEL, display=display.none)
+color  noteTextColor  = input.color(color.aqua, "NOTE 글자색", group=GROUP_PANEL, display=display.none)
+
+//==================================================
+// [1] 코어
+//==================================================
+string GROUP_CORE = "신발 G | 코어"
+int   atrLen            = input.int(14, "ATR 길이", minval=5, maxval=100, group=GROUP_CORE, display=display.none)
+int   emaFastLen        = input.int(21, "EMA 빠름", minval=2, maxval=100, group=GROUP_CORE, display=display.none)
+int   emaSlowLen        = input.int(55, "EMA 느림", minval=5, maxval=300, group=GROUP_CORE, display=display.none)
+int   adxLen            = input.int(14, "ADX 길이", minval=2, maxval=100, group=GROUP_CORE, display=display.none)
+int   adxSmooth         = input.int(14, "ADX 스무딩", minval=2, maxval=100, group=GROUP_CORE, display=display.none)
+int   rsiLen            = input.int(14, "RSI 길이", minval=2, maxval=100, group=GROUP_CORE, display=display.none)
+int   highLookback      = input.int(20, "신고점 탐색 범위", minval=5, maxval=300, group=GROUP_CORE, display=display.none)
+float zoneBaseMult      = input.float(1.0, "구역 기본 배수", minval=0.2, maxval=10.0, step=0.1, group=GROUP_CORE, display=display.none)
+float newHighEpsMult    = input.float(0.20, "신고점 오차 (ATR x)", minval=0.01, maxval=3.0, step=0.05, group=GROUP_CORE, display=display.none)
+int   fadeBars          = input.int(30, "감쇠 봉 수", minval=5, maxval=300, group=GROUP_CORE, display=display.none)
+
+string GROUP_FILTER = "신발 G | 필터"
+bool  useAutoTFAdjust   = input.bool(true, "타임프레임 자동 보정", group=GROUP_FILTER, display=display.none)
+bool  useAutoTFScale    = input.bool(true, "시간프레임 자동 배율", group=GROUP_FILTER, display=display.none)
+float tfScaleMin        = input.float(1.0, "배율 최소", minval=0.5, maxval=20.0, step=0.1, group=GROUP_FILTER, display=display.none)
+float tfScaleMax        = input.float(12.0, "배율 최대", minval=1.0, maxval=50.0, step=0.5, group=GROUP_FILTER, display=display.none)
+float deepPullbackPct   = input.float(0.65, "깊은 되돌림 비율", minval=0.30, maxval=0.95, step=0.05, group=GROUP_FILTER, display=display.none)
+int   minGapAfterFire   = input.int(10, "최소 발화 간격", minval=0, maxval=200, group=GROUP_FILTER, display=display.none)
+int   maxHoldBars       = input.int(60, "최대 유지 봉 수", minval=10, maxval=600, group=GROUP_FILTER, display=display.none)
+float zoneCapAtrMult    = input.float(4.0, "구역 상한 (ATR x)", minval=1.0, maxval=10.0, step=0.5, group=GROUP_FILTER, display=display.none)
+int   setupMaxBars      = input.int(80, "추적 최대 봉 수", minval=10, maxval=600, group=GROUP_FILTER, display=display.none)
+int   minUpScore        = input.int(60, "상승 준비 최소 점수", minval=0, maxval=100, group=GROUP_FILTER, display=display.none)
+int   slopeConfirmBars  = input.int(2, "EMA 빠름 하락 확인 봉 수", minval=1, maxval=5, group=GROUP_FILTER, display=display.none)
+float adxWeakMin        = input.float(16.0, "ADX 약화 최소", minval=1.0, maxval=60.0, step=0.5, group=GROUP_FILTER, display=display.none)
+bool  requireBearCandle = input.bool(true, "발화 시 음봉 필요", group=GROUP_FILTER, display=display.none)
+
+string GROUP_REF = "신발 G | 기준값"
+bool useCloseRef = input.bool(true, "기준값 = 설정 봉 종가 (해제 시 고가)", group=GROUP_REF, display=display.none)
+
+string GROUP_ALERT = "신발 G | 얼러트"
+bool useAlertConditions = input.bool(true, "얼러트 사용", group=GROUP_ALERT, display=display.none)
+
+//==================================================
+// [2] 헬퍼
+//==================================================
+f_clamp(x, lo, hi) =>
+    math.min(hi, math.max(lo, x))
+
+f_clampInt(x, lo, hi) =>
+    math.max(lo, math.min(hi, x))
+
+f_tablePos(opt) =>
+    pos = position.top_right
+    if opt == "TL"
+        pos := position.top_left
+    else if opt == "TC"
+        pos := position.top_center
+    else if opt == "TR"
+        pos := position.top_right
+    else if opt == "ML"
+        pos := position.middle_left
+    else if opt == "MC"
+        pos := position.middle_center
+    else if opt == "MR"
+        pos := position.middle_right
+    else if opt == "BL"
+        pos := position.bottom_left
+    else if opt == "BC"
+        pos := position.bottom_center
+    else
+        pos := position.bottom_right
+    pos
+
+f_textSize(opt) =>
+    sz = size.small
+    if opt == "TINY"
+        sz := size.tiny
+    else if opt == "SMALL"
+        sz := size.small
+    else if opt == "NORMAL"
+        sz := size.normal
+    else
+        sz := size.large
+    sz
+
+f_tfScale(secNow, lo, hi) =>
+    s = math.sqrt(secNow / 60.0)
+    f_clamp(s, lo, hi)
+
+f_dirCode(dir) =>
+    out = "FLAT"
+    if dir < 0
+        out := "DOWN"
+    else if dir > 0
+        out := "UP"
+    else
+        out := "FLAT"
+    out
+
+f_stateCode(state) =>
+    out = "IDLE"
+    if state == 1
+        out := "SET"
+    else if state == 2
+        out := "TRIG"
+    else if state == 3
+        out := "HOLD"
+    else if state == 4
+        out := "FAIL"
+    else
+        out := "IDLE"
+    out
+
+f_edgeCode(edgeSide) =>
+    out = "NONE"
+    if edgeSide > 0
+        out := "TOP"
+    else if edgeSide < 0
+        out := "BOTTOM"
+    else
+        out := "NONE"
+    out
+
+f_scoreCode(k) =>
+    out = "LOW"
+    if k >= 85
+        out := "STR"
+    else if k >= 70
+        out := "MID"
+    else if k >= 35
+        out := "LITE"
+    else
+        out := "LOW"
+    out
+
+f_evtCode(evt) =>
+    out = "NONE"
+    if evt == 10
+        out := "TOP_WATCH"
+    else if evt == 11
+        out := "BOT_WATCH"
+    else if evt == 20
+        out := "TOP_FAIL"
+    else if evt == 21
+        out := "BOT_FAIL"
+    else if evt == 30
+        out := "CHASE"
+    else if evt == 31
+        out := "FATIGUE"
+    else if evt == 32
+        out := "REJECT"
+    else if evt == 40
+        out := "INVALID"
+    else
+        out := "NONE"
+    out
+
+f_note(tracking, active, evt, ready, edgeOK, tfTag) =>
+    out = "WAIT"
+    if evt == 10
+        out := "TOP EDGE WATCH"
+    else if evt == 11
+        out := "BOTTOM EDGE WATCH"
+    else if evt == 20
+        out := "TOP ATTEMPT FAILED"
+    else if evt == 21
+        out := "BOTTOM ATTEMPT FAILED"
+    else if evt == 30
+        out := "CHASE RISK"
+    else if evt == 31
+        out := "LAST STEP FATIGUE"
+    else if evt == 32
+        out := "ENDPOINT REJECTION"
+    else if evt == 40
+        out := "EDGE INVALIDATED"
+    else if active
+        out := "WEAKNESS ON"
+    else if tracking and edgeOK and ready
+        out := "READY"
+    else if tracking and edgeOK
+        out := "EDGE TRACK"
+    else if tracking
+        out := "EDGE WATCH"
+    else
+        out := tfTag
+    out
+
+//==================================================
+// [3] 타임프레임 자동 보정
+//==================================================
+int secNow = timeframe.in_seconds()
+float tfAdj = 1.0
+if useAutoTFAdjust
+    if secNow <= 300
+        tfAdj := 1.00
+    else if secNow <= 900
+        tfAdj := 1.08
+    else if secNow <= 3600
+        tfAdj := 1.18
+    else if secNow <= 14400
+        tfAdj := 1.32
+    else
+        tfAdj := 1.48
+
+float tfScaleVal = useAutoTFScale ? f_tfScale(secNow, tfScaleMin, tfScaleMax) : 1.0
+float deepPullbackPctEff = f_clamp(deepPullbackPct * (1.0 - (tfAdj - 1.0) * 0.10), 0.25, 0.95)
+int minUpScoreEff = f_clampInt(int(math.round(minUpScore * (1.0 + (tfAdj - 1.0) * 0.08))), 0, 100)
+float adxWeakMinEff = adxWeakMin * (1.0 + (tfAdj - 1.0) * 0.15)
+
+string tfTag = "AUTO TF"
+if secNow <= 300
+    tfTag := "TF 5M"
+else if secNow <= 900
+    tfTag := "TF 15M"
+else if secNow <= 3600
+    tfTag := "TF 1H"
+else if secNow <= 14400
+    tfTag := "TF 4H"
+else
+    tfTag := "TF 1D+"
+
+//==================================================
+// [4] 기본 계산
+//==================================================
+float atrV = ta.atr(atrLen)
+float eps = atrV * newHighEpsMult
+float emaFast = ta.ema(close, emaFastLen)
+float emaSlow = ta.ema(close, emaSlowLen)
+float emaSlope = emaFast - nz(emaFast[1], emaFast)
+float rsiV = ta.rsi(close, rsiLen)
+[pdiV, mdiV, adxV] = ta.dmi(adxLen, adxSmooth)
+
+float zoneRaw = atrV * zoneBaseMult * tfScaleVal
+float zoneCap = atrV * zoneCapAtrMult
+float zone = math.min(zoneRaw, zoneCap)
+float highestPrev = bar_index > 0 ? ta.highest(high, highLookback)[1] : high
+float lowestPrev = bar_index > 0 ? ta.lowest(low, highLookback)[1] : low
+
+int upScore = 0
+upScore += emaFast > emaSlow ? 20 : 0
+upScore += close > emaFast ? 16 : 0
+upScore += emaSlope > 0 ? 16 : 0
+upScore += rsiV >= 60 ? 18 : rsiV >= 55 ? 9 : 0
+upScore += adxV >= adxWeakMinEff ? 10 : 0
+upScore += high > (highestPrev + eps) ? 20 : 0
+upScore := f_clampInt(upScore, 0, 100)
+
+int downScore = 0
+downScore += emaFast < emaSlow ? 20 : 0
+downScore += close < emaFast ? 16 : 0
+downScore += emaSlope < 0 ? 16 : 0
+downScore += rsiV <= 40 ? 18 : rsiV <= 45 ? 9 : 0
+downScore += adxV >= adxWeakMinEff ? 10 : 0
+downScore += low < (lowestPrev - eps) ? 20 : 0
+downScore := f_clampInt(downScore, 0, 100)
+
+bool slopeWeakTop = false
+bool slopeWeakBottom = false
+if slopeConfirmBars <= 1
+    slopeWeakTop := emaSlope < 0
+    slopeWeakBottom := emaSlope > 0
+else
+    bool allDown = true
+    bool allUp = true
+    for i = 0 to slopeConfirmBars - 1
+        allDown := allDown and ((emaFast[i] - emaFast[i + 1]) < 0)
+        allUp := allUp and ((emaFast[i] - emaFast[i + 1]) > 0)
+    slopeWeakTop := allDown
+    slopeWeakBottom := allUp
+
+bool topSetupSignal = (upScore >= minUpScoreEff) and high > (highestPrev + eps) and close >= emaFast
+bool bottomSetupSignal = (downScore >= minUpScoreEff) and low < (lowestPrev - eps) and close <= emaFast
+
+//==================================================
+// [5] 상태
+//==================================================
+var float anchorRefPrice = na
+var int   anchorBar = na
+var float edgeExtreme = na
+var int   edgeBar = na
+var int   edgeSide = 0
+var bool  setupTracking = false
+var bool  shoesTriggered = false
+var bool  shoesActive = false
+var int   shoesBar = na
+var int   lastFireBar = na
+
+bool gapOK = minGapAfterFire <= 0 ? true : (na(lastFireBar) or (bar_index - lastFireBar >= minGapAfterFire))
+
+bool setupNow = false
+bool firedNow = false
+bool clearedNow = false
+bool expiredNow = false
+
+if (topSetupSignal or bottomSetupSignal) and gapOK and not setupTracking and not shoesActive
+    int nextEdgeSide = topSetupSignal and (not bottomSetupSignal or upScore >= downScore) ? 1 : -1
+    setupNow := true
+    edgeSide := nextEdgeSide
+    anchorRefPrice := useCloseRef ? close : (edgeSide > 0 ? high : low)
+    anchorBar := bar_index
+    edgeExtreme := edgeSide > 0 ? high : low
+    edgeBar := bar_index
+    setupTracking := true
+    shoesTriggered := false
+    shoesActive := false
+    shoesBar := na
+
+bool trackingAlive = setupTracking and not na(anchorBar) and ((bar_index - anchorBar) <= setupMaxBars)
+if setupTracking and not trackingAlive and not shoesActive
+    expiredNow := true
+    setupTracking := false
+
+if setupTracking
+    if na(edgeExtreme)
+        edgeExtreme := edgeSide > 0 ? high : low
+        edgeBar := bar_index
+    else if edgeSide > 0 and high > (edgeExtreme + eps)
+        edgeExtreme := high
+        edgeBar := bar_index
+    else if edgeSide < 0 and low < (edgeExtreme - eps)
+        edgeExtreme := low
+        edgeBar := bar_index
+
+bool topTracking = setupTracking and edgeSide > 0
+bool bottomTracking = setupTracking and edgeSide < 0
+bool topEdgeConfirmed = topTracking and not na(edgeExtreme) and not na(anchorRefPrice) and edgeExtreme > (anchorRefPrice + eps)
+bool bottomEdgeConfirmed = bottomTracking and not na(edgeExtreme) and not na(anchorRefPrice) and edgeExtreme < (anchorRefPrice - eps)
+bool edgeConfirmed = topEdgeConfirmed or bottomEdgeConfirmed
+float distToAnchor = setupTracking and not na(anchorRefPrice) ? math.abs(close - anchorRefPrice) : na
+bool inAnchorZone = setupTracking and not na(distToAnchor) and (distToAnchor <= zone)
+bool deepPullback = setupTracking and not na(distToAnchor) and (distToAnchor <= zone * deepPullbackPctEff)
+bool bearBody = close < open
+bool bullBody = close > open
+bool adxWeak = adxV < nz(adxV[1], adxV) and adxV <= adxWeakMinEff
+float diTopGap = pdiV - mdiV
+float diBottomGap = mdiV - pdiV
+bool diTopWeak = topTracking and pdiV <= nz(pdiV[1], pdiV) and diTopGap <= nz(diTopGap[1], diTopGap)
+bool diBottomWeak = bottomTracking and mdiV <= nz(mdiV[1], mdiV) and diBottomGap <= nz(diBottomGap[1], diBottomGap)
+bool topFatigue = topTracking and (slopeWeakTop or diTopWeak or adxWeak)
+bool bottomFatigue = bottomTracking and (slopeWeakBottom or diBottomWeak or adxWeak)
+
+float candleRange = math.max(high - low, syminfo.mintick)
+float closePos = f_clamp((close - low) / candleRange, 0.0, 1.0)
+float upperWick = high - math.max(open, close)
+float lowerWick = math.min(open, close) - low
+float upperWickPart = atrV > 0 ? f_clamp(upperWick / math.max(atrV * 0.75, syminfo.mintick), 0.0, 1.0) : 0.0
+float lowerWickPart = atrV > 0 ? f_clamp(lowerWick / math.max(atrV * 0.75, syminfo.mintick), 0.0, 1.0) : 0.0
+float endpointTopScore = topTracking ? 100.0 * f_clamp(0.58 * upperWickPart + 0.42 * (1.0 - closePos), 0.0, 1.0) : 0.0
+float endpointBottomScore = bottomTracking ? 100.0 * f_clamp(0.58 * lowerWickPart + 0.42 * closePos, 0.0, 1.0) : 0.0
+float endpointRejectionScore = math.max(endpointTopScore, endpointBottomScore)
+
+float edgeMove = setupTracking and not na(edgeExtreme) and not na(anchorRefPrice) ? math.abs(edgeExtreme - anchorRefPrice) : 0.0
+float extensionPart = atrV > 0 ? f_clamp(edgeMove / math.max(atrV * 1.60, syminfo.mintick), 0.0, 1.0) : 0.0
+float anchorHoldPart = zone > 0 and not na(distToAnchor) ? f_clamp(1.0 - distToAnchor / zone, 0.0, 1.0) : 0.0
+float adxFadePart = f_clamp((adxWeakMinEff - adxV) / math.max(adxWeakMinEff, 1.0), 0.0, 1.0)
+float slopeFatiguePart = topTracking ? f_clamp((-emaSlope) / math.max(atrV * 0.08, syminfo.mintick), 0.0, 1.0) : bottomTracking ? f_clamp(emaSlope / math.max(atrV * 0.08, syminfo.mintick), 0.0, 1.0) : 0.0
+float diFatiguePart = topTracking ? f_clamp((nz(diTopGap[1], diTopGap) - diTopGap) / 12.0, 0.0, 1.0) : bottomTracking ? f_clamp((nz(diBottomGap[1], diBottomGap) - diBottomGap) / 12.0, 0.0, 1.0) : 0.0
+float edgeScorePart = f_clamp(float(math.max(upScore, downScore)) / 100.0, 0.0, 1.0)
+
+float lastStepFatigue = setupTracking ? 100.0 * f_clamp(0.34 * slopeFatiguePart + 0.26 * diFatiguePart + 0.22 * adxFadePart + 0.18 * endpointRejectionScore / 100.0, 0.0, 1.0) : 0.0
+float chaseRiskScore = setupTracking ? 100.0 * f_clamp(0.34 * extensionPart + 0.26 * edgeScorePart + 0.22 * endpointRejectionScore / 100.0 + 0.18 * (topTracking ? f_clamp((rsiV - 62.0) / 18.0, 0.0, 1.0) : f_clamp((38.0 - rsiV) / 18.0, 0.0, 1.0)), 0.0, 1.0) : 0.0
+float edgeWeaknessScore = setupTracking ? 100.0 * f_clamp(0.30 * anchorHoldPart + 0.25 * lastStepFatigue / 100.0 + 0.22 * endpointRejectionScore / 100.0 + 0.15 * extensionPart + 0.08 * adxFadePart, 0.0, 1.0) : 0.0
+
+bool readyToFire = setupTracking and edgeConfirmed and inAnchorZone and deepPullback and ((topTracking and topFatigue and ((not requireBearCandle) or bearBody)) or (bottomTracking and bottomFatigue and ((not requireBearCandle) or bullBody)))
+bool triggerCond = readyToFire and (not shoesTriggered) and gapOK
+
+if triggerCond
+    firedNow := true
+    shoesTriggered := true
+    shoesActive := true
+    shoesBar := bar_index
+    lastFireBar := bar_index
+
+bool reclaimClose = false
+if shoesActive and not na(anchorRefPrice)
+    reclaimClose := (edgeSide > 0 and close > anchorRefPrice + eps and not topFatigue) or (edgeSide < 0 and close < anchorRefPrice - eps and not bottomFatigue)
+if reclaimClose
+    shoesActive := false
+    setupTracking := false
+    clearedNow := true
+
+bool tooLong = shoesActive and not na(shoesBar) and ((bar_index - shoesBar) >= maxHoldBars)
+if tooLong
+    shoesActive := false
+    setupTracking := false
+    clearedNow := true
+
+if not shoesActive and setupTracking and not expiredNow and not trackingAlive
+    expiredNow := true
+    setupTracking := false
+
+bool inFade = shoesActive and not na(shoesBar) and ((bar_index - shoesBar) <= fadeBars)
+
+//==================================================
+// [6] 표준 출력값
+//==================================================
+int shoesDir = 0
+int shoesState = 0
+float shoesKf = 0.0
+
+if clearedNow or expiredNow
+    shoesState := 4
+    shoesDir := 0
+    shoesKf := math.max(edgeWeaknessScore, chaseRiskScore) * 0.45
+else if shoesActive
+    shoesState := firedNow ? 2 : 3
+    shoesDir := edgeSide > 0 ? -1 : edgeSide < 0 ? 1 : 0
+    float kRaw = math.max(edgeWeaknessScore, math.max(lastStepFatigue, endpointRejectionScore))
+    if inFade
+        float t = float(bar_index - shoesBar) / math.max(1.0, float(fadeBars))
+        float w = 1.0 - f_clamp(t * 0.45, 0.0, 0.45)
+        shoesKf := kRaw * w
+    else
+        shoesKf := kRaw
+else if setupTracking
+    shoesState := chaseRiskScore >= 62 or lastStepFatigue >= 62 or endpointRejectionScore >= 70 ? 3 : 1
+    shoesDir := 0
+    shoesKf := math.max(math.max(chaseRiskScore, math.max(edgeWeaknessScore * 0.82, lastStepFatigue * 0.76)), shoesState == 3 ? 45.0 : 35.0)
+else
+    shoesState := 0
+    shoesDir := 0
+    shoesKf := 0.0
+
+int shoesK = int(math.round(f_clamp(shoesKf, 0.0, 100.0)))
+int shoesRes = 0
+if shoesActive
+    shoesRes += 3
+    shoesRes += shoesK >= 85 ? 2 : shoesK >= 70 ? 1 : 0
+    shoesRes += endpointRejectionScore >= 70 ? 1 : 0
+    shoesRes := f_clampInt(shoesRes, 0, 5)
+else if setupTracking
+    shoesRes := shoesState == 3 ? 3 : 2
+else if clearedNow or expiredNow
+    shoesRes := 1
+else
+    shoesRes := 0
+
+int shoesEvt = 0
+if setupNow
+    shoesEvt := edgeSide > 0 ? 10 : 11
+else if firedNow
+    shoesEvt := edgeSide > 0 ? 20 : 21
+else if clearedNow or expiredNow
+    shoesEvt := 40
+else if endpointRejectionScore >= 65
+    shoesEvt := 32
+else if lastStepFatigue >= 58
+    shoesEvt := 31
+else if chaseRiskScore >= 58
+    shoesEvt := 30
+else if setupTracking
+    shoesEvt := edgeSide > 0 ? 10 : 11
+else
+    shoesEvt := 0
+
+int shoesSigDir = shoesDir > 0 ? 1 : shoesDir < 0 ? -1 : 0
+int shoesSigRes = shoesRes < 0 ? 0 : shoesRes > 5 ? 5 : shoesRes
+int shoesSig = shoesSigDir == 0 ? 0 : (shoesSigDir * 100 + shoesSigRes)
+int shoesActiveFlag = (setupTracking or shoesState != 0 or shoesK >= 35 or firedNow) ? 1 : 0
+int shoesTrackFlag = setupTracking ? 1 : 0
+int shoesRisk = (shoesState == 2 or shoesState == 3) ? 2 : shoesState == 1 ? 1 : 0
+
+//==================================================
+// [7] GPT 표
+//==================================================
+textSize = f_textSize(tableSizeOpt)
+var table shoesTable = table.new(f_tablePos(tablePosOpt), 4, 9, border_width=1)
+
+if barstate.islast and showTable
+    table.cell(shoesTable, 0, 0, "KEY",  text_color=headerText, bgcolor=headerBg, text_size=textSize)
+    table.cell(shoesTable, 1, 0, "CODE", text_color=headerText, bgcolor=headerBg, text_size=textSize)
+    table.cell(shoesTable, 2, 0, "NUM",  text_color=numTextColor, bgcolor=headerBg, text_size=textSize)
+    table.cell(shoesTable, 3, 0, "NOTE", text_color=headerText, bgcolor=headerBg, text_size=textSize)
+
+    table.cell(shoesTable, 0, 1, "DIR", text_color=keyTextColor, bgcolor=cellBg, text_size=textSize)
+    table.cell(shoesTable, 1, 1, f_dirCode(shoesDir), text_color=codeTextColor, bgcolor=cellBg, text_size=textSize)
+    table.cell(shoesTable, 2, 1, str.tostring(shoesDir), text_color=numTextColor, bgcolor=cellBg, text_size=textSize)
+    table.cell(shoesTable, 3, 1, shoesDir == 0 ? "setup flat" : "edge failure bias", text_color=noteTextColor, bgcolor=cellBg, text_size=textSize)
+
+    table.cell(shoesTable, 0, 2, "STATE", text_color=keyTextColor, bgcolor=cellBg, text_size=textSize)
+    table.cell(shoesTable, 1, 2, f_stateCode(shoesState), text_color=codeTextColor, bgcolor=cellBg, text_size=textSize)
+    table.cell(shoesTable, 2, 2, str.tostring(shoesState), text_color=numTextColor, bgcolor=cellBg, text_size=textSize)
+    table.cell(shoesTable, 3, 2, f_note(setupTracking, shoesActive, shoesEvt, readyToFire, edgeConfirmed, tfTag), text_color=noteTextColor, bgcolor=cellBg, text_size=textSize)
+
+    table.cell(shoesTable, 0, 3, "SCORE", text_color=keyTextColor, bgcolor=cellBg, text_size=textSize)
+    table.cell(shoesTable, 1, 3, f_scoreCode(shoesK), text_color=codeTextColor, bgcolor=cellBg, text_size=textSize)
+    table.cell(shoesTable, 2, 3, str.tostring(shoesK), text_color=numTextColor, bgcolor=cellBg, text_size=textSize)
+    table.cell(shoesTable, 3, 3, setupTracking and not shoesActive ? "edge watch score" : "edge weakness score", text_color=noteTextColor, bgcolor=cellBg, text_size=textSize)
+
+    table.cell(shoesTable, 0, 4, "RES", text_color=keyTextColor, bgcolor=cellBg, text_size=textSize)
+    table.cell(shoesTable, 1, 4, shoesRes >= 4 ? "STRONG" : shoesRes >= 2 ? "READY" : shoesRes >= 1 ? "LITE" : "LOW", text_color=codeTextColor, bgcolor=cellBg, text_size=textSize)
+    table.cell(shoesTable, 2, 4, str.tostring(shoesRes), text_color=numTextColor, bgcolor=cellBg, text_size=textSize)
+    table.cell(shoesTable, 3, 4, "0-5", text_color=noteTextColor, bgcolor=cellBg, text_size=textSize)
+
+    table.cell(shoesTable, 0, 5, "EDGE", text_color=keyTextColor, bgcolor=cellBg, text_size=textSize)
+    table.cell(shoesTable, 1, 5, f_edgeCode(edgeSide), text_color=codeTextColor, bgcolor=cellBg, text_size=textSize)
+    table.cell(shoesTable, 2, 5, str.tostring(shoesTrackFlag), text_color=numTextColor, bgcolor=cellBg, text_size=textSize)
+    table.cell(shoesTable, 3, 5, edgeConfirmed ? "edge confirmed" : tfTag, text_color=noteTextColor, bgcolor=cellBg, text_size=textSize)
+
+    table.cell(shoesTable, 0, 6, "ACTIVE", text_color=keyTextColor, bgcolor=cellBg, text_size=textSize)
+    table.cell(shoesTable, 1, 6, shoesActiveFlag == 1 ? "ON" : "OFF", text_color=codeTextColor, bgcolor=cellBg, text_size=textSize)
+    table.cell(shoesTable, 2, 6, str.tostring(shoesActiveFlag), text_color=numTextColor, bgcolor=cellBg, text_size=textSize)
+    table.cell(shoesTable, 3, 6, shoesRisk == 0 ? "stable" : shoesRisk == 1 ? "mid" : "high", text_color=noteTextColor, bgcolor=cellBg, text_size=textSize)
+
+    table.cell(shoesTable, 0, 7, "BIAS", text_color=keyTextColor, bgcolor=cellBg, text_size=textSize)
+    table.cell(shoesTable, 1, 7, shoesSig == 0 ? "NONE" : shoesSig > 0 ? "UP_PRS" : "DN_PRS", text_color=codeTextColor, bgcolor=cellBg, text_size=textSize)
+    table.cell(shoesTable, 2, 7, str.tostring(shoesSig), text_color=numTextColor, bgcolor=cellBg, text_size=textSize)
+    table.cell(shoesTable, 3, 7, "confirmed failure only", text_color=noteTextColor, bgcolor=cellBg, text_size=textSize)
+
+    table.cell(shoesTable, 0, 8, "EVENT", text_color=keyTextColor, bgcolor=cellBg, text_size=textSize)
+    table.cell(shoesTable, 1, 8, f_evtCode(shoesEvt), text_color=codeTextColor, bgcolor=cellBg, text_size=textSize)
+    table.cell(shoesTable, 2, 8, str.tostring(shoesEvt), text_color=numTextColor, bgcolor=cellBg, text_size=textSize)
+    table.cell(shoesTable, 3, 8, not na(anchorRefPrice) ? str.tostring(anchorRefPrice, format.mintick) : "na", text_color=noteTextColor, bgcolor=cellBg, text_size=textSize)
+else if barstate.islast and not showTable
+    table.clear(shoesTable, 0, 0, 3, 8)
+
+//==================================================
+// [8] 얼러트
+//==================================================
+bool prevTrack = bar_index > 0 ? setupTracking[1] : false
+bool prevActive = bar_index > 0 ? shoesActive[1] : false
+int  prevRes = bar_index > 0 ? shoesRes[1] : 0
+float prevChaseRisk = bar_index > 0 ? chaseRiskScore[1] : chaseRiskScore
+float prevFatigue = bar_index > 0 ? lastStepFatigue[1] : lastStepFatigue
+
+bool shoesTrigger        = firedNow
+bool shoesTopFail        = firedNow and edgeSide > 0
+bool shoesBottomFail     = firedNow and edgeSide < 0
+bool shoesReady          = readyToFire and not shoesTriggered and gapOK
+bool shoesConflict       = setupTracking and edgeConfirmed and inAnchorZone and not readyToFire and (lastStepFatigue >= 40 or endpointRejectionScore >= 50)
+bool shoesTopWatch       = setupNow and edgeSide > 0
+bool shoesBottomWatch    = setupNow and edgeSide < 0
+bool shoesChaseRiskAlert = chaseRiskScore >= 62 and prevChaseRisk < 62
+bool shoesFatigueAlert   = lastStepFatigue >= 58 and prevFatigue < 58
+bool shoesRelease        = clearedNow or expiredNow or ((not shoesActive) and prevActive)
+
+alertcondition(useAlertConditions and shoesTrigger,                    title="AL SHOES G | EDGE FAIL",     message="AL_SHOES_G,EDGE_FAIL")
+alertcondition(useAlertConditions and shoesTopFail,                    title="AL SHOES G | TOP FAIL",      message="AL_SHOES_G,TOP_FAIL")
+alertcondition(useAlertConditions and shoesBottomFail,                 title="AL SHOES G | BOTTOM FAIL",   message="AL_SHOES_G,BOTTOM_FAIL")
+alertcondition(useAlertConditions and shoesReady,                      title="AL SHOES G | EDGE READY",    message="AL_SHOES_G,EDGE_READY")
+alertcondition(useAlertConditions and shoesConflict,                   title="AL SHOES G | CONFLICT",      message="AL_SHOES_G,CONFLICT")
+alertcondition(useAlertConditions and shoesChaseRiskAlert,             title="AL SHOES G | CHASE RISK",    message="AL_SHOES_G,CHASE_RISK")
+alertcondition(useAlertConditions and shoesFatigueAlert,               title="AL SHOES G | FATIGUE",       message="AL_SHOES_G,FATIGUE")
+alertcondition(useAlertConditions and shoesRelease,                    title="AL SHOES G | RELEASE",       message="AL_SHOES_G,RELEASE")
+alertcondition(useAlertConditions and shoesTopWatch,                   title="AL SHOES G | TOP WATCH",     message="AL_SHOES_G,TOP_WATCH")
+alertcondition(useAlertConditions and shoesBottomWatch,                title="AL SHOES G | BOTTOM WATCH",  message="AL_SHOES_G,BOTTOM_WATCH")
+alertcondition(useAlertConditions and clearedNow,                      title="AL SHOES G | CLEAR",         message="AL_SHOES_G,CLEAR")
+alertcondition(useAlertConditions and expiredNow,                      title="AL SHOES G | EXPIRE",        message="AL_SHOES_G,EXPIRE")
+alertcondition(useAlertConditions and setupTracking and not prevTrack, title="AL SHOES G | TRACK ON",      message="AL_SHOES_G,TRACK_ON")
+alertcondition(useAlertConditions and shoesActive and not prevActive,  title="AL SHOES G | ACTIVE ON",     message="AL_SHOES_G,ACTIVE_ON")
+alertcondition(useAlertConditions and (not shoesActive) and prevActive, title="AL SHOES G | ACTIVE OFF",  message="AL_SHOES_G,ACTIVE_OFF")
+alertcondition(useAlertConditions and shoesRes >= 4 and prevRes < 4,   title="AL SHOES G | STRONG RES",    message="AL_SHOES_G,STRONG_RES")
+
+//==================================================
+// 숨김 출력 (A 링크 경량)
+//==================================================
+plot(float(shoesDir),        title="AL_SHOES_DIRECTION",   display=display.none)
+plot(float(shoesState),      title="AL_SHOES_STATE",       display=display.none)
+plot(float(shoesK),          title="AL_SHOES_SCORE",       display=display.none)
+plot(float(shoesRes),        title="AL_SHOES_RESISTANCE",  display=display.none)
+plot(float(shoesEvt),        title="AL_SHOES_EVENT",       display=display.none)
+plot(float(shoesActiveFlag), title="AL_SHOES_ACTIVE_FLAG", display=display.none)

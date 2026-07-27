@@ -1,0 +1,956 @@
+//@version=6
+indicator("AL HUD MAAT2 BUS V1", overlay=true, max_labels_count=10, dynamic_requests=true)
+
+showVisuals = input.bool(true, "DISPLAY: FULL (끄면 HEADLESS)", group="00. Render")
+
+//==================================================
+// AL LYNX CONTEXT HUD AUTO v1.2
+// MAAT2 MACRO WEATHER / BACKGROUND / RISK FILTER layer.
+// HUD is not a direction sensor. It records market weather, background pressure, and risk context.
+// MAAT2 Hub should use this as a conservative background filter only.
+//
+// v1.1 -> v1.2 변경 (2026-07-06):
+// [핵심]
+//  1) 글로벌 M2 합성 모드 추가 (US + CN + EU + JP, FX 환산 포함)
+//     - 지역별 M2 단위(십억/조/억) 불일치로 인한 가중 왜곡을 피하기 위해
+//       "레벨 합산"이 아니라 "지역별 USD 성장률의 가중평균" 방식 사용.
+//     - 가중치 기본값: US 30% / CN 35% / EU 20% / JP 15% (대략적 USD 환산 M2 비중, 입력으로 조정)
+//     - 구성 심볼 하나라도 로드 실패 시 단일 심볼(USM2)로 자동 폴백 + 출처줄에 표시.
+//  2) 링스 버스 출력 추가: 히든 plot 6개 (M2/BTC-M2/GATE/LEAN 정수코드 + M2 YoY + BTC YoY)
+//     -> MAAT / Reporter / 타 모듈이 input.source 로 소비 가능.
+//  3) 얼러트 3종: IGNITION ON 전이 / RISK OFF 전환 / LEAN 상태 변경.
+//  4) LEAN 중간 상태 추가: FUEL_ON_IGNITION_TRY (M2 확장 + BTC 재연결인데 G2 미탈환 = 점화 시도 중)
+//  5) 상태 지속기간 표시: BTC-M2 / LEAN 상태가 유지된 일수(D) 또는 개월(MO)
+//     - 디커플링 "지속 기간"이 천장/국면 판정의 핵심 변수라는 리서치 반영.
+//  6) M2 판정 기준 이원화: YoY(12봉, 기본) / 단기(룩백) 선택. 임계값도 각각 분리.
+//     - 표시에는 YoY와 단기 % 를 함께 출력.
+// [소소]
+//  7) 카운트다운 마감 색상 조건 수정 (문자열 비교 -> 잔여초 비교)
+//  8) D 구간 이중 표기: 위쪽 재탈환선 ↑ / 아래쪽 다음 방어선 ↓ 동시 표시
+//  9) 게이트 입력 순서 무결성 검사 -> 위반 시 출처줄에 경고
+// 10) 비 BTC 차트에서 GATE 기준 "현재 차트" 선택 시 경고 표시
+// 11) HUD 행 동적 구성 (숨긴 줄은 빈칸 없이 당겨짐)
+//
+// [데이터 주의 - ECONOMICS M2 발표 지연]
+//  ECONOMICS:* M2 데이터는 통상 약 1개월 지연 발표된다.
+//  유동성 -> BTC 전달 시차가 1~2개월(리서치)이므로, 발표 지연이 그 리드를
+//  상쇄한다. 즉 "방금 나온 M2 프린트"는 대략 "지금의 BTC"에 유효한 값이다.
+//  본 HUD 는 단기 매매 신호가 아니라 배경 컨텍스트(LEAN 층)다.
+//==================================================
+
+//==================================================
+// 입력 | Main
+//==================================================
+groupMain = "HUD | Main"
+showHud = input.bool(true, "HUD 표시", group=groupMain)
+dashboardMode = input.string("GPT 압축", "대시보드 모드", options=["GPT 압축", "한국어", "English"], group=groupMain)
+posOpt = input.string("좌상", "위치", options=["좌상","상중","우상","좌중","정중","우중","좌하","하중","우하"], group=groupMain)
+hudSizeOpt = input.string("작게", "전체 크기", options=["아주작게","작게","보통","크게","아주크게"], group=groupMain)
+
+//==================================================
+// 입력 | Text
+//==================================================
+groupText = "HUD | Text"
+showBrand = input.bool(true, "브랜드 표시", group=groupText)
+brandText = input.string("AiLynx", "브랜드 문구", group=groupText)
+symbolMode = input.string("표준", "심볼 표시 방식", options=["표준","내부ID","커스텀"], group=groupText)
+customSymbolText = input.string("", "커스텀 심볼 문구", group=groupText)
+customPrefix = input.string("", "커스텀 앞문구", group=groupText)
+showCountdown = input.bool(true, "봉 마감까지 남은 시간 표시", group=groupText)
+showMacroLine = input.bool(true, "매크로 줄 표시", group=groupText)
+showLeanLine = input.bool(true, "LEAN 줄 표시", group=groupText)
+showGateLine = input.bool(true, "GATE 줄 표시", group=groupText)
+showSourceLine = input.bool(true, "AUTO 출처 줄 표시", group=groupText)
+
+//==================================================
+// 입력 | Auto Macro
+//==================================================
+groupAuto = "HUD | Auto Macro"
+m2Mode = input.string("합성(글로벌)", "M2 모드", options=["합성(글로벌)","단일 심볼"], group=groupAuto, tooltip="합성: US+CN+EU+JP 성장률 가중평균(FX 환산). 구성 심볼 실패 시 단일 심볼로 자동 폴백.")
+m2Symbol = input.symbol("ECONOMICS:USM2", "단일 M2 심볼 (폴백 겸용)", group=groupAuto)
+btcSymbol = input.symbol("BINANCE:BTCUSDT", "BTC 기준 심볼", group=groupAuto)
+m2Tf = input.timeframe("M", "M2 판정 TF", group=groupAuto)
+m2JudgeBasis = input.string("YoY", "M2 판정 기준", options=["YoY","단기(룩백)"], group=groupAuto, tooltip="YoY=12봉 변화율(문헌 기준). 단기=아래 룩백 봉 변화율. 임계값은 기준별로 별도 적용.")
+m2LbShort = input.int(3, "단기 룩백(봉)", minval=1, maxval=24, group=groupAuto)
+m2LbLong = input.int(12, "YoY 룩백(봉)", minval=6, maxval=24, group=groupAuto)
+m2ExpandThS = input.float(0.5, "단기 확장 기준(%)", step=0.1, group=groupAuto)
+m2ContractThS = input.float(-0.5, "단기 수축 기준(%)", step=0.1, group=groupAuto)
+m2ExpandThY = input.float(2.0, "YoY 확장 기준(%)", step=0.1, group=groupAuto)
+m2ContractThY = input.float(-0.5, "YoY 수축 기준(%)", step=0.1, group=groupAuto)
+btcUpTh = input.float(3.0, "BTC 회복 기준(%)", step=0.5, group=groupAuto, tooltip="BTC 판정도 M2 판정 기준(YoY/단기)과 동일한 룩백을 사용.")
+btcDownTh = input.float(-3.0, "BTC 약세 기준(%)", step=0.5, group=groupAuto)
+gatePriceSource = input.string("BTC 심볼", "GATE 가격 기준", options=["BTC 심볼","현재 차트"], group=groupAuto)
+
+//==================================================
+// 입력 | Global M2 합성 구성
+//==================================================
+groupComp = "HUD | Global M2 합성"
+usM2Sym = input.symbol("ECONOMICS:USM2", "US M2", group=groupComp)
+cnM2Sym = input.symbol("ECONOMICS:CNM2", "CN M2 (CNY)", group=groupComp)
+euM2Sym = input.symbol("ECONOMICS:EUM2", "EU M2 (EUR)", group=groupComp)
+jpM2Sym = input.symbol("ECONOMICS:JPM2", "JP M2 (JPY)", group=groupComp)
+cnFxSym = input.symbol("FX_IDC:CNYUSD", "CNYUSD 환율", group=groupComp)
+euFxSym = input.symbol("FX_IDC:EURUSD", "EURUSD 환율", group=groupComp)
+jpFxSym = input.symbol("FX_IDC:JPYUSD", "JPYUSD 환율", group=groupComp)
+wUS = input.float(0.30, "가중 US", minval=0.0, step=0.05, group=groupComp)
+wCN = input.float(0.35, "가중 CN", minval=0.0, step=0.05, group=groupComp)
+wEU = input.float(0.20, "가중 EU", minval=0.0, step=0.05, group=groupComp)
+wJP = input.float(0.15, "가중 JP", minval=0.0, step=0.05, group=groupComp)
+
+//==================================================
+// 입력 | G/D Gate Levels (2026-07 BTC 케이스 스터디 기본값, 수동 갱신 대상)
+//==================================================
+groupGate = "HUD | G-D Gate Levels"
+g1Low = input.float(62500.0, "G1 Low", step=100.0, group=groupGate)
+g1High = input.float(64200.0, "G1 High", step=100.0, group=groupGate)
+g2Low = input.float(68250.0, "G2 Low", step=100.0, group=groupGate)
+g2High = input.float(69600.0, "G2 High", step=100.0, group=groupGate)
+g3Low = input.float(74000.0, "G3 Low", step=100.0, group=groupGate)
+g3High = input.float(76300.0, "G3 High", step=100.0, group=groupGate)
+g4Level = input.float(82000.0, "G4 Level", step=100.0, group=groupGate)
+d1Level = input.float(57800.0, "D1 Level", step=100.0, group=groupGate)
+d2Level = input.float(53200.0, "D2 Level", step=100.0, group=groupGate)
+d3Level = input.float(51700.0, "D3 Level", step=100.0, group=groupGate)
+d4Low = input.float(49000.0, "D4 Low", step=100.0, group=groupGate)
+d4High = input.float(49900.0, "D4 High", step=100.0, group=groupGate)
+d4SweepLow = input.float(46000.0, "D4 Sweep Low", step=100.0, group=groupGate)
+d4SweepHigh = input.float(48000.0, "D4 Sweep High", step=100.0, group=groupGate)
+
+//==================================================
+// 입력 | Style
+//==================================================
+groupStyle = "HUD | Style"
+bgColor = input.color(color.new(color.black, 18), "배경색", group=groupStyle)
+borderColor = input.color(color.new(color.white, 65), "테두리색", group=groupStyle)
+brandColor = input.color(color.new(color.aqua, 0), "브랜드 색상", group=groupStyle)
+symbolColor = input.color(color.new(color.white, 0), "심볼 글자색", group=groupStyle)
+countdownColor = input.color(color.new(color.lime, 0), "남은시간 색상", group=groupStyle)
+closedColor = input.color(color.new(color.orange, 0), "마감/대기 색상", group=groupStyle)
+macroColor = input.color(color.new(color.silver, 0), "매크로 문구 색상", group=groupStyle)
+leanColor = input.color(color.new(color.aqua, 0), "LEAN 문구 색상", group=groupStyle)
+tryColor = input.color(color.new(color.yellow, 0), "점화시도 색상", group=groupStyle)
+gateColor = input.color(color.new(color.yellow, 0), "GATE 문구 색상", group=groupStyle)
+riskColor = input.color(color.new(color.red, 0), "위험 강조 색상", group=groupStyle)
+sourceColor = input.color(color.new(color.gray, 0), "출처 문구 색상", group=groupStyle)
+
+//==================================================
+// 헬퍼 | Position / Size
+//==================================================
+f_posFromOpt(string opt) =>
+    p = position.top_left
+    if opt == "좌상"
+        p := position.top_left
+    else if opt == "상중"
+        p := position.top_center
+    else if opt == "우상"
+        p := position.top_right
+    else if opt == "좌중"
+        p := position.middle_left
+    else if opt == "정중"
+        p := position.middle_center
+    else if opt == "우중"
+        p := position.middle_right
+    else if opt == "좌하"
+        p := position.bottom_left
+    else if opt == "하중"
+        p := position.bottom_center
+    else
+        p := position.bottom_right
+    p
+
+f_sizeFromOpt(string opt) =>
+    s = size.normal
+    if opt == "아주작게"
+        s := size.tiny
+    else if opt == "작게"
+        s := size.small
+    else if opt == "보통"
+        s := size.normal
+    else if opt == "크게"
+        s := size.large
+    else
+        s := size.huge
+    s
+
+//==================================================
+// 헬퍼 | Symbol / TF / Countdown
+//==================================================
+f_tfLabel() =>
+    string out = timeframe.period
+    if timeframe.isseconds
+        out := str.tostring(timeframe.multiplier) + "S"
+    else if timeframe.isminutes
+        int m = timeframe.multiplier
+        if m % 60 == 0
+            out := str.tostring(int(m / 60)) + "H"
+        else
+            out := str.tostring(m) + "M"
+    else if timeframe.isdaily
+        out := timeframe.multiplier == 1 ? "1D" : str.tostring(timeframe.multiplier) + "D"
+    else if timeframe.isweekly
+        out := timeframe.multiplier == 1 ? "1W" : str.tostring(timeframe.multiplier) + "W"
+    else if timeframe.ismonthly
+        out := timeframe.multiplier == 1 ? "1MO" : str.tostring(timeframe.multiplier) + "MO"
+    out
+
+f_pad2(int n) =>
+    n < 10 ? "0" + str.tostring(n) : str.tostring(n)
+
+// v1.2: 잔여초를 전역에서 계산해 색상 판정에 재사용 (문자열 비교 버그 수정)
+float cdRawSec = na(time_close) ? 0.0 : math.max(0.0, (time_close - timenow) / 1000.0)
+
+f_countdownText(float rawSec) =>
+    int totalSec = int(math.floor(rawSec))
+    int h = int(math.floor(totalSec / 3600))
+    int m = int(math.floor((totalSec % 3600) / 60))
+    int s = totalSec % 60
+    string out = ""
+    if h > 0
+        out := f_pad2(h) + ":" + f_pad2(m) + ":" + f_pad2(s)
+    else
+        out := f_pad2(m) + ":" + f_pad2(s)
+    out
+
+f_standardSymbol() =>
+    string px = syminfo.prefix
+    string tk = syminfo.ticker
+    string out = px != "" ? px + ":" + tk : tk
+    out
+
+f_symbolText() =>
+    string standard = f_standardSymbol()
+    string out = standard
+    if symbolMode == "내부ID"
+        out := syminfo.tickerid
+    else if symbolMode == "커스텀"
+        out := customSymbolText != "" ? customSymbolText : standard
+    else
+        out := standard
+    out := customPrefix != "" ? customPrefix + " " + out : out
+    out
+
+//==================================================
+// 헬퍼 | Formatting
+//==================================================
+f_pct(float v) =>
+    na(v) ? "na" : str.tostring(v, "#.##") + "%"
+
+f_priceK(float v) =>
+    na(v) ? "na" : str.tostring(v / 1000.0, "#.##") + "K"
+
+f_rangeK(float lo, float hi) =>
+    f_priceK(lo) + "~" + f_priceK(hi)
+
+f_durText(float days) =>
+    string out = ""
+    if na(days)
+        out := ""
+    else if days < 1
+        out := "<1D"
+    else if days < 100
+        out := str.tostring(days, "#") + "D"
+    else
+        out := str.tostring(days / 30.44, "#.#") + "MO"
+    out
+
+// v1.2: D 구간 이중 표기 (↑재탈환선 / ↓다음 방어선)
+f_levelText(string gateCode) =>
+    string out = ""
+    if gateCode == "G1_TEST" or gateCode == "G1_WAIT" or gateCode == "G1_RECLAIM"
+        out := f_rangeK(g1Low, g1High)
+    else if gateCode == "G2_TEST" or gateCode == "G2_RECLAIM"
+        out := f_rangeK(g2Low, g2High)
+    else if gateCode == "G3_TEST" or gateCode == "G3_RECLAIM"
+        out := f_rangeK(g3Low, g3High)
+    else if gateCode == "G4_ABOVE"
+        out := f_priceK(g4Level)
+    else if gateCode == "D1_WATCH"
+        out := "↑" + f_priceK(d1Level) + " ↓" + f_priceK(d2Level)
+    else if gateCode == "D2_WATCH"
+        out := "↑" + f_priceK(d2Level) + " ↓" + f_priceK(d3Level)
+    else if gateCode == "D3_WATCH"
+        out := "↑" + f_priceK(d3Level) + " ↓" + f_priceK(d4High)
+    else if gateCode == "D4_LIFELINE"
+        out := f_rangeK(d4Low, d4High) + " ↓" + f_priceK(d4SweepHigh)
+    else if gateCode == "D4_BROKEN"
+        out := "↑" + f_priceK(d4Low) + " ↓" + f_priceK(d4SweepHigh)
+    else if gateCode == "D4_SWEEP"
+        out := f_rangeK(d4SweepLow, d4SweepHigh)
+    else if gateCode == "BELOW_SWEEP"
+        out := "↓" + f_priceK(d4SweepLow)
+    out
+
+//==================================================
+// 데이터 요청 | 심볼당 1콜 (튜플) - 총 10콜
+//==================================================
+f_g(float nowV, float pastV) =>
+    not na(nowV) and not na(pastV) and pastV != 0.0 ? (nowV / pastV - 1.0) * 100.0 : na
+
+// 단일/폴백 M2
+[m2Now, m2PastS, m2PastL] = request.security(m2Symbol, m2Tf, [close, close[m2LbShort], close[m2LbLong]], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+
+// 합성 구성 (지역 M2 + FX)
+[usNow, usPS, usPL] = request.security(usM2Sym, m2Tf, [close, close[m2LbShort], close[m2LbLong]], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+[cnNow, cnPS, cnPL] = request.security(cnM2Sym, m2Tf, [close, close[m2LbShort], close[m2LbLong]], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+[euNow, euPS, euPL] = request.security(euM2Sym, m2Tf, [close, close[m2LbShort], close[m2LbLong]], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+[jpNow, jpPS, jpPL] = request.security(jpM2Sym, m2Tf, [close, close[m2LbShort], close[m2LbLong]], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+[cnFxNow, cnFxPS, cnFxPL] = request.security(cnFxSym, m2Tf, [close, close[m2LbShort], close[m2LbLong]], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+[euFxNow, euFxPS, euFxPL] = request.security(euFxSym, m2Tf, [close, close[m2LbShort], close[m2LbLong]], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+[jpFxNow, jpFxPS, jpFxPL] = request.security(jpFxSym, m2Tf, [close, close[m2LbShort], close[m2LbLong]], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+
+// BTC (매크로 TF + 차트 TF)
+[btcNowMacro, btcPS, btcPL] = request.security(btcSymbol, m2Tf, [close, close[m2LbShort], close[m2LbLong]], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+btcNowChartTf = request.security(btcSymbol, timeframe.period, close, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+
+//==================================================
+// M2 성장률 계산 | 단일 vs 합성(USD 성장률 가중평균)
+//==================================================
+// 단일
+sglShort = f_g(m2Now, m2PastS)
+sglLong = f_g(m2Now, m2PastL)
+
+// 지역별 USD 환산 성장률 (US 는 FX=1)
+gUS_s = f_g(usNow, usPS)
+gUS_l = f_g(usNow, usPL)
+gCN_s = f_g(cnNow * cnFxNow, cnPS * cnFxPS)
+gCN_l = f_g(cnNow * cnFxNow, cnPL * cnFxPL)
+gEU_s = f_g(euNow * euFxNow, euPS * euFxPS)
+gEU_l = f_g(euNow * euFxNow, euPL * euFxPL)
+gJP_s = f_g(jpNow * jpFxNow, jpPS * jpFxPS)
+gJP_l = f_g(jpNow * jpFxNow, jpPL * jpFxPL)
+
+wSum = wUS + wCN + wEU + wJP
+bool compOkS = not na(gUS_s) and not na(gCN_s) and not na(gEU_s) and not na(gJP_s) and wSum > 0.0
+bool compOkL = not na(gUS_l) and not na(gCN_l) and not na(gEU_l) and not na(gJP_l) and wSum > 0.0
+compShort = compOkS ? (wUS * gUS_s + wCN * gCN_s + wEU * gEU_s + wJP * gJP_s) / wSum : na
+compLong = compOkL ? (wUS * gUS_l + wCN * gCN_l + wEU * gEU_l + wJP * gJP_l) / wSum : na
+
+bool wantComp = m2Mode == "합성(글로벌)"
+bool compFallback = wantComp and (na(compShort) or na(compLong))
+bool usingComp = wantComp and not compFallback
+
+m2PctShort = usingComp ? compShort : sglShort
+m2PctLong = usingComp ? compLong : sglLong
+
+// BTC 변화율 (판정 기준과 동일 룩백)
+btcPctShort = f_g(btcNowMacro, btcPS)
+btcPctLong = f_g(btcNowMacro, btcPL)
+
+bool useYoY = m2JudgeBasis == "YoY"
+m2JudgePct = useYoY ? m2PctLong : m2PctShort
+btcJudgePct = useYoY ? btcPctLong : btcPctShort
+m2ExpTh = useYoY ? m2ExpandThY : m2ExpandThS
+m2ConTh = useYoY ? m2ContractThY : m2ContractThS
+
+gatePrice = gatePriceSource == "BTC 심볼" ? btcNowChartTf : close
+
+//==================================================
+// 상태 판정 | M2 / BTC-M2 / GATE / LEAN
+//==================================================
+f_m2Code(float pct) =>
+    string out = "UNK"
+    if na(pct)
+        out := "UNK"
+    else if pct >= m2ExpTh
+        out := "EXP"
+    else if pct <= m2ConTh
+        out := "CON"
+    else if pct > 0
+        out := "SLOW"
+    else
+        out := "NEU"
+    out
+
+f_btcM2Code(string m2c, float bPct) =>
+    string out = "UNK"
+    if m2c == "UNK" or na(bPct)
+        out := "UNK"
+    else if m2c == "EXP" and bPct <= btcDownTh
+        out := "DECPL"
+    else if m2c == "EXP" and bPct >= btcUpTh
+        out := "RECPL"
+    else if (m2c == "EXP" or m2c == "SLOW") and bPct > 0
+        out := "CPL"
+    else if m2c == "CON" and bPct < 0
+        out := "RISK"
+    else
+        out := "NEU"
+    out
+
+f_gateCode(float p) =>
+    string out = "UNK"
+    if na(p)
+        out := "UNK"
+    else if p >= g4Level
+        out := "G4_ABOVE"
+    else if p >= g3High
+        out := "G3_RECLAIM"
+    else if p >= g3Low
+        out := "G3_TEST"
+    else if p >= g2High
+        out := "G2_RECLAIM"
+    else if p >= g2Low
+        out := "G2_TEST"
+    else if p >= g1High
+        out := "G1_RECLAIM"
+    else if p >= g1Low
+        out := "G1_TEST"
+    else if p >= d1Level
+        out := "G1_WAIT"
+    else if p >= d2Level
+        out := "D1_WATCH"
+    else if p >= d3Level
+        out := "D2_WATCH"
+    else if p > d4High
+        out := "D3_WATCH"
+    else if p >= d4Low and p <= d4High
+        out := "D4_LIFELINE"
+    else if p > d4SweepHigh and p < d4Low
+        out := "D4_BROKEN"
+    else if p >= d4SweepLow and p <= d4SweepHigh
+        out := "D4_SWEEP"
+    else
+        out := "BELOW_SWEEP"
+    out
+
+// v1.2: IGNITION_TRY 추가 (연료 있음 + 재연결인데 G2 미탈환)
+f_leanCode(string m2c, string bmc, string gc) =>
+    string out = "NEUTRAL"
+    bool gateRecovered = gc == "G2_RECLAIM" or gc == "G3_TEST" or gc == "G3_RECLAIM" or gc == "G4_ABOVE"
+    bool dangerGate = gc == "D1_WATCH" or gc == "D2_WATCH" or gc == "D3_WATCH" or gc == "D4_LIFELINE" or gc == "D4_BROKEN" or gc == "D4_SWEEP" or gc == "BELOW_SWEEP"
+    if dangerGate
+        out := "RISK_OFF"
+    else if m2c == "EXP" and (bmc == "RECPL" or bmc == "CPL") and gateRecovered
+        out := "FUEL_ON_IGNITION_ON"
+    else if m2c == "EXP" and bmc == "RECPL"
+        out := "FUEL_ON_IGNITION_TRY"
+    else if m2c == "EXP" and bmc == "DECPL"
+        out := "FUEL_ON_IGNITION_OFF"
+    else if m2c == "CON"
+        out := "FUEL_LOW"
+    else
+        out := "NEUTRAL"
+    out
+
+m2Code = f_m2Code(m2JudgePct)
+btcM2Code = f_btcM2Code(m2Code, btcJudgePct)
+gateCode = f_gateCode(gatePrice)
+leanCode = f_leanCode(m2Code, btcM2Code, gateCode)
+
+//==================================================
+// v1.2: 상태 지속기간 추적 (BTC-M2 / LEAN)
+//==================================================
+var string btcM2Prev = "INIT"
+var int btcM2SinceT = time
+if btcM2Code != btcM2Prev
+    btcM2Prev := btcM2Code
+    btcM2SinceT := time
+float btcM2Days = math.max(0.0, (timenow - btcM2SinceT) / 86400000.0)
+
+var string leanPrev = "INIT"
+var int leanSinceT = time
+if leanCode != leanPrev
+    leanPrev := leanCode
+    leanSinceT := time
+float leanDays = math.max(0.0, (timenow - leanSinceT) / 86400000.0)
+
+//==================================================
+// 언어별 문구
+//==================================================
+f_m2Text(string mode, string code) =>
+    string pcts = "YoY " + f_pct(m2PctLong) + " / " + str.tostring(m2LbShort) + "M " + f_pct(m2PctShort)
+    string out = ""
+    if mode == "한국어"
+        if code == "EXP"
+            out := "M2 확장(" + pcts + ")"
+        else if code == "SLOW"
+            out := "M2 둔화(" + pcts + ")"
+        else if code == "CON"
+            out := "M2 수축(" + pcts + ")"
+        else if code == "NEU"
+            out := "M2 중립(" + pcts + ")"
+        else
+            out := "M2 미확인"
+    else if mode == "English"
+        if code == "EXP"
+            out := "M2 Expansion(" + pcts + ")"
+        else if code == "SLOW"
+            out := "M2 Slowing(" + pcts + ")"
+        else if code == "CON"
+            out := "M2 Contraction(" + pcts + ")"
+        else if code == "NEU"
+            out := "M2 Neutral(" + pcts + ")"
+        else
+            out := "M2 Unknown"
+    else
+        if code == "UNK"
+            out := "M2:UNK"
+        else
+            out := "M2:" + code + "(" + pcts + ")"
+    out
+
+f_btcM2Text(string mode, string code) =>
+    string dur = f_durText(btcM2Days)
+    string pb = f_pct(btcJudgePct)
+    string out = ""
+    if mode == "한국어"
+        if code == "DECPL"
+            out := "BTC-M2 디커플링(BTC " + pb + ", " + dur + ")"
+        else if code == "RECPL"
+            out := "BTC-M2 재연결(BTC " + pb + ", " + dur + ")"
+        else if code == "CPL"
+            out := "BTC-M2 동조(BTC " + pb + ")"
+        else if code == "RISK"
+            out := "BTC-M2 리스크(BTC " + pb + ", " + dur + ")"
+        else if code == "NEU"
+            out := "BTC-M2 중립(BTC " + pb + ")"
+        else
+            out := "BTC-M2 미확인"
+    else if mode == "English"
+        if code == "DECPL"
+            out := "BTC-M2 Decoupled(BTC " + pb + ", " + dur + ")"
+        else if code == "RECPL"
+            out := "BTC-M2 Recoupling(BTC " + pb + ", " + dur + ")"
+        else if code == "CPL"
+            out := "BTC-M2 Coupled(BTC " + pb + ")"
+        else if code == "RISK"
+            out := "BTC-M2 Risk(BTC " + pb + ", " + dur + ")"
+        else if code == "NEU"
+            out := "BTC-M2 Neutral(BTC " + pb + ")"
+        else
+            out := "BTC-M2 Unknown"
+    else
+        if code == "UNK"
+            out := "BTC-M2:UNK"
+        else
+            out := "BTC-M2:" + code + "(BTC " + pb + ", " + dur + ")"
+    out
+
+f_leanText(string mode, string code) =>
+    string dur = f_durText(leanDays)
+    string out = ""
+    if mode == "한국어"
+        if code == "FUEL_ON_IGNITION_OFF"
+            out := "상태: 연료 있음 / 점화 대기 (" + dur + ")"
+        else if code == "FUEL_ON_IGNITION_TRY"
+            out := "상태: 연료 있음 / 점화 시도 (" + dur + ")"
+        else if code == "FUEL_ON_IGNITION_ON"
+            out := "상태: 연료 있음 / 점화 확인 (" + dur + ")"
+        else if code == "FUEL_LOW"
+            out := "상태: 연료 약함 (" + dur + ")"
+        else if code == "RISK_OFF"
+            out := "상태: 위험 회피 (" + dur + ")"
+        else
+            out := "상태: 중립 (" + dur + ")"
+    else if mode == "English"
+        if code == "FUEL_ON_IGNITION_OFF"
+            out := "LEAN: Fuel On / Ignition Off (" + dur + ")"
+        else if code == "FUEL_ON_IGNITION_TRY"
+            out := "LEAN: Fuel On / Ignition Try (" + dur + ")"
+        else if code == "FUEL_ON_IGNITION_ON"
+            out := "LEAN: Fuel On / Ignition On (" + dur + ")"
+        else if code == "FUEL_LOW"
+            out := "LEAN: Fuel Low (" + dur + ")"
+        else if code == "RISK_OFF"
+            out := "LEAN: Risk-Off (" + dur + ")"
+        else
+            out := "LEAN: Neutral (" + dur + ")"
+    else
+        if code == "FUEL_ON_IGNITION_OFF"
+            out := "LEAN:FUEL_ON/IGN_OFF(" + dur + ")"
+        else if code == "FUEL_ON_IGNITION_TRY"
+            out := "LEAN:FUEL_ON/IGN_TRY(" + dur + ")"
+        else if code == "FUEL_ON_IGNITION_ON"
+            out := "LEAN:FUEL_ON/IGN_ON(" + dur + ")"
+        else if code == "FUEL_LOW"
+            out := "LEAN:FUEL_LOW(" + dur + ")"
+        else if code == "RISK_OFF"
+            out := "LEAN:RISK_OFF(" + dur + ")"
+        else
+            out := "LEAN:NEUTRAL(" + dur + ")"
+    out
+f_gateName(string mode, string code) =>
+    string out = ""
+    if mode == "한국어"
+        if code == "G4_ABOVE"
+            out := "G4 상단"
+        else if code == "G3_RECLAIM"
+            out := "G3 탈환"
+        else if code == "G3_TEST"
+            out := "G3 테스트"
+        else if code == "G2_RECLAIM"
+            out := "G2 탈환"
+        else if code == "G2_TEST"
+            out := "G2 테스트"
+        else if code == "G1_RECLAIM"
+            out := "G1 탈환"
+        else if code == "G1_TEST"
+            out := "G1 테스트"
+        else if code == "G1_WAIT"
+            out := "G1 회복 전"
+        else if code == "D1_WATCH"
+            out := "D1 감시"
+        else if code == "D2_WATCH"
+            out := "D2 감시"
+        else if code == "D3_WATCH"
+            out := "D3 감시"
+        else if code == "D4_LIFELINE"
+            out := "D4 생명선"
+        else if code == "D4_BROKEN"
+            out := "D4 이탈 후 회복감시"
+        else if code == "D4_SWEEP"
+            out := "D4 스윕 구역"
+        else if code == "BELOW_SWEEP"
+            out := "D4 스윕 하단 이탈"
+        else
+            out := "관문 미확인"
+    else if mode == "English"
+        if code == "G4_ABOVE"
+            out := "G4 Above"
+        else if code == "G3_RECLAIM"
+            out := "G3 Reclaim"
+        else if code == "G3_TEST"
+            out := "G3 Test"
+        else if code == "G2_RECLAIM"
+            out := "G2 Reclaim"
+        else if code == "G2_TEST"
+            out := "G2 Test"
+        else if code == "G1_RECLAIM"
+            out := "G1 Reclaim"
+        else if code == "G1_TEST"
+            out := "G1 Test"
+        else if code == "G1_WAIT"
+            out := "G1 Pending"
+        else if code == "D1_WATCH"
+            out := "D1 Watch"
+        else if code == "D2_WATCH"
+            out := "D2 Watch"
+        else if code == "D3_WATCH"
+            out := "D3 Watch"
+        else if code == "D4_LIFELINE"
+            out := "D4 Lifeline"
+        else if code == "D4_BROKEN"
+            out := "D4 Broken Watch"
+        else if code == "D4_SWEEP"
+            out := "D4 Sweep Zone"
+        else if code == "BELOW_SWEEP"
+            out := "Below D4 Sweep"
+        else
+            out := "Gate Unknown"
+    else
+        out := code
+    out
+
+f_gateText(string mode, string code) =>
+    string lvl = f_levelText(code)
+    string out = ""
+    if mode == "한국어"
+        out := "관문: " + f_gateName(mode, code)
+        if lvl != ""
+            out += " " + lvl
+    else if mode == "English"
+        out := "GATE: " + f_gateName(mode, code)
+        if lvl != ""
+            out += " " + lvl
+    else
+        out := "GATE:" + f_gateName(mode, code)
+        if lvl != ""
+            out += " " + lvl
+    out
+
+f_macroLine(string mode) =>
+    string out = ""
+    if mode == "한국어"
+        out := "매크로: " + f_m2Text(mode, m2Code) + " / " + f_btcM2Text(mode, btcM2Code)
+    else if mode == "English"
+        out := "MACRO: " + f_m2Text(mode, m2Code) + " / " + f_btcM2Text(mode, btcM2Code)
+    else
+        out := f_m2Text(mode, m2Code) + " | " + f_btcM2Text(mode, btcM2Code)
+    out
+
+// v1.2: 게이트 입력 순서 무결성 + 비 BTC 차트 경고 + 합성 폴백 표시
+bool gateOrderOk = d4SweepLow < d4SweepHigh and d4SweepHigh < d4Low and d4Low < d4High and d4High < d3Level and d3Level < d2Level and d2Level < d1Level and d1Level < g1Low and g1Low < g1High and g1High < g2Low and g2Low < g2High and g2High < g3Low and g3Low < g3High and g3High < g4Level
+bool chartGateWarn = gatePriceSource == "현재 차트" and not str.contains(str.upper(syminfo.ticker), "BTC")
+
+f_sourceLine(string mode) =>
+    string gateSourceText = gatePriceSource == "BTC 심볼" ? btcSymbol : "CHART"
+    string m2SrcText = usingComp ? "GLOBAL(4)" : (compFallback ? "FALLBACK->" + m2Symbol : m2Symbol)
+    string warn = ""
+    if not gateOrderOk
+        warn += " ⚠GATE순서"
+    if chartGateWarn
+        warn += " ⚠비트외차트"
+    string out = ""
+    if mode == "한국어"
+        out := "CTX: 자동 | M2=" + m2SrcText + " | GATE=" + gateSourceText + warn
+    else if mode == "English"
+        out := "CTX: AUTO | M2=" + m2SrcText + " | GATE=" + gateSourceText + warn
+    else
+        out := "CTX:AUTO | M2=" + m2SrcText + " | GATE=" + gateSourceText + warn
+    out
+
+//==================================================
+// 색상 보조
+//==================================================
+f_gateColor(string code) =>
+    color out = gateColor
+    bool dSide = code == "D1_WATCH" or code == "D2_WATCH" or code == "D3_WATCH" or code == "D4_LIFELINE" or code == "D4_BROKEN" or code == "D4_SWEEP" or code == "BELOW_SWEEP"
+    if dSide
+        out := riskColor
+    else
+        out := gateColor
+    out
+
+f_leanColor(string code) =>
+    color out = leanColor
+    if code == "RISK_OFF" or code == "FUEL_LOW"
+        out := riskColor
+    else if code == "FUEL_ON_IGNITION_TRY"
+        out := tryColor
+    else
+        out := leanColor
+    out
+
+//==================================================
+// 테이블 (v1.2: 동적 행 구성)
+//==================================================
+var table hud = showVisuals ? table.new(position.top_left, 1, 8, bgcolor=bgColor, border_width=1, border_color=borderColor) : na
+
+if barstate.islast and showVisuals
+    table.set_position(hud, f_posFromOpt(posOpt))
+    table.clear(hud, 0, 0, 0, 7)
+    if showHud
+        string symbolText = f_symbolText()
+        string tfText = f_tfLabel()
+        string countdownText = f_countdownText(cdRawSec)
+        string line2Text = showCountdown ? tfText + " - " + countdownText : tfText
+        color line2Color = cdRawSec <= 0.5 ? closedColor : countdownColor
+        string macroText = f_macroLine(dashboardMode)
+        string leanText = f_leanText(dashboardMode, leanCode)
+        string gateText = f_gateText(dashboardMode, gateCode)
+        string sourceText = f_sourceLine(dashboardMode)
+        textSize = f_sizeFromOpt(hudSizeOpt)
+        int r = 0
+        if showBrand
+            table.cell(hud, 0, r, brandText, text_color=brandColor, bgcolor=bgColor, text_size=textSize)
+            r += 1
+        table.cell(hud, 0, r, symbolText, text_color=symbolColor, bgcolor=bgColor, text_size=textSize)
+        r += 1
+        table.cell(hud, 0, r, line2Text, text_color=line2Color, bgcolor=bgColor, text_size=textSize)
+        r += 1
+        if showMacroLine
+            table.cell(hud, 0, r, macroText, text_color=macroColor, bgcolor=bgColor, text_size=textSize)
+            r += 1
+        if showLeanLine
+            table.cell(hud, 0, r, leanText, text_color=f_leanColor(leanCode), bgcolor=bgColor, text_size=textSize)
+            r += 1
+        if showGateLine
+            table.cell(hud, 0, r, gateText, text_color=f_gateColor(gateCode), bgcolor=bgColor, text_size=textSize)
+            r += 1
+        if showSourceLine
+            table.cell(hud, 0, r, sourceText, text_color=sourceColor, bgcolor=bgColor, text_size=textSize)
+            r += 1
+
+//==================================================
+// v1.2: 링스 버스 출력 (히든 plot) - MAAT/Reporter 소비용
+//==================================================
+f_m2CodeInt(string c) =>
+    int v = 0
+    if c == "CON"
+        v := 1
+    else if c == "NEU"
+        v := 2
+    else if c == "SLOW"
+        v := 3
+    else if c == "EXP"
+        v := 4
+    v
+
+f_btcM2CodeInt(string c) =>
+    int v = 0
+    if c == "RISK"
+        v := 1
+    else if c == "NEU"
+        v := 2
+    else if c == "CPL"
+        v := 3
+    else if c == "RECPL"
+        v := 4
+    else if c == "DECPL"
+        v := 5
+    v
+
+f_gateCodeInt(string c) =>
+    int v = -1
+    if c == "BELOW_SWEEP"
+        v := 0
+    else if c == "D4_SWEEP"
+        v := 1
+    else if c == "D4_BROKEN"
+        v := 2
+    else if c == "D4_LIFELINE"
+        v := 3
+    else if c == "D3_WATCH"
+        v := 4
+    else if c == "D2_WATCH"
+        v := 5
+    else if c == "D1_WATCH"
+        v := 6
+    else if c == "G1_WAIT"
+        v := 7
+    else if c == "G1_TEST"
+        v := 8
+    else if c == "G1_RECLAIM"
+        v := 9
+    else if c == "G2_TEST"
+        v := 10
+    else if c == "G2_RECLAIM"
+        v := 11
+    else if c == "G3_TEST"
+        v := 12
+    else if c == "G3_RECLAIM"
+        v := 13
+    else if c == "G4_ABOVE"
+        v := 14
+    v
+
+f_leanCodeInt(string c) =>
+    int v = 2
+    if c == "RISK_OFF"
+        v := 0
+    else if c == "FUEL_LOW"
+        v := 1
+    else if c == "NEUTRAL"
+        v := 2
+    else if c == "FUEL_ON_IGNITION_OFF"
+        v := 3
+    else if c == "FUEL_ON_IGNITION_TRY"
+        v := 4
+    else if c == "FUEL_ON_IGNITION_ON"
+        v := 5
+    v
+
+//==================================================
+// MAAT2 Compact BUS | Macro weather / background filter
+//==================================================
+f_clamp(float v, float lo, float hi) =>
+    math.max(lo, math.min(hi, v))
+
+int hudM2Code = f_m2CodeInt(m2Code)
+int hudBtcM2Code = f_btcM2CodeInt(btcM2Code)
+int hudGateCode = f_gateCodeInt(gateCode)
+int hudLeanCode = f_leanCodeInt(leanCode)
+
+bool hudValid = not na(m2JudgePct) and not na(btcJudgePct) and not na(gatePrice) and hudM2Code > 0 and hudBtcM2Code > 0 and hudGateCode >= 0
+bool hudM2Support = m2Code == "EXP" or m2Code == "SLOW"
+bool hudM2Stress = m2Code == "CON"
+bool hudBtcM2Coupled = btcM2Code == "CPL" or btcM2Code == "RECPL"
+bool hudBtcM2Decoupled = btcM2Code == "DECPL" or btcM2Code == "RISK"
+bool hudGateSupport = gateCode == "G2_RECLAIM" or gateCode == "G3_TEST" or gateCode == "G3_RECLAIM" or gateCode == "G4_ABOVE"
+bool hudGateBlock = gateCode == "D1_WATCH" or gateCode == "D2_WATCH" or gateCode == "D3_WATCH" or gateCode == "D4_LIFELINE" or gateCode == "D4_BROKEN" or gateCode == "D4_SWEEP" or gateCode == "BELOW_SWEEP"
+bool hudLeanSupport = leanCode == "FUEL_ON_IGNITION_TRY" or leanCode == "FUEL_ON_IGNITION_ON"
+bool hudLeanRisk = leanCode == "FUEL_LOW" or leanCode == "RISK_OFF"
+bool hudMacroConflict = (hudM2Support and (hudBtcM2Decoupled or hudGateBlock or hudLeanRisk)) or (hudM2Stress and (hudBtcM2Coupled or hudGateSupport or hudLeanSupport))
+
+float hudContextRaw = 50.0
+hudContextRaw += hudM2Support ? 14.0 : 0.0
+hudContextRaw += hudBtcM2Coupled ? 12.0 : 0.0
+hudContextRaw += hudGateSupport ? 10.0 : 0.0
+hudContextRaw += hudLeanSupport ? 10.0 : 0.0
+hudContextRaw -= hudM2Stress ? 16.0 : 0.0
+hudContextRaw -= hudBtcM2Decoupled ? 14.0 : 0.0
+hudContextRaw -= hudGateBlock ? 12.0 : 0.0
+hudContextRaw -= hudLeanRisk ? 12.0 : 0.0
+hudContextRaw -= hudMacroConflict ? 8.0 : 0.0
+float hudContextScore = hudValid ? f_clamp(hudContextRaw, 0.0, 100.0) : 0.0
+
+int hudStressCount = (hudM2Stress ? 1 : 0) + (hudBtcM2Decoupled ? 1 : 0) + (hudGateBlock ? 1 : 0) + (hudLeanRisk ? 1 : 0) + (hudMacroConflict ? 1 : 0)
+int hudRiskCode = 5
+if hudValid
+    if hudStressCount >= 3
+        hudRiskCode := 4
+    else if hudStressCount == 2
+        hudRiskCode := 3
+    else if hudStressCount == 1
+        hudRiskCode := 2
+    else if hudContextScore < 50
+        hudRiskCode := 1
+    else
+        hudRiskCode := 0
+
+int hudEventCode = 0
+if not hudValid
+    hudEventCode := 9
+else if hudLeanRisk
+    hudEventCode := 8
+else if hudGateBlock
+    hudEventCode := 7
+else if hudGateSupport
+    hudEventCode := 6
+else if hudBtcM2Decoupled
+    hudEventCode := 5
+else if hudBtcM2Coupled
+    hudEventCode := 4
+else if hudM2Stress
+    hudEventCode := 3
+else if hudM2Support
+    hudEventCode := 2
+else
+    hudEventCode := 1
+
+int hudWeatherCode = 0
+if not hudValid
+    hudWeatherCode := 90
+else if hudMacroConflict
+    hudWeatherCode := 80
+else if hudLeanRisk
+    hudWeatherCode := 51
+else if hudLeanSupport
+    hudWeatherCode := 50
+else if hudGateBlock
+    hudWeatherCode := 41
+else if hudGateSupport
+    hudWeatherCode := 40
+else if hudBtcM2Decoupled
+    hudWeatherCode := 31
+else if hudBtcM2Coupled
+    hudWeatherCode := 30
+else if hudM2Stress
+    hudWeatherCode := 21
+else if hudM2Support
+    hudWeatherCode := 20
+else
+    hudWeatherCode := 10
+
+int hudDirPack = 1
+if hudValid
+    if hudContextScore >= 60 and hudRiskCode < 3
+        hudDirPack := 2
+    else if hudContextScore <= 40 or hudRiskCode >= 4
+        hudDirPack := 0
+    else
+        hudDirPack := 1
+
+int hudPackCode = hudDirPack * 10000 + hudRiskCode * 1000 + hudEventCode * 10 + (hudValid ? 1 : 0)
+
+plot(float(hudPackCode), title="AL_HUD_PACK_CODE", display=display.none)
+plot(hudContextScore, title="AL_HUD_CONTEXT_SCORE", display=display.none)
+plot(float(hudWeatherCode), title="AL_HUD_WEATHER_CODE", display=display.none)
+plot(float(hudRiskCode), title="AL_HUD_RISK_CODE", display=display.none)
+plot(float(hudEventCode), title="AL_HUD_EVENT_CODE", display=display.none)
+plot(float(hudM2Code), title="AL_HUD_M2_CODE", display=display.none)
+plot(float(hudBtcM2Code), title="AL_HUD_BTCM2_CODE", display=display.none)
+plot(float(hudGateCode), title="AL_HUD_GATE_CODE", display=display.none)
+plot(float(hudLeanCode), title="AL_HUD_LEAN_CODE", display=display.none)
+plot(m2PctLong, title="AL_HUD_M2_YOY", display=display.none)
+plot(btcPctLong, title="AL_HUD_BTC_YOY", display=display.none)
+//==================================================
+// v1.2: 얼러트 (상태 전이 기반)
+//==================================================
+bool leanChanged = leanCode != leanCode[1]
+bool ignitionOnEvt = leanCode == "FUEL_ON_IGNITION_ON" and leanCode[1] != "FUEL_ON_IGNITION_ON"
+bool riskOffEvt = leanCode == "RISK_OFF" and leanCode[1] != "RISK_OFF"
+
+alertcondition(ignitionOnEvt, "AL HUD | IGNITION ON", "AiLynx HUD: M2 fuel + BTC recoupling + G2 reclaimed. Background context active.")
+alertcondition(riskOffEvt, "AL HUD | RISK OFF", "AiLynx HUD: D-ladder danger zone active. Risk-off context.")
+alertcondition(leanChanged, "AL HUD | LEAN CHANGE", "AiLynx HUD: LEAN context state changed.")

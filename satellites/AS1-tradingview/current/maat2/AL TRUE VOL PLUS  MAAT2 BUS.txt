@@ -1,0 +1,758 @@
+//@version=6
+indicator("AL TRUE VOL PLUS | MAAT2 BUS", shorttitle="AL TV+ MAAT2", overlay=false, max_labels_count=300, precision=2, dynamic_requests=true)
+
+showVisuals = input.bool(true, "DISPLAY: FULL (끄면 HEADLESS)", group="00. Render")
+
+// ════════════════════════════════════════════════════════════════════════
+// AL TRUE VOL PLUS — MAAT Flow Proxy
+// ------------------------------------------------------------------------
+// 이 지표는 실제 호가창/체결 테이프 기반 Bid/Ask Delta가 아닙니다.
+// TradingView Pine에서 접근 가능한 OHLCV와 lower timeframe 배열을 이용해
+// 매수·매도 압력을 추정하는 "LTF / PROXY 기반 거래량 분해 센서"입니다.
+//
+// v2 개선 핵심
+//  1) 이름/설명 정리: TRUE 체결량이 아니라 TRUE FLOW PROXY로 명시
+//  2) 분해 모드 추가: 차트 LTF 비율 적용 / 거래소별 PROXY 가중 분해 선택
+//  3) 거래량 기준 추가: BASE / QUOTE / NORMALIZED
+//  4) 숨은물량 boolean + deceptionScore 0~100 점수화
+//  5) 흡수·클라이맥스 세분화: START / EXHAUST / TRAP / ABSORB
+//  6) Spot / Perp / Binance Dominance 출력
+//  7) alert() JSON 추가 + 기존 alertcondition 유지
+//
+// MAAT BUS 기본 출력
+//  DIR_CODE   : -1 매도 흐름 / 0 중립 / 1 매수 흐름
+//  SCORE      : 0~100 매수 우위도, 50 균형
+//  RISK_CODE  : 0 안정 / 1 관찰 / 2 숨은물량 / 3 흡수 / 4 트랩 / 5 클라이맥스
+//  EVENT_CODE : 0 없음 / 1 방향 / 5 클라이맥스 / 6 흡수 / 7 숨은물량 / 9 강한 거래량
+//
+// MAAT2 Compact BUS 추가 출력
+//  PACK_CODE   : dirPack * 10000 + risk * 1000 + event * 10 + valid
+//  TV_SCORE    : 방향 지시가 아니라 힘 발현 후보 강도
+//  DETAIL_CODE : Hub/GPT 브리핑용 세부 이벤트 압축
+// ════════════════════════════════════════════════════════════════════════
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Utility
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+f_clamp(float x, float lo, float hi) =>
+    math.max(lo, math.min(hi, x))
+
+f_safe(float x) =>
+    na(x) ? 0.0 : x
+
+f_ok(float x) =>
+    not na(x) and x > 0
+
+f_ratio_proxy(float o, float h, float l, float c) =>
+    float bp = (c - l) + (h - o)
+    float sp = (h - c) + (o - l)
+    float tp = bp + sp
+    f_clamp(tp > 0 ? bp / tp : 0.5, 0.0, 1.0)
+
+f_fmt_vol(float v) =>
+    float av = math.abs(v)
+    string sign = v < 0 ? "-" : ""
+    string t = str.tostring(v, "#.##")
+    if av >= 1e12
+        t := sign + str.tostring(av / 1e12, "#.##") + "T"
+    else if av >= 1e9
+        t := sign + str.tostring(av / 1e9, "#.##") + "B"
+    else if av >= 1e6
+        t := sign + str.tostring(av / 1e6, "#.##") + "M"
+    else if av >= 1e3
+        t := sign + str.tostring(av / 1e3, "#.##") + "K"
+    t
+
+f_tsize(int n) =>
+    n <= 2 ? size.tiny : n <= 6 ? size.small : n <= 8 ? size.normal : size.large
+
+f_pos(string o) =>
+    switch o
+        "좌상" => position.top_left
+        "상중" => position.top_center
+        "우상" => position.top_right
+        "좌중" => position.middle_left
+        "정중" => position.middle_center
+        "우중" => position.middle_right
+        "좌하" => position.bottom_left
+        "하중" => position.bottom_center
+        => position.bottom_right
+
+f_ltf_res(string mode) =>
+    string r = "1"
+    if mode == "자동"
+        int s = timeframe.in_seconds(timeframe.period)
+        if s <= 60
+            r := "5S"
+        else if s <= 300
+            r := "30S"
+        else if s <= 3600
+            r := "1"
+        else if s <= 14400
+            r := "5"
+        else if s <= 86400
+            r := "15"
+        else
+            r := "60"
+    else if mode == "1초"
+        r := "1S"
+    else if mode == "5초"
+        r := "5S"
+    else if mode == "10초"
+        r := "10S"
+    else if mode == "30초"
+        r := "30S"
+    else if mode == "1분"
+        r := "1"
+    else if mode == "3분"
+        r := "3"
+    else if mode == "5분"
+        r := "5"
+    else if mode == "15분"
+        r := "15"
+    r
+
+f_sec(string sym) =>
+    request.security(sym, timeframe.period, [open, high, low, close, volume], ignore_invalid_symbol=true)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Groups
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+grpEngine = "01. 엔진 / 분해 방식"
+grpEx     = "02. 멀티거래소"
+grpCustom = "03. 사용자 심볼"
+grpDecept = "04. 숨은물량 / LIE 점수"
+grpAbsorb = "05. 흡수 / 클라이맥스"
+grpCVD    = "06. CVD"
+grpView   = "07. 표시 / 색상"
+grpTable  = "08. 정보표"
+grpOut    = "09. 출력 / 알림"
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 01. Engine
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+useMultiEx = input.bool(true, "멀티거래소 사용", group=grpEngine, display=display.none)
+splitMode  = input.string("거래소별 PROXY", "매수·매도 분해 모드", options=["차트 LTF/PROXY", "거래소별 PROXY"], tooltip="차트 LTF/PROXY: 전체 거래량에 차트 심볼의 LTF/PROXY 비율을 적용합니다. 거래소별 PROXY: 각 거래소 OHLCV를 따로 분해해 합산합니다. LTF보다 진짜 체결에 가깝지는 않지만 멀티거래소 방향 왜곡을 줄입니다.", group=grpEngine, display=display.none)
+volMode    = input.string("BASE", "거래량 기준", options=["BASE", "QUOTE", "NORMALIZED"], tooltip="BASE: 원본 volume 합산. QUOTE: volume × close 거래대금. NORMALIZED: 각 거래소를 자기 평균 대비 배율로 정규화해 합산합니다.", group=grpEngine, display=display.none)
+useLTF     = input.bool(true, "차트 LTF 정밀 분해 사용", tooltip="분해 모드가 '차트 LTF/PROXY'일 때 우선 사용됩니다. 데이터가 없거나 하위 TF가 아니면 PROXY로 폴백합니다.", group=grpEngine, display=display.none)
+ltfMode    = input.string("자동", "LTF 해상도", options=["자동", "1초", "5초", "10초", "30초", "1분", "3분", "5분", "15분"], group=grpEngine, display=display.none)
+usePrevColor = input.bool(false, "가격 방향을 전봉 종가 대비로 판단", tooltip="끄면 시가 대비 캔들색 기준, 켜면 전봉 종가 대비 기준입니다.", group=grpEngine, display=display.none)
+avgLen     = input.int(20, "거래량 평균 기간", minval=5, maxval=500, group=grpEngine, display=display.none)
+normLen    = input.int(80, "NORMALIZED 평균 기간", minval=10, maxval=500, group=grpEngine, display=display.none)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 02. Multi Exchange
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+exCb     = input.bool(true, "Coinbase Spot USD", group=grpEx, display=display.none)
+exBnSpU  = input.bool(true, "Binance Spot USDT", group=grpEx, display=display.none)
+exBnSpC  = input.bool(true, "Binance Spot USDC", group=grpEx, display=display.none)
+exBnPpU  = input.bool(true, "Binance Perp USDT.P", group=grpEx, display=display.none)
+exBnPpC  = input.bool(true, "Binance Perp USDC.P", group=grpEx, display=display.none)
+exOkxSp  = input.bool(true, "OKX Spot USDT", group=grpEx, display=display.none)
+exOkxPp  = input.bool(true, "OKX Perp USDT.P", group=grpEx, display=display.none)
+exBybPp  = input.bool(true, "Bybit Perp USDT.P", group=grpEx, display=display.none)
+exBtgPp  = input.bool(true, "Bitget Perp USDT.P", group=grpEx, display=display.none)
+
+cus1On = input.bool(false, "사용자 심볼 #1", group=grpCustom, display=display.none)
+cus1Sy = input.string("", "심볼 #1", group=grpCustom, display=display.none)
+cus2On = input.bool(false, "사용자 심볼 #2", group=grpCustom, display=display.none)
+cus2Sy = input.string("", "심볼 #2", group=grpCustom, display=display.none)
+cus3On = input.bool(false, "사용자 심볼 #3", group=grpCustom, display=display.none)
+cus3Sy = input.string("", "심볼 #3", group=grpCustom, display=display.none)
+
+string base = syminfo.basecurrency
+if base == "" or na(base)
+    base := "BTC"
+
+string sCb    = "COINBASE:" + base + "USD"
+string sBnSpU = "BINANCE:" + base + "USDT"
+string sBnSpC = "BINANCE:" + base + "USDC"
+string sBnPpU = "BINANCE:" + base + "USDT.P"
+string sBnPpC = "BINANCE:" + base + "USDC.P"
+string sOkxSp = "OKX:" + base + "USDT"
+string sOkxPp = "OKX:" + base + "USDT.P"
+string sBybPp = "BYBIT:" + base + "USDT.P"
+string sBtgPp = "BITGET:" + base + "USDT.P"
+string sCus1  = (cus1On and cus1Sy != "") ? cus1Sy : syminfo.tickerid
+string sCus2  = (cus2On and cus2Sy != "") ? cus2Sy : syminfo.tickerid
+string sCus3  = (cus3On and cus3Sy != "") ? cus3Sy : syminfo.tickerid
+
+[o1, h1, l1, c1, v1] = f_sec(sCb)
+[o2, h2, l2, c2, v2] = f_sec(sBnSpU)
+[o3, h3, l3, c3, v3] = f_sec(sBnSpC)
+[o4, h4, l4, c4, v4] = f_sec(sBnPpU)
+[o5, h5, l5, c5, v5] = f_sec(sBnPpC)
+[o6, h6, l6, c6, v6] = f_sec(sOkxSp)
+[o7, h7, l7, c7, v7] = f_sec(sOkxPp)
+[o8, h8, l8, c8, v8] = f_sec(sBybPp)
+[o9, h9, l9, c9, v9] = f_sec(sBtgPp)
+[oc1, hc1, lc1, cc1, vc1] = f_sec(sCus1)
+[oc2, hc2, lc2, cc2, vc2] = f_sec(sCus2)
+[oc3, hc3, lc3, cc3, vc3] = f_sec(sCus3)
+
+float raw0 = f_safe(volume)
+float raw1 = exCb    ? f_safe(v1)  : 0.0
+float raw2 = exBnSpU ? f_safe(v2)  : 0.0
+float raw3 = exBnSpC ? f_safe(v3)  : 0.0
+float raw4 = exBnPpU ? f_safe(v4)  : 0.0
+float raw5 = exBnPpC ? f_safe(v5)  : 0.0
+float raw6 = exOkxSp ? f_safe(v6)  : 0.0
+float raw7 = exOkxPp ? f_safe(v7)  : 0.0
+float raw8 = exBybPp ? f_safe(v8)  : 0.0
+float raw9 = exBtgPp ? f_safe(v9)  : 0.0
+float rawC1 = (cus1On and cus1Sy != "") ? f_safe(vc1) : 0.0
+float rawC2 = (cus2On and cus2Sy != "") ? f_safe(vc2) : 0.0
+float rawC3 = (cus3On and cus3Sy != "") ? f_safe(vc3) : 0.0
+
+float bas0 = volMode == "QUOTE" ? raw0 * close : raw0
+float bas1 = volMode == "QUOTE" ? raw1 * f_safe(c1) : raw1
+float bas2 = volMode == "QUOTE" ? raw2 * f_safe(c2) : raw2
+float bas3 = volMode == "QUOTE" ? raw3 * f_safe(c3) : raw3
+float bas4 = volMode == "QUOTE" ? raw4 * f_safe(c4) : raw4
+float bas5 = volMode == "QUOTE" ? raw5 * f_safe(c5) : raw5
+float bas6 = volMode == "QUOTE" ? raw6 * f_safe(c6) : raw6
+float bas7 = volMode == "QUOTE" ? raw7 * f_safe(c7) : raw7
+float bas8 = volMode == "QUOTE" ? raw8 * f_safe(c8) : raw8
+float bas9 = volMode == "QUOTE" ? raw9 * f_safe(c9) : raw9
+float basC1 = volMode == "QUOTE" ? rawC1 * f_safe(cc1) : rawC1
+float basC2 = volMode == "QUOTE" ? rawC2 * f_safe(cc2) : rawC2
+float basC3 = volMode == "QUOTE" ? rawC3 * f_safe(cc3) : rawC3
+
+// NORMALIZED 모드용 평균은 매 봉에서 먼저 계산해야 Pine 경고/불안정을 피합니다.
+float bas0Avg = ta.sma(bas0, normLen)
+float bas1Avg = ta.sma(bas1, normLen)
+float bas2Avg = ta.sma(bas2, normLen)
+float bas3Avg = ta.sma(bas3, normLen)
+float bas4Avg = ta.sma(bas4, normLen)
+float bas5Avg = ta.sma(bas5, normLen)
+float bas6Avg = ta.sma(bas6, normLen)
+float bas7Avg = ta.sma(bas7, normLen)
+float bas8Avg = ta.sma(bas8, normLen)
+float bas9Avg = ta.sma(bas9, normLen)
+float basC1Avg = ta.sma(basC1, normLen)
+float basC2Avg = ta.sma(basC2, normLen)
+float basC3Avg = ta.sma(basC3, normLen)
+
+float w0 = volMode == "NORMALIZED" ? (bas0Avg > 0 ? bas0 / bas0Avg : 0.0) : bas0
+float w1 = volMode == "NORMALIZED" ? (bas1Avg > 0 ? bas1 / bas1Avg : 0.0) : bas1
+float w2 = volMode == "NORMALIZED" ? (bas2Avg > 0 ? bas2 / bas2Avg : 0.0) : bas2
+float w3 = volMode == "NORMALIZED" ? (bas3Avg > 0 ? bas3 / bas3Avg : 0.0) : bas3
+float w4 = volMode == "NORMALIZED" ? (bas4Avg > 0 ? bas4 / bas4Avg : 0.0) : bas4
+float w5 = volMode == "NORMALIZED" ? (bas5Avg > 0 ? bas5 / bas5Avg : 0.0) : bas5
+float w6 = volMode == "NORMALIZED" ? (bas6Avg > 0 ? bas6 / bas6Avg : 0.0) : bas6
+float w7 = volMode == "NORMALIZED" ? (bas7Avg > 0 ? bas7 / bas7Avg : 0.0) : bas7
+float w8 = volMode == "NORMALIZED" ? (bas8Avg > 0 ? bas8 / bas8Avg : 0.0) : bas8
+float w9 = volMode == "NORMALIZED" ? (bas9Avg > 0 ? bas9 / bas9Avg : 0.0) : bas9
+float wC1 = volMode == "NORMALIZED" ? (basC1Avg > 0 ? basC1 / basC1Avg : 0.0) : basC1
+float wC2 = volMode == "NORMALIZED" ? (basC2Avg > 0 ? basC2 / basC2Avg : 0.0) : basC2
+float wC3 = volMode == "NORMALIZED" ? (basC3Avg > 0 ? basC3 / basC3Avg : 0.0) : basC3
+
+float r0 = f_ratio_proxy(open, high, low, close)
+float r1 = f_ratio_proxy(o1, h1, l1, c1)
+float r2 = f_ratio_proxy(o2, h2, l2, c2)
+float r3 = f_ratio_proxy(o3, h3, l3, c3)
+float r4 = f_ratio_proxy(o4, h4, l4, c4)
+float r5 = f_ratio_proxy(o5, h5, l5, c5)
+float r6 = f_ratio_proxy(o6, h6, l6, c6)
+float r7 = f_ratio_proxy(o7, h7, l7, c7)
+float r8 = f_ratio_proxy(o8, h8, l8, c8)
+float r9 = f_ratio_proxy(o9, h9, l9, c9)
+float rC1 = f_ratio_proxy(oc1, hc1, lc1, cc1)
+float rC2 = f_ratio_proxy(oc2, hc2, lc2, cc2)
+float rC3 = f_ratio_proxy(oc3, hc3, lc3, cc3)
+
+int exCount = 0
+exCount += (exCb and f_ok(raw1)) ? 1 : 0
+exCount += (exBnSpU and f_ok(raw2)) ? 1 : 0
+exCount += (exBnSpC and f_ok(raw3)) ? 1 : 0
+exCount += (exBnPpU and f_ok(raw4)) ? 1 : 0
+exCount += (exBnPpC and f_ok(raw5)) ? 1 : 0
+exCount += (exOkxSp and f_ok(raw6)) ? 1 : 0
+exCount += (exOkxPp and f_ok(raw7)) ? 1 : 0
+exCount += (exBybPp and f_ok(raw8)) ? 1 : 0
+exCount += (exBtgPp and f_ok(raw9)) ? 1 : 0
+exCount += (cus1On and cus1Sy != "" and f_ok(rawC1)) ? 1 : 0
+exCount += (cus2On and cus2Sy != "" and f_ok(rawC2)) ? 1 : 0
+exCount += (cus3On and cus3Sy != "" and f_ok(rawC3)) ? 1 : 0
+
+float aggVol = w1 + w2 + w3 + w4 + w5 + w6 + w7 + w8 + w9 + wC1 + wC2 + wC3
+float spotVol = w1 + w2 + w3 + w6
+float perpVol = w4 + w5 + w7 + w8 + w9
+float binanceVol = w2 + w3 + w4 + w5
+float nonBinanceVol = w1 + w6 + w7 + w8 + w9 + wC1 + wC2 + wC3
+float spotPerpRatio = spotVol > 0 ? perpVol / spotVol : na
+float binanceDom = aggVol > 0 ? binanceVol / aggVol * 100.0 : na
+
+bool multiOk = useMultiEx and aggVol > 0
+float totalVolRaw = multiOk ? aggVol : w0
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Chart LTF split
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+string ltfRes = f_ltf_res(ltfMode)
+[ltfClose, ltfOpen, ltfVolm] = request.security_lower_tf(syminfo.tickerid, ltfRes, [close, open, volume])
+
+float buyVolLtf = 0.0
+float sellVolLtf = 0.0
+int nIntr = array.size(ltfVolm)
+if nIntr > 0
+    for i = 0 to nIntr - 1
+        float cc = array.get(ltfClose, i)
+        float oo = array.get(ltfOpen, i)
+        float vv = array.get(ltfVolm, i)
+        if not (na(cc) or na(oo) or na(vv))
+            if cc >= oo
+                buyVolLtf += vv
+            else
+                sellVolLtf += vv
+
+float ltfTot = buyVolLtf + sellVolLtf
+int chartSec = timeframe.in_seconds(timeframe.period)
+int ltfSec = timeframe.in_seconds(ltfRes)
+bool ltfSmaller = ltfSec > 0 and chartSec > 0 and ltfSec < chartSec
+bool ltfOk = useLTF and ltfSmaller and nIntr > 0 and ltfTot > 0
+float buyRatioLtf = ltfOk ? buyVolLtf / ltfTot : na
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Final split
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+float buyEx = w1*r1 + w2*r2 + w3*r3 + w4*r4 + w5*r5 + w6*r6 + w7*r7 + w8*r8 + w9*r9 + wC1*rC1 + wC2*rC2 + wC3*rC3
+float sellEx = aggVol - buyEx
+float buyRatioEx = aggVol > 0 ? buyEx / aggVol : na
+
+float chartRatio = ltfOk ? buyRatioLtf : r0
+bool useExchangeProxy = multiOk and splitMode == "거래소별 PROXY"
+float buyRatio = useExchangeProxy ? buyRatioEx : chartRatio
+buyRatio := f_clamp(nz(buyRatio, 0.5), 0.0, 1.0)
+float sellRatio = 1.0 - buyRatio
+
+float totalVol = totalVolRaw
+float buyVol = totalVol * buyRatio
+float sellVol = totalVol * sellRatio
+float delta = buyVol - sellVol
+float buyPct = buyRatio * 100.0
+float sellPct = sellRatio * 100.0
+float volAvg = ta.sma(totalVol, avgLen)
+float relVol = volAvg > 0 ? totalVol / volAvg : 0.0
+
+float dirBasis = usePrevColor ? close[1] : open
+bool priceUp = close >= dirBasis
+bool priceDn = close < dirBasis
+
+string srcLabel = useExchangeProxy ? "EX-PROXY" : ltfOk ? "CHART-LTF " + ltfRes : "CHART-PROXY"
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 04. Deception / hidden flow score
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+deceptSoftTh = input.float(42.0, "숨은물량 시작 임계 %", minval=20.0, maxval=55.0, step=1.0, group=grpDecept, display=display.none)
+deceptHardTh = input.float(60.0, "강한 숨은물량 임계 %", minval=45.0, maxval=90.0, step=1.0, group=grpDecept, display=display.none)
+deceptMinRel = input.float(0.8, "최소 상대거래량", minval=0.0, step=0.1, group=grpDecept, display=display.none)
+lieRelWeight = input.float(18.0, "상대거래량 점수 가중", minval=0.0, maxval=40.0, step=1.0, group=grpDecept, display=display.none)
+lieWickWeight = input.float(12.0, "꼬리 점수 가중", minval=0.0, maxval=30.0, step=1.0, group=grpDecept, display=display.none)
+
+float rangeSize = high - low
+float bodySize = math.abs(close - open)
+float bodyRatio = rangeSize > 0 ? bodySize / rangeSize : 0.0
+float upperWick = high - math.max(open, close)
+float lowerWick = math.min(open, close) - low
+float upperWickRatio = rangeSize > 0 ? upperWick / rangeSize : 0.0
+float lowerWickRatio = rangeSize > 0 ? lowerWick / rangeSize : 0.0
+
+float oppositePct = priceUp ? sellPct : priceDn ? buyPct : 50.0
+float lieBase = f_clamp((oppositePct - deceptSoftTh) / math.max(1.0, 100.0 - deceptSoftTh) * 100.0, 0.0, 100.0)
+float lieRel = f_clamp((relVol - deceptMinRel) / 2.0 * lieRelWeight, 0.0, lieRelWeight)
+float lieWick = priceUp ? upperWickRatio * lieWickWeight : priceDn ? lowerWickRatio * lieWickWeight : 0.0
+float cvdConflictBoost = (priceUp and delta < 0) or (priceDn and delta > 0) ? 10.0 : 0.0
+float deceptionScore = f_clamp(lieBase + lieRel + lieWick + cvdConflictBoost, 0.0, 100.0)
+
+bool relEnough = relVol >= deceptMinRel
+bool deceptSell = priceUp and sellPct >= deceptSoftTh and relEnough
+bool deceptBuy = priceDn and buyPct >= deceptSoftTh and relEnough
+bool hardDeceptSell = priceUp and sellPct >= deceptHardTh and relEnough
+bool hardDeceptBuy = priceDn and buyPct >= deceptHardTh and relEnough
+bool hiddenFlow = deceptSell or deceptBuy
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 05. Absorption / Climax detail
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+absorbVolMult = input.float(1.6, "흡수 거래량 기준", minval=1.0, step=0.1, group=grpAbsorb, display=display.none)
+absorbBodyMax = input.float(0.38, "흡수 최대 몸통비율", minval=0.1, maxval=0.8, step=0.01, group=grpAbsorb, display=display.none)
+absorbWickMin = input.float(0.22, "흡수 최소 꼬리비율", minval=0.0, maxval=0.8, step=0.01, group=grpAbsorb, display=display.none)
+sweepLen = input.int(12, "스윕/돌파 확인 기간", minval=3, maxval=100, group=grpAbsorb, display=display.none)
+climaxLen = input.int(60, "클라이맥스 기준 기간", minval=10, maxval=300, group=grpAbsorb, display=display.none)
+climaxPct = input.float(0.90, "클라이맥스 거래량 기준", minval=0.5, maxval=1.0, step=0.05, group=grpAbsorb, display=display.none)
+climaxDelta = input.float(62.0, "클라이맥스 방향 비중 %", minval=50.0, maxval=90.0, step=1.0, group=grpAbsorb, display=display.none)
+
+bool isBigVol = relVol >= absorbVolMult
+bool isSmallBody = bodyRatio <= absorbBodyMax
+float prevLow = ta.lowest(low[1], sweepLen)
+float prevHigh = ta.highest(high[1], sweepLen)
+bool sweepLow = low < prevLow and close > prevLow
+bool sweepHigh = high > prevHigh and close < prevHigh
+bool breakoutUp = close > prevHigh
+bool breakoutDown = close < prevLow
+
+bool buyAbsorb = isBigVol and buyPct >= 50.0 and (isSmallBody or lowerWickRatio >= absorbWickMin) and (priceDn or sweepLow or lowerWickRatio > upperWickRatio)
+bool sellAbsorb = isBigVol and sellPct >= 50.0 and (isSmallBody or upperWickRatio >= absorbWickMin) and (priceUp or sweepHigh or upperWickRatio > lowerWickRatio)
+
+float totalVolHighest = ta.highest(totalVol, climaxLen)
+bool climaxHi = totalVol >= totalVolHighest * climaxPct
+bool buyDominant = buyPct >= climaxDelta
+bool sellDominant = sellPct >= climaxDelta
+
+bool buyClimaxStart = climaxHi and priceUp and buyDominant and breakoutUp and bodyRatio >= 0.45
+bool sellClimaxStart = climaxHi and priceDn and sellDominant and breakoutDown and bodyRatio >= 0.45
+bool buyClimaxExhaust = climaxHi and priceUp and buyDominant and upperWickRatio >= absorbWickMin and not breakoutUp
+bool sellClimaxExhaust = climaxHi and priceDn and sellDominant and lowerWickRatio >= absorbWickMin and not breakoutDown
+bool buyClimaxTrap = climaxHi and buyDominant and sweepHigh
+bool sellClimaxTrap = climaxHi and sellDominant and sweepLow
+
+bool buyClimax = buyClimaxStart or buyClimaxExhaust or buyClimaxTrap
+bool sellClimax = sellClimaxStart or sellClimaxExhaust or sellClimaxTrap
+bool anyClimax = buyClimax or sellClimax
+bool anyAbsorb = buyAbsorb or sellAbsorb
+bool anyTrap = buyClimaxTrap or sellClimaxTrap or hardDeceptBuy or hardDeceptSell
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 06. CVD
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+cvdLen = input.int(50, "CVD 누적 기간", minval=5, maxval=500, group=grpCVD, display=display.none)
+cvdNormLen = input.int(200, "CVD 정규화 기간", minval=20, maxval=1000, group=grpCVD, display=display.none)
+showCVD = input.bool(true, "CVD 라인 표시", group=grpCVD, display=display.none)
+cvdScale = input.float(0.30, "CVD 표시 스케일", minval=0.05, maxval=2.0, step=0.05, group=grpCVD, display=display.none)
+
+float cvdRoll = math.sum(delta, cvdLen)
+float cvdMean = ta.sma(cvdRoll, cvdNormLen)
+float cvdStd = ta.stdev(cvdRoll, cvdNormLen)
+float cvdZ = cvdStd > 0 ? (cvdRoll - cvdMean) / cvdStd : 0.0
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// MAAT BUS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+int dirCode = delta > 0 ? 1 : delta < 0 ? -1 : 0
+float flowScore = f_clamp(buyPct + cvdZ * 3.0 - deceptionScore * 0.05, 0.0, 100.0)
+int riskCode = anyClimax ? 5 : anyTrap ? 4 : anyAbsorb ? 3 : hiddenFlow ? 2 : relVol >= 1.5 ? 1 : 0
+int eventCode = anyClimax ? 5 : anyAbsorb ? 6 : hiddenFlow ? 7 : relVol >= 1.5 ? 9 : dirCode != 0 ? 1 : 0
+int eventDetailCode = 0
+if buyClimaxTrap
+    eventDetailCode := 33
+else if sellClimaxTrap
+    eventDetailCode := -33
+else if buyClimaxExhaust
+    eventDetailCode := 32
+else if sellClimaxExhaust
+    eventDetailCode := -32
+else if buyClimaxStart
+    eventDetailCode := 31
+else if sellClimaxStart
+    eventDetailCode := -31
+else if buyAbsorb
+    eventDetailCode := 21
+else if sellAbsorb
+    eventDetailCode := -21
+else if deceptBuy
+    eventDetailCode := 12
+else if deceptSell
+    eventDetailCode := -12
+else if relVol >= 1.5
+    eventDetailCode := 9
+else
+    eventDetailCode := dirCode
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// MAAT2 Compact BUS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+bool tvValidData = not na(totalVol) and totalVol > 0.0 and not na(relVol)
+float tvRvol = relVol
+float tvDeltaRatio = tvValidData ? delta / totalVol : 0.0
+bool tvDeltaBull = tvValidData and (tvDeltaRatio >= 0.15 or cvdZ >= 0.5)
+bool tvDeltaBear = tvValidData and (tvDeltaRatio <= -0.15 or cvdZ <= -0.5)
+float tvDryThreshold = 0.5
+bool tvDry = tvValidData and relVol < tvDryThreshold
+bool tvBuild = tvValidData and relVol >= 1.0 and relVol < 1.5
+bool tvExpand = tvValidData and relVol >= 1.5
+bool tvMixedConflict = tvValidData and (anyTrap or hiddenFlow or (isSmallBody and relVol >= absorbVolMult and math.abs(cvdZ) >= 0.8))
+
+int tvDirPack = 1
+if tvValidData
+    if buyRatio >= 0.55 and delta > 0.0
+        tvDirPack := 2
+    else if sellRatio >= 0.55 and delta < 0.0
+        tvDirPack := 0
+
+int tvRiskCode = 0
+if not tvValidData
+    tvRiskCode := 5
+else if anyClimax
+    tvRiskCode := 4
+else if tvMixedConflict
+    tvRiskCode := 3
+else if anyAbsorb or tvExpand
+    tvRiskCode := 2
+else if tvDry or tvBuild
+    tvRiskCode := 1
+
+int tvEventCode = 0
+if not tvValidData
+    tvEventCode := 9
+else if anyClimax
+    tvEventCode := 5
+else if anyAbsorb
+    tvEventCode := 4
+else if tvMixedConflict
+    tvEventCode := 8
+else if tvDry
+    tvEventCode := 1
+else if tvExpand
+    tvEventCode := 3
+else if tvBuild
+    tvEventCode := 2
+else if tvDeltaBull
+    tvEventCode := 6
+else if tvDeltaBear
+    tvEventCode := 7
+
+int tvDetailCode = 0
+if not tvValidData
+    tvDetailCode := 90
+else if buyClimax
+    tvDetailCode := 50
+else if sellClimax
+    tvDetailCode := 51
+else if sellAbsorb
+    tvDetailCode := 40
+else if buyAbsorb
+    tvDetailCode := 41
+else if tvMixedConflict
+    tvDetailCode := 80
+else if tvDry
+    tvDetailCode := 10
+else if tvExpand
+    tvDetailCode := 30
+else if tvBuild
+    tvDetailCode := 20
+else if tvDeltaBull
+    tvDetailCode := 60
+else if tvDeltaBear
+    tvDetailCode := 61
+
+float tvRvolScore = f_clamp(tvRvol / 3.0 * 35.0, 0.0, 35.0)
+float tvEventBoost = anyClimax ? 25.0 : anyAbsorb ? 20.0 : tvMixedConflict ? 15.0 : tvExpand ? 14.0 : tvBuild ? 8.0 : tvDry ? 2.0 : 0.0
+float tvDeltaScore = f_clamp(math.abs(tvDeltaRatio) * 100.0 * 0.15 + math.abs(cvdZ) * 4.0, 0.0, 20.0)
+float tvStructureScore = f_clamp(bodyRatio * 12.0 + math.max(upperWickRatio, lowerWickRatio) * 8.0, 0.0, 20.0)
+float tvNoisePenalty = tvDry and not anyAbsorb and not anyClimax ? 8.0 : 0.0
+float tvScore = tvValidData ? f_clamp(tvRvolScore + tvEventBoost + tvDeltaScore + tvStructureScore + deceptionScore * 0.10 - tvNoisePenalty, 0.0, 100.0) : 0.0
+int tvValid = tvValidData ? 1 : 0
+int tvPackCode = tvDirPack * 10000 + tvRiskCode * 1000 + tvEventCode * 10 + tvValid
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 07. View / Color
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+buyColor = input.color(color.new(#26A69A, 0), "매수 하단", group=grpView)
+sellColor = input.color(color.new(#EF5350, 0), "매도 상단", group=grpView)
+weakColor = input.color(color.new(color.gray, 60), "저거래량 회색", group=grpView)
+cvdColor = input.color(color.new(color.yellow, 0), "CVD", group=grpView)
+avgColor = input.color(color.new(color.white, 0), "평균선", group=grpView)
+deceptSellCol = input.color(color.new(color.orange, 0), "숨은매도", group=grpView)
+deceptBuyCol = input.color(color.new(color.aqua, 0), "숨은매수", group=grpView)
+absorbCol = input.color(color.new(color.yellow, 85), "흡수 배경", group=grpView)
+climaxCol = input.color(color.new(color.fuchsia, 82), "클라이맥스 배경", group=grpView)
+trapCol = input.color(color.new(color.red, 82), "트랩 배경", group=grpView)
+barWidth = input.int(3, "막대 두께", minval=1, maxval=5, group=grpView, display=display.none)
+showAvg = input.bool(true, "평균선 표시", group=grpView, display=display.none)
+dimWeak = input.bool(true, "저거래량 회색 처리", group=grpView, display=display.none)
+weakRel = input.float(0.5, "저거래 기준", minval=0.1, step=0.1, group=grpView, display=display.none)
+showPct = input.bool(true, "매수·매도 % 라벨 표시", group=grpView, display=display.none)
+pctMinRel = input.float(1.0, "% 라벨 최소 상대거래량", minval=0.0, step=0.1, group=grpView, display=display.none)
+showFlags = input.bool(true, "플래그 표시", group=grpView, display=display.none)
+showBg = input.bool(true, "위험 배경 표시", group=grpView, display=display.none)
+plotScaleOpt = input.string("M", "오른쪽 스케일 단위", options=["원본", "K", "M", "B"], group=grpView, display=display.none)
+
+float sf = plotScaleOpt == "K" ? 1e3 : plotScaleOpt == "M" ? 1e6 : plotScaleOpt == "B" ? 1e9 : 1.0
+bool weakBar = dimWeak and relVol < weakRel
+color topCol = weakBar ? weakColor : sellColor
+color botCol = weakBar ? weakColor : buyColor
+
+plot(showVisuals ? totalVol / sf : na, title="매도(상단)", style=plot.style_columns, color=topCol, linewidth=barWidth, display=display.pane)
+plot(showVisuals ? buyVol / sf : na, title="매수(하단)", style=plot.style_columns, color=botCol, linewidth=barWidth, display=display.pane)
+plot(showVisuals and showAvg ? volAvg / sf : na, title="평균", color=avgColor, linewidth=1, display=display.pane)
+
+float cvdBaseY = (volAvg * 0.15) / sf
+float cvdDisp = (cvdZ * volAvg * cvdScale + volAvg * 0.15) / sf
+plot(showVisuals and showCVD ? cvdDisp : na, title="CVD", color=cvdColor, linewidth=2, display=display.pane)
+plot(showVisuals and showCVD ? cvdBaseY : na, title="CVD 0", color=color.new(color.yellow, 75), linewidth=1, display=display.pane)
+
+plotchar(showVisuals and showFlags and deceptSell ? 1 : na, title="숨은매도", char="▼", location=location.top, color=deceptSellCol, size=size.tiny)
+plotchar(showVisuals and showFlags and deceptBuy ? 1 : na, title="숨은매수", char="▲", location=location.bottom, color=deceptBuyCol, size=size.tiny)
+plotchar(showVisuals and showFlags and buyAbsorb ? 1 : na, title="매수흡수", char="B", location=location.bottom, color=color.aqua, size=size.tiny)
+plotchar(showVisuals and showFlags and sellAbsorb ? 1 : na, title="매도흡수", char="S", location=location.top, color=color.orange, size=size.tiny)
+
+color bgCol = na
+if showBg and anyTrap
+    bgCol := trapCol
+else if showBg and anyClimax
+    bgCol := climaxCol
+else if showBg and anyAbsorb
+    bgCol := absorbCol
+bgcolor(showVisuals ? bgCol : na)
+
+if showVisuals and showPct and relVol >= pctMinRel and barstate.isconfirmed
+    label.new(bar_index, totalVol / sf, str.tostring(math.round(sellPct)), xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_down, color=color.new(color.white, 100), textcolor=sellColor, size=size.small, tooltip="매도 비중 %")
+    label.new(bar_index, 0.0, str.tostring(math.round(buyPct)), xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_up, color=color.new(color.white, 100), textcolor=buyColor, size=size.small, tooltip="매수 비중 %")
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 08. Info Table
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+showTable = input.bool(true, "정보표 표시", group=grpTable, display=display.none)
+tablePosOpt = input.string("우상", "표 위치", options=["좌상", "상중", "우상", "좌중", "정중", "우중", "좌하", "하중", "우하"], group=grpTable, display=display.none)
+tableSizeN = input.int(4, "표 크기 1~10", minval=1, maxval=10, group=grpTable, display=display.none)
+langMode = input.string("KR", "표 언어", options=["KR", "EN", "CODE"], group=grpTable, display=display.none)
+showDebugRows = input.bool(true, "SPOT/PERP 디버그 행 표시", group=grpTable, display=display.none)
+
+var table tb = showVisuals ? table.new(f_pos(tablePosOpt), 2, 13, frame_color=color.new(color.white, 70), frame_width=1, border_color=color.new(color.white, 85), border_width=1) : na
+
+if barstate.islast and showTable and showVisuals
+    string domTxt = langMode == "KR" ? (buyRatio > 0.55 ? "매수우위" : buyRatio < 0.45 ? "매도우위" : "균형") : langMode == "EN" ? (buyRatio > 0.55 ? "BUY DOM" : buyRatio < 0.45 ? "SELL DOM" : "BAL") : (buyRatio > 0.55 ? "B" : buyRatio < 0.45 ? "S" : "=")
+    color domCol = buyRatio > 0.55 ? buyColor : buyRatio < 0.45 ? sellColor : color.gray
+    string warnTxt = "-"
+    color warnCol = color.gray
+    if buyClimaxTrap
+        warnTxt := langMode == "KR" ? "매수 트랩" : langMode == "EN" ? "BUY TRAP" : "TR+"
+        warnCol := color.red
+    else if sellClimaxTrap
+        warnTxt := langMode == "KR" ? "매도 트랩" : langMode == "EN" ? "SELL TRAP" : "TR-"
+        warnCol := color.red
+    else if buyClimaxExhaust
+        warnTxt := langMode == "KR" ? "매수 소진" : langMode == "EN" ? "BUY EXHAUST" : "EX+"
+        warnCol := color.fuchsia
+    else if sellClimaxExhaust
+        warnTxt := langMode == "KR" ? "매도 소진" : langMode == "EN" ? "SELL EXHAUST" : "EX-"
+        warnCol := color.fuchsia
+    else if buyClimaxStart
+        warnTxt := langMode == "KR" ? "매수 폭발" : langMode == "EN" ? "BUY START" : "ST+"
+        warnCol := color.lime
+    else if sellClimaxStart
+        warnTxt := langMode == "KR" ? "매도 폭발" : langMode == "EN" ? "SELL START" : "ST-"
+        warnCol := color.red
+    else if buyAbsorb
+        warnTxt := langMode == "KR" ? "매수 흡수" : langMode == "EN" ? "BUY ABSORB" : "AB+"
+        warnCol := color.aqua
+    else if sellAbsorb
+        warnTxt := langMode == "KR" ? "매도 흡수" : langMode == "EN" ? "SELL ABSORB" : "AB-"
+        warnCol := color.orange
+    else if deceptBuy
+        warnTxt := langMode == "KR" ? "숨은매수" : langMode == "EN" ? "HIDDEN BUY" : "HB"
+        warnCol := color.aqua
+    else if deceptSell
+        warnTxt := langMode == "KR" ? "숨은매도" : langMode == "EN" ? "HIDDEN SELL" : "HS"
+        warnCol := color.orange
+    string cvdTxt = cvdZ >= 1.2 ? (langMode == "KR" ? "강매수" : "STRONG+") : cvdZ >= 0.5 ? (langMode == "KR" ? "매수" : "BUY") : cvdZ <= -1.2 ? (langMode == "KR" ? "강매도" : "STRONG-") : cvdZ <= -0.5 ? (langMode == "KR" ? "매도" : "SELL") : (langMode == "KR" ? "중립" : "FLAT")
+    color cvdTxtCol = cvdZ >= 0.5 ? buyColor : cvdZ <= -0.5 ? sellColor : color.gray
+    color hdr = color.new(color.teal, 35)
+    color body = color.new(color.black, 20)
+    sz = f_tsize(tableSizeN)
+    table.clear(tb, 0, 0, 1, 12)
+
+    table.cell(tb, 0, 0, "SRC", text_color=color.white, bgcolor=hdr, text_size=sz)
+    table.cell(tb, 1, 0, srcLabel + (multiOk ? " · " + str.tostring(exCount) + "ex" : " · chart"), text_color=useExchangeProxy ? color.lime : ltfOk ? color.lime : color.silver, bgcolor=hdr, text_size=sz)
+
+    table.cell(tb, 0, 1, langMode == "KR" ? "총량" : "VOL", text_color=color.white, bgcolor=body, text_size=sz)
+    table.cell(tb, 1, 1, f_fmt_vol(totalVol) + "  (" + str.tostring(relVol, "#.#") + "x)", text_color=relVol >= 1.5 ? color.orange : color.white, bgcolor=body, text_size=sz)
+
+    table.cell(tb, 0, 2, langMode == "KR" ? "매수" : "BUY", text_color=color.white, bgcolor=body, text_size=sz)
+    table.cell(tb, 1, 2, str.tostring(math.round(buyPct)) + "%  " + f_fmt_vol(buyVol), text_color=buyColor, bgcolor=body, text_size=sz)
+
+    table.cell(tb, 0, 3, langMode == "KR" ? "매도" : "SELL", text_color=color.white, bgcolor=body, text_size=sz)
+    table.cell(tb, 1, 3, str.tostring(math.round(sellPct)) + "%  " + f_fmt_vol(sellVol), text_color=sellColor, bgcolor=body, text_size=sz)
+
+    table.cell(tb, 0, 4, "DELTA", text_color=color.white, bgcolor=body, text_size=sz)
+    table.cell(tb, 1, 4, (delta >= 0 ? "+" : "") + f_fmt_vol(delta), text_color=delta >= 0 ? buyColor : sellColor, bgcolor=body, text_size=sz)
+
+    table.cell(tb, 0, 5, "CVD", text_color=color.white, bgcolor=body, text_size=sz)
+    table.cell(tb, 1, 5, cvdTxt + "  z" + str.tostring(cvdZ, "#.#"), text_color=cvdTxtCol, bgcolor=body, text_size=sz)
+
+    table.cell(tb, 0, 6, langMode == "KR" ? "우위" : "DOM", text_color=color.white, bgcolor=body, text_size=sz)
+    table.cell(tb, 1, 6, domTxt, text_color=domCol, bgcolor=body, text_size=sz)
+
+    table.cell(tb, 0, 7, "LIE", text_color=color.white, bgcolor=body, text_size=sz)
+    table.cell(tb, 1, 7, str.tostring(math.round(deceptionScore)) + "/100", text_color=deceptionScore >= 70 ? color.red : deceptionScore >= 45 ? color.orange : color.gray, bgcolor=body, text_size=sz)
+
+    table.cell(tb, 0, 8, langMode == "KR" ? "경고" : "WARN", text_color=color.white, bgcolor=color.new(warnCol, 80), text_size=sz)
+    table.cell(tb, 1, 8, warnTxt, text_color=warnCol, bgcolor=color.new(warnCol, 80), text_size=sz)
+
+    string busTxt = "P" + str.tostring(tvPackCode) + " S" + str.tostring(math.round(tvScore)) + " R" + str.tostring(tvRiskCode) + " E" + str.tostring(tvEventCode) + " X" + str.tostring(tvDetailCode)
+    table.cell(tb, 0, 9, "BUS", text_color=color.white, bgcolor=color.new(color.black, 15), text_size=sz)
+    table.cell(tb, 1, 9, busTxt, text_color=color.white, bgcolor=color.new(color.black, 15), text_size=sz)
+
+    table.cell(tb, 0, 10, "P/S", text_color=color.white, bgcolor=body, text_size=sz)
+    table.cell(tb, 1, 10, showDebugRows ? (na(spotPerpRatio) ? "-" : str.tostring(spotPerpRatio, "#.#") + "x") : "off", text_color=showDebugRows and not na(spotPerpRatio) and spotPerpRatio >= 2.0 ? color.orange : color.gray, bgcolor=body, text_size=sz)
+
+    table.cell(tb, 0, 11, "BN%", text_color=color.white, bgcolor=body, text_size=sz)
+    table.cell(tb, 1, 11, showDebugRows ? (na(binanceDom) ? "-" : str.tostring(binanceDom, "#") + "%") : "off", text_color=showDebugRows and not na(binanceDom) and binanceDom >= 60 ? color.orange : color.gray, bgcolor=body, text_size=sz)
+
+    table.cell(tb, 0, 12, "MODE", text_color=color.white, bgcolor=body, text_size=sz)
+    table.cell(tb, 1, 12, volMode, text_color=color.silver, bgcolor=body, text_size=sz)
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 09. Hidden Outputs + Alerts
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+showHidden = input.bool(true, "히든 출력값 유지", group=grpOut, display=display.none)
+useAlerts = input.bool(true, "alertcondition 사용", group=grpOut, display=display.none)
+useJsonAlert = input.bool(true, "alert() JSON 사용", tooltip="TradingView 알림 생성 시 'Any alert() function call'을 선택하면 동적 JSON이 발송됩니다.", group=grpOut, display=display.none)
+jsonMode = input.string("중요 이벤트만", "JSON 발송 조건", options=["중요 이벤트만", "매 봉마감 스냅샷"], group=grpOut, display=display.none)
+
+plot(showHidden ? totalVol : na, title="AL_TV_TOTAL_VOLUME", display=display.none)
+plot(showHidden ? buyVol : na, title="AL_TV_BUY_VOLUME", display=display.none)
+plot(showHidden ? sellVol : na, title="AL_TV_SELL_VOLUME", display=display.none)
+plot(showHidden ? delta : na, title="AL_TV_DELTA", display=display.none)
+plot(showHidden ? buyPct : na, title="AL_TV_BUY_PCT", display=display.none)
+plot(showHidden ? sellPct : na, title="AL_TV_SELL_PCT", display=display.none)
+plot(showHidden ? buyRatio : na, title="AL_TV_BUY_RATIO", display=display.none)
+plot(showHidden ? relVol : na, title="AL_TV_REL_VOLUME", display=display.none)
+plot(showHidden ? cvdZ : na, title="AL_TV_CVD_ZSCORE", display=display.none)
+plot(showHidden ? cvdRoll : na, title="AL_TV_CVD_ROLLING", display=display.none)
+plot(showHidden ? (ltfOk ? 1.0 : 0.0) : na, title="AL_TV_LTF_ACTIVE_FLAG", display=display.none)
+plot(showHidden ? (deceptSell ? 1.0 : 0.0) : na, title="AL_TV_DECEPT_SELL_FLAG", display=display.none)
+plot(showHidden ? (deceptBuy ? 1.0 : 0.0) : na, title="AL_TV_DECEPT_BUY_FLAG", display=display.none)
+plot(showHidden ? deceptionScore : na, title="AL_TV_DECEPT_SCORE", display=display.none)
+plot(showHidden ? (buyAbsorb ? 1.0 : 0.0) : na, title="AL_TV_BUY_ABSORB_FLAG", display=display.none)
+plot(showHidden ? (sellAbsorb ? 1.0 : 0.0) : na, title="AL_TV_SELL_ABSORB_FLAG", display=display.none)
+plot(showHidden ? (buyClimax ? 1.0 : 0.0) : na, title="AL_TV_BUY_CLIMAX_FLAG", display=display.none)
+plot(showHidden ? (sellClimax ? 1.0 : 0.0) : na, title="AL_TV_SELL_CLIMAX_FLAG", display=display.none)
+plot(showHidden ? spotVol : na, title="AL_TV_SPOT_VOLUME", display=display.none)
+plot(showHidden ? perpVol : na, title="AL_TV_PERP_VOLUME", display=display.none)
+plot(showHidden ? spotPerpRatio : na, title="AL_TV_PERP_SPOT_RATIO", display=display.none)
+plot(showHidden ? binanceDom : na, title="AL_TV_BINANCE_DOM", display=display.none)
+plot(showHidden ? (dirCode * 1.0) : na, title="AL_TV_DIR_CODE", display=display.none)
+plot(tvScore, title="AL_TV_SCORE", display=display.none)
+plot(float(tvRiskCode), title="AL_TV_RISK_CODE", display=display.none)
+plot(float(tvEventCode), title="AL_TV_EVENT_CODE", display=display.none)
+plot(showHidden ? (eventDetailCode * 1.0) : na, title="AL_TV_EVENT_DETAIL_CODE", display=display.none)
+plot(float(tvPackCode), title="AL_TV_PACK_CODE", display=display.none)
+plot(float(tvDetailCode), title="AL_TV_DETAIL_CODE", display=display.none)
+plot(tvRvol, title="AL_TV_RVOL", display=display.none)
+
+bool confirmed = barstate.isconfirmed
+bool deceptSellC = deceptSell and confirmed
+bool deceptBuyC = deceptBuy and confirmed
+bool buyAbsorbC = buyAbsorb and confirmed
+bool sellAbsorbC = sellAbsorb and confirmed
+bool buyClimaxC = buyClimax and confirmed
+bool sellClimaxC = sellClimax and confirmed
+bool strongBuyC = buyRatio >= 0.70 and relVol >= 1.2 and confirmed
+bool strongSellC = sellRatio >= 0.70 and relVol >= 1.2 and confirmed
+bool majorEventC = confirmed and (hiddenFlow or anyAbsorb or anyClimax or relVol >= 1.8)
+
+alertcondition(useAlerts and deceptSellC, title="AL TV+ 숨은 매도", message="AL TRUE VOL PLUS: 가격은 오르지만 매도 물량 과다 — 분산/속임수 의심")
+alertcondition(useAlerts and deceptBuyC, title="AL TV+ 숨은 매수", message="AL TRUE VOL PLUS: 가격은 내리지만 매수 물량 과다 — 흡수/매집 의심")
+alertcondition(useAlerts and buyAbsorbC, title="AL TV+ 매수 흡수", message="AL TRUE VOL PLUS: 하락 중 매수 흡수 감지")
+alertcondition(useAlerts and sellAbsorbC, title="AL TV+ 매도 흡수", message="AL TRUE VOL PLUS: 상승 중 매도 흡수 감지")
+alertcondition(useAlerts and buyClimaxC, title="AL TV+ 매수 클라이맥스", message="AL TRUE VOL PLUS: 매수 클라이맥스/소진/트랩 감지")
+alertcondition(useAlerts and sellClimaxC, title="AL TV+ 매도 클라이맥스", message="AL TRUE VOL PLUS: 매도 클라이맥스/소진/트랩 감지")
+alertcondition(useAlerts and strongBuyC, title="AL TV+ 강한 매수 우위", message="AL TRUE VOL PLUS: 강한 매수 우위")
+alertcondition(useAlerts and strongSellC, title="AL TV+ 강한 매도 우위", message="AL TRUE VOL PLUS: 강한 매도 우위")
+
+string json = "{\"observer\":\"AL_TRUE_VOL_PLUS\",\"symbol\":\"" + syminfo.ticker + "\",\"tf\":\"" + timeframe.period + "\",\"src\":\"" + srcLabel + "\",\"vol_mode\":\"" + volMode + "\",\"dir\":" + str.tostring(dirCode) + ",\"score\":" + str.tostring(math.round(flowScore)) + ",\"risk\":" + str.tostring(riskCode) + ",\"event\":" + str.tostring(eventCode) + ",\"event_detail\":" + str.tostring(eventDetailCode) + ",\"rel_vol\":" + str.tostring(relVol, "#.###") + ",\"buy_pct\":" + str.tostring(buyPct, "#.##") + ",\"sell_pct\":" + str.tostring(sellPct, "#.##") + ",\"delta\":" + str.tostring(delta, "#.##") + ",\"cvd_z\":" + str.tostring(cvdZ, "#.###") + ",\"lie\":" + str.tostring(math.round(deceptionScore)) + ",\"ltf\":" + str.tostring(ltfOk ? 1 : 0) + ",\"ex_count\":" + str.tostring(exCount) + ",\"perp_spot\":" + str.tostring(nz(spotPerpRatio, 0.0), "#.###") + ",\"bn_dom\":" + str.tostring(nz(binanceDom, 0.0), "#.##") + "}"
+
+if useJsonAlert and confirmed and (jsonMode == "매 봉마감 스냅샷" or majorEventC)
+    alert(json, alert.freq_once_per_bar_close)
