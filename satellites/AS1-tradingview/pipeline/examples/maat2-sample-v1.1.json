@@ -1,0 +1,9 @@
+{
+  "schema_version": "as1.v1.1", "satellite_id": "AS1", "platform": "TRADINGVIEW", "layout_id": "MAAT2", "observer": "MAAT2", "code_version": "sample-1.1",
+  "instrument": {"ticker_id": "COINBASE:BTCUSD", "venue": "COINBASE", "symbol": "BTCUSD", "base_asset": "BTC", "quote_asset": "USD", "source_regime_id": "coinbase-btcusd-from-2026-07-22"},
+  "timing": {"timeframe": "240", "bar_open_time": 1785134400000, "bar_close_time": 1785148800000, "sent_at": 1785148801600},
+  "bar": {"open": 99500.0, "high": 100250.0, "low": 99200.0, "close": 100100.0, "volume": 512.34, "volume_unit": "RAW_EXCHANGE_VOLUME"},
+  "packet_type": "BAR_CLOSE_SNAPSHOT", "confirmed": true, "quality": {"sensor_quality": "LIMITED", "freshness": "FRESH", "valid": true, "flags": ["PARTIAL_SOURCE"]},
+  "dedup_key": "AS1|MAAT2|COINBASE:BTCUSD|coinbase-btcusd-from-2026-07-22|240|1785148800000|as1.v1.1",
+  "payload": {"sample_notice": "설명용 숫자이며 실제 관측값이 아닙니다.", "core_mode": "BALANCED", "time_engine_state": "ACTIVE", "protagonist_tf_minutes": 246, "previous_protagonist_tf_minutes": 470, "parent_tf_minutes": 480, "candidate_pack_minutes": 246, "window_state": "OPEN", "expected_window_close_time": 1785163560000}
+}

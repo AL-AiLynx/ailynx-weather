@@ -1,0 +1,9 @@
+{
+  "schema_version": "as1.v1.1", "satellite_id": "AS1", "platform": "TRADINGVIEW", "layout_id": "HORUS_A", "observer": "HORUS", "code_version": "sample-1.1",
+  "instrument": {"ticker_id": "COINBASE:BTCUSD", "venue": "COINBASE", "symbol": "BTCUSD", "base_asset": "BTC", "quote_asset": "USD", "source_regime_id": "coinbase-btcusd-from-2026-07-22"},
+  "timing": {"timeframe": "60", "bar_open_time": 1785145200000, "bar_close_time": 1785148800000, "sent_at": 1785148801000},
+  "bar": {"open": 100000.0, "high": 100250.0, "low": 99850.0, "close": 100100.0, "volume": 123.45, "volume_unit": "RAW_EXCHANGE_VOLUME"},
+  "packet_type": "BAR_CLOSE_SNAPSHOT", "confirmed": true, "quality": {"sensor_quality": "GOOD", "freshness": "FRESH", "valid": true, "flags": []},
+  "dedup_key": "AS1|HORUS_A|COINBASE:BTCUSD|coinbase-btcusd-from-2026-07-22|60|1785148800000|as1.v1.1",
+  "payload": {"sample_notice": "설명용 숫자이며 실제 관측값이 아닙니다.", "direction": "UP", "state": "ACTIVE", "force_score": 72.0, "gate_state": "CLEAR", "event_code": 0}
+}
