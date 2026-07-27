@@ -1,5 +1,20 @@
 # AS1 Pipeline Changelog
 
+## as1.v1.2 - 2026-07-27
+
+- Adds `asset_class`, `market_type`, contract metadata, and session hints.
+- Removes Pine freshness; Edge Function calculates receipt, age, and freshness.
+- Replaces free-form source regime input with `source_profile_code` plus Registry validation.
+- Separates Pine `client_event_key` from server `dedup_key`.
+- Adds Raw Alert, Normalized Observation, and Fusion as separate stages.
+- Adds the Coinbase BTCUSD spot active profile and historical OKX BTCUSDT.P perpetual profile.
+- Adds price and volume comparison groups and blocks automatic cross-regime comparison.
+- Defines DATE_ONLY transition warnings without inventing an exact UTC switch time.
+- Separates BTC-first runtime defaults from multi-asset schema capability.
+- Adds reject/quarantine rules and VALID/WARN/REJECT outcomes.
+- Adds v1.2 schemas, Registry/runtime configuration, samples, and HORUS A mapping.
+- Does not implement Pine Alert delivery, Supabase, Edge Function, webhook URLs, or credentials.
+
 ## as1.v1.1 — 2026-07-27
 
 ### 개정 이유
