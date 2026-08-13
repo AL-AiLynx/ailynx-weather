@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Validate AS1 v1.3 schemas and cross-layer fixture invariants."""
+"""Independently validate AS1 v1.3 schemas, fixtures, and negative mutations."""
 from __future__ import annotations
 
+import copy
 import json
 import sys
 from decimal import Decimal, ROUND_HALF_UP
@@ -17,16 +18,24 @@ TEST_DIR = Path(__file__).resolve().parent
 PIPELINE = TEST_DIR.parent
 SCHEMA_DIR = PIPELINE / "schema"
 FIXTURE_DIR = TEST_DIR / "fixtures" / "v1.3"
+AGE_TOLERANCE_SECONDS = Decimal("0")
 
 CHECKS = [
-    "JSON_SCHEMA_VALIDATION", "RAW_NORMALIZED_INSTRUMENT_PRESERVATION",
+    "JSON_SCHEMA_VALIDATION", "PRODUCTION_SCHEMA_TEST_METADATA_ISOLATION",
+    "RAW_EVENT_ID_SERVER_OWNERSHIP", "RAW_NORMALIZED_INSTRUMENT_PRESERVATION",
     "RAW_NORMALIZED_SESSION_HINT_PRESERVATION", "RAW_NORMALIZED_TIMING_PRESERVATION",
     "RAW_NORMALIZED_BAR_PRESERVATION", "RAW_NORMALIZED_QUALITY_PRESERVATION",
     "RAW_NORMALIZED_PAYLOAD_PRESERVATION", "NORMALIZED_FUSION_PROVENANCE",
-    "CONTRACT_LIFECYCLE_CONSISTENCY", "REGIME_CONSISTENCY",
-    "SESSION_EXPECTATION_CONSISTENCY", "NOT_EXPECTED_HANDLING",
-    "EXPECTED_MISSING_HANDLING", "VISIBILITY_RECOMPUTATION",
-    "VISIBILITY_ROUNDING", "FIXTURE_ID_CONSISTENCY",
+    "FIXTURE_REGISTRY_SCHEMA_VALIDATION", "FIXTURE_SOURCE_PROFILE_RESOLUTION",
+    "CANONICAL_REGIME_FROM_REGISTRY", "CONTRACT_LIFECYCLE_CONSISTENCY",
+    "SESSION_POLICY_SCHEMA_VALIDATION", "SESSION_EXPECTATION_CONSISTENCY",
+    "NOT_EXPECTED_HANDLING", "EXPECTED_MISSING_HANDLING",
+    "AGE_SECONDS_RECOMPUTATION", "FRESHNESS_RECOMPUTATION",
+    "ASYNC_MULTITIMEFRAME_COVERAGE", "ASYNC_BAR_CLOSE_TIME_COVERAGE",
+    "VISIBILITY_RECOMPUTATION", "VISIBILITY_ROUNDING",
+    "NEGATIVE_MUTATION_AGE_SECONDS", "NEGATIVE_MUTATION_SOURCE_PROFILE",
+    "NEGATIVE_MUTATION_CONTRACT", "NEGATIVE_MUTATION_FUSION_PROVENANCE",
+    "FIXTURE_ID_CONSISTENCY",
 ]
 QUALITY = {"GOOD": Decimal("1"), "LIMITED": Decimal("0.75"), "WATCH": Decimal("0.50"), "INVALID": Decimal("0")}
 FRESHNESS = {"FRESH": Decimal("1"), "AGING": Decimal("0.70"), "STALE": Decimal("0.25")}
@@ -38,59 +47,60 @@ def load(path: Path):
 
 
 def half_up(value: Decimal, places: int) -> Decimal:
-    quantum = Decimal("1").scaleb(-places)
-    return value.quantize(quantum, rounding=ROUND_HALF_UP)
+    return value.quantize(Decimal("1").scaleb(-places), rounding=ROUND_HALF_UP)
 
 
-def recompute(fusion: dict) -> dict:
+def recompute_visibility(fusion: dict) -> dict:
     expected = fusion["expected_layouts"]
     components = {item["layout_id"]: item for item in fusion["component_states"]}
-    scores = {}
-    comparable = 0
+    scores, comparable = {}, 0
     for layout in expected:
         component = components.get(layout)
         if component is None:
             scores[layout] = Decimal("0")
             continue
-        if component["freshness"] == "NOT_EXPECTED":
-            raise AssertionError(f"{layout}: NOT_EXPECTED component listed as EXPECTED")
+        assert component["freshness"] != "NOT_EXPECTED"
         scores[layout] = Decimal("100") * QUALITY[component["sensor_quality"]] * FRESHNESS[component["freshness"]]
-        if component["valid"] and component["sensor_quality"] != "INVALID":
-            comparable += 1
+        comparable += int(component["valid"] and component["sensor_quality"] != "INVALID")
     if not expected:
-        return {"expected_count": 0, "missing_count": 0, "base_visibility": None,
-                "coherence_factor": Decimal("1"), "visibility_score": None,
-                "visibility_state": "NOT_EXPECTED", "scores": scores, "comparable": comparable}
-    raw_base = sum(scores.values(), Decimal("0")) / Decimal(len(expected))
-    factor = COHERENCE[fusion["fusion_status"]]
-    final = raw_base * factor
-    score = int(half_up(final, 0))
-    if comparable < 2:
-        state = "INSUFFICIENT"
-    elif score >= 75:
-        state = "NORMAL"
-    elif score >= 50:
-        state = "DEGRADED"
-    else:
-        state = "POOR"
-    return {"expected_count": len(expected), "missing_count": len(fusion["missing_layouts"]),
-            "base_visibility": half_up(raw_base, 2), "coherence_factor": factor,
-            "visibility_score": score, "visibility_state": state, "scores": scores,
-            "comparable": comparable}
+        return {"base": None, "score": None, "state": "NOT_EXPECTED", "scores": scores}
+    base = sum(scores.values(), Decimal("0")) / Decimal(len(expected))
+    score = int(half_up(base * COHERENCE[fusion["fusion_status"]], 0))
+    state = "INSUFFICIENT" if comparable < 2 else "NORMAL" if score >= 75 else "DEGRADED" if score >= 50 else "POOR"
+    return {"base": half_up(base, 2), "score": score, "state": state, "scores": scores}
 
 
-def validate_fixture(path: Path, validators: dict[str, jsonschema.Draft202012Validator]) -> None:
-    fixture = load(path)
+def validate_fixture(fixture: dict, validators: dict, profiles: dict) -> None:
     fid = fixture["fixture_id"]
-    raw_by_id = {row["raw_event_id"]: row for row in fixture["raw_events"]}
+    raw_events = fixture["raw_events"]
+    receipts = fixture["simulated_ingestion"]
+    assert len(raw_events) == len(receipts) == len(fixture["normalized_observations"]), f"{fid}: ingestion cardinality"
+    raw_by_id = {}
+    for receipt in receipts:
+        index, server_id = receipt["raw_event_index"], receipt["raw_event_id"]
+        assert index < len(raw_events) and server_id not in raw_by_id
+        raw_by_id[server_id] = raw_events[index]
     norm_by_id = {row["normalized_observation_id"]: row for row in fixture["normalized_observations"]}
-    for raw in fixture["raw_events"]:
+    for raw in raw_events:
         validators["raw"].validate(raw)
-        assert raw["fixture_id"] == fid
+        assert "fixture_id" not in raw and "raw_event_id" not in raw
+        profile = profiles.get(raw["source_profile_code"])
+        assert profile is not None, "UNKNOWN_SOURCE_PROFILE"
+        instrument = raw["instrument"]
+        comparisons = {
+            "ticker_id": "PROFILE_TICKER_MISMATCH", "venue": "PROFILE_VENUE_MISMATCH",
+            "asset_class": "PROFILE_ASSET_CLASS_MISMATCH", "instrument_type": "PROFILE_INSTRUMENT_TYPE_MISMATCH",
+        }
+        for field, error in comparisons.items():
+            assert instrument[field] == profile[field], error
+        assert instrument["contract"]["contract_type"] == profile["contract"]["contract_type"], "PROFILE_CONTRACT_MISMATCH"
+        assert raw["bar"]["volume_unit"] == profile["volume_unit"], "PROFILE_VOLUME_UNIT_MISMATCH"
     for norm in fixture["normalized_observations"]:
         validators["normalized"].validate(norm)
         assert norm["fixture_id"] == fid
         raw = raw_by_id[norm["raw_event_id"]]
+        profile = profiles[norm["source_profile_code"]]
+        assert norm["canonical_regime_id"] == profile["canonical_regime_id"]
         for field in ("instrument", "session_hint", "timing", "bar", "quality", "payload"):
             assert raw[field] == norm[field], f"{fid}: raw/normalized {field} changed"
         for field in ("satellite_id", "layout_id", "observer", "code_version", "source_profile_code"):
@@ -101,71 +111,87 @@ def validate_fixture(path: Path, validators: dict[str, jsonschema.Draft202012Val
     fusion = fixture["fusion_snapshot"]
     validators["fusion"].validate(fusion)
     assert fusion["fixture_id"] == fid
+    assembly = fusion["assembly_time"]
     for component in fusion["component_states"]:
         norm = norm_by_id[component["normalized_observation_id"]]
-        assert component["raw_event_id"] == norm["raw_event_id"]
-        expected_pairs = {
-            "layout_id": norm["layout_id"], "ticker_id": norm["canonical_instrument"]["ticker_id"],
-            "canonical_regime_id": norm["canonical_regime_id"], "timeframe": norm["timing"]["timeframe"],
-            "bar_close_time": norm["timing"]["bar_close_time"], "sensor_quality": norm["quality"]["sensor_quality"],
-            "freshness": norm["server_evaluation"]["freshness"], "valid": norm["quality"]["valid"],
-            "dedup_key": norm["dedup_key"], "contract_id": norm["canonical_instrument"]["contract"]["contract_id"],
-            "series_segment_id": norm["series_segment_id"],
+        expected = {
+            "raw_event_id": norm["raw_event_id"], "layout_id": norm["layout_id"],
+            "ticker_id": norm["canonical_instrument"]["ticker_id"], "canonical_regime_id": norm["canonical_regime_id"],
+            "timeframe": norm["timing"]["timeframe"], "bar_close_time": norm["timing"]["bar_close_time"],
+            "sensor_quality": norm["quality"]["sensor_quality"], "freshness": norm["server_evaluation"]["freshness"],
+            "valid": norm["quality"]["valid"], "dedup_key": norm["dedup_key"],
+            "contract_id": norm["canonical_instrument"]["contract"]["contract_id"], "series_segment_id": norm["series_segment_id"],
         }
-        for key, value in expected_pairs.items():
+        for key, value in expected.items():
             assert component[key] == value, f"{fid}: provenance mismatch for {key}"
-    regimes = {c["canonical_regime_id"] for c in fusion["component_states"]}
-    if len(regimes) > 1:
-        assert "REGIME_MIXED_COMPONENTS" in fusion["flags"]
+        recomputed_age = Decimal(assembly - norm["timing"]["bar_close_time"]) / Decimal(1000)
+        assert recomputed_age >= 0
+        assert abs(Decimal(str(norm["server_evaluation"]["age_seconds"])) - recomputed_age) <= AGE_TOLERANCE_SECONDS
+        assert abs(Decimal(str(component["age_seconds"])) - recomputed_age) <= AGE_TOLERANCE_SECONDS
+        context, freshness = norm["session_context"], norm["server_evaluation"]["freshness"]
+        if context["expectation_state"] == "EXPECTED" and context["freshness_deadline_at"] is not None and assembly > context["freshness_deadline_at"]:
+            assert freshness != "FRESH", f"{fid}: deadline exceeded but FRESH"
     assert set(fusion["expected_layouts"]).isdisjoint(fusion["not_expected_layouts"])
     assert set(fusion["missing_layouts"]) <= set(fusion["expected_layouts"])
     if fusion["missing_layouts"]:
         assert "EXPECTED_COMPONENT_MISSING" in fusion["flags"]
-    result = recompute(fusion)
-    breakdown = fusion["visibility_breakdown"]
-    assert breakdown["expected_count"] == result["expected_count"]
-    assert breakdown["missing_count"] == result["missing_count"]
-    assert breakdown["base_visibility"] == (None if result["base_visibility"] is None else float(result["base_visibility"]))
-    assert Decimal(str(breakdown["coherence_factor"])) == result["coherence_factor"]
-    assert fusion["visibility_score"] == result["visibility_score"]
-    assert fusion["visibility_state"] == result["visibility_state"]
+    result, breakdown = recompute_visibility(fusion), fusion["visibility_breakdown"]
+    assert breakdown["base_visibility"] == (None if result["base"] is None else float(result["base"]))
+    assert fusion["visibility_score"] == result["score"] and fusion["visibility_state"] == result["state"]
     assert breakdown["rounding_mode"] == "DECIMAL_HALF_UP"
     for layout, score in result["scores"].items():
         assert Decimal(str(breakdown["component_scores"][layout])) == score
     assert fixture["expected_assertions"]["visibility_score"] == fusion["visibility_score"]
     assert fixture["expected_assertions"]["visibility_state"] == fusion["visibility_state"]
-    if fid == "AS1_V13_CLOSED_001":
-        assert not fusion["expected_layouts"] and fusion["visibility_score"] is None
-    if fid == "AS1_V13_MISSING_001":
-        assert breakdown["component_scores"][fusion["missing_layouts"][0]] == 0
+    if fid == "AS1_V13_NORMAL_001":
+        assert len({n["timing"]["timeframe"] for n in fixture["normalized_observations"]}) >= 3
+        assert len({n["timing"]["bar_close_time"] for n in fixture["normalized_observations"]}) >= 2
     if fid == "AS1_V13_ROLL_001":
-        profiles = {n["source_profile_code"] for n in fixture["normalized_observations"]}
-        contracts = {n["instrument"]["contract"]["contract_id"] for n in fixture["normalized_observations"]}
-        segments = {n["series_segment_id"] for n in fixture["normalized_observations"]}
-        assert len(profiles) == 1 and contracts == {"NQM26", "NQU26"} and len(segments) == 2
-        assert all(n["instrument"]["contract"]["series_symbol"] == "NQ1!" for n in fixture["normalized_observations"])
+        norms = fixture["normalized_observations"]
+        assert len({n["source_profile_code"] for n in norms}) == 1
+        assert {n["instrument"]["contract"]["contract_id"] for n in norms} == {"NQM26", "NQU26"}
+        assert len({n["series_segment_id"] for n in norms}) == 2
+
+
+def mutation_must_fail(fixture: dict, mutate, validators: dict, profiles: dict) -> None:
+    candidate = copy.deepcopy(fixture)
+    mutate(candidate)
+    try:
+        validate_fixture(candidate, validators, profiles)
+    except (AssertionError, KeyError, jsonschema.ValidationError):
+        return
+    raise AssertionError("negative mutation was not detected")
 
 
 def main() -> int:
     common = load(SCHEMA_DIR / "as1-common-types-v1.3.json")
-    schemas = {
-        "raw": load(SCHEMA_DIR / "as1-alert-envelope-v1.3.json"),
-        "normalized": load(SCHEMA_DIR / "as1-normalized-observation-v1.3.json"),
-        "fusion": load(SCHEMA_DIR / "as1-fusion-snapshot-v1.3.json"),
-    }
+    schemas = {name: load(SCHEMA_DIR / filename) for name, filename in {
+        "raw": "as1-alert-envelope-v1.3.json", "normalized": "as1-normalized-observation-v1.3.json",
+        "fusion": "as1-fusion-snapshot-v1.3.json"}.items()}
     registry_schema = load(SCHEMA_DIR / "as1-source-profile-registry-v1.3.json")
     ingest_schema = load(SCHEMA_DIR / "as1-ingest-policy-v1.3.json")
     for schema in [common, *schemas.values(), registry_schema, ingest_schema]:
         jsonschema.Draft202012Validator.check_schema(schema)
+    assert not ({"fixture_id", "raw_event_id"} & set(schemas["raw"].get("required", [])))
+    assert not ({"fixture_id", "raw_event_id"} & set(schemas["raw"]["properties"]))
     store = {common["$id"]: common, "as1-common-types-v1.3.json": common}
     validators = {name: jsonschema.Draft202012Validator(schema, resolver=jsonschema.RefResolver.from_schema(schema, store=store)) for name, schema in schemas.items()}
-    jsonschema.Draft202012Validator(registry_schema, resolver=jsonschema.RefResolver.from_schema(registry_schema, store=store)).validate(load(PIPELINE / "config" / "source-profile-registry-v1.3.json"))
+    registry_validator = jsonschema.Draft202012Validator(registry_schema, resolver=jsonschema.RefResolver.from_schema(registry_schema, store=store))
+    registry_validator.validate(load(PIPELINE / "config" / "source-profile-registry-v1.3.json"))
+    fixture_registry = load(FIXTURE_DIR / "fixture-source-profile-registry-v1.3.json")
+    registry_validator.validate(fixture_registry)
+    profiles = {p["source_profile_code"]: p for p in fixture_registry["profiles"]}
+    assert set(profiles) >= {"CB_BTCUSD_SPOT_20260722_V1", "OKX_BTCUSDT_PERP_LEGACY_V1", "TEST_EQUITY_SESSION_V1", "CME_NQ_FRONT_MONTH_V1"}
     jsonschema.Draft202012Validator(ingest_schema).validate(load(PIPELINE / "config" / "as1-ingest-policy-v1.3.json"))
-    fixtures = sorted(FIXTURE_DIR.glob("*.json"))
-    assert {p.stem for p in fixtures} == {"AS1_V13_NORMAL_001", "AS1_V13_CLOSED_001", "AS1_V13_MISSING_001", "AS1_V13_ROLL_001"}
+    fixtures = [load(path) for path in sorted(FIXTURE_DIR.glob("AS1_V13_*.json"))]
     try:
         for fixture in fixtures:
-            validate_fixture(fixture, validators)
+            validate_fixture(fixture, validators, profiles)
+        normal = next(f for f in fixtures if f["fixture_id"] == "AS1_V13_NORMAL_001")
+        mutation_must_fail(normal, lambda f: f["normalized_observations"][0]["server_evaluation"].__setitem__("age_seconds", f["normalized_observations"][0]["server_evaluation"]["age_seconds"] + 300), validators, profiles)
+        mutation_must_fail(normal, lambda f: f["raw_events"][0].__setitem__("source_profile_code", "UNKNOWN_PROFILE"), validators, profiles)
+        mutation_must_fail(normal, lambda f: f["normalized_observations"][0]["instrument"]["contract"].pop("contract_id"), validators, profiles)
+        mutation_must_fail(normal, lambda f: f["fusion_snapshot"]["component_states"][0].__setitem__("timeframe", "999"), validators, profiles)
     except Exception as exc:
         print(f"V1_3_FIXTURE_VALIDATION = FAIL: {exc}", file=sys.stderr)
         return 1

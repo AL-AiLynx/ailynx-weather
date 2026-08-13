@@ -2,6 +2,14 @@
 
 ## as1.v1.3 - 2026-08-13
 
+### Hardening / Test Integrity Patch
+
+- Removes fixture/server identifiers from the Production Raw schema and models server-generated Raw IDs in fixture ingestion receipts.
+- Adds a schema-valid, test-only Source Profile Registry and validates resolution, dimensions, and canonical regimes.
+- Independently recomputes component age and deadline-aware freshness; fixes the ROLL fixture's 86,700-second stale component and derived visibility.
+- Makes NORMAL an asynchronous multi-timeframe fixture and adds four in-memory negative mutation checks.
+- Closes the `session_policy` schema around explicit calendar, timezone, expectation, grace, and authority fields.
+
 - Orthogonalizes `asset_class` and `instrument_type` and models contract/continuous-series rollover separately from Source Profiles.
 - Preserves Raw instrument, session hint, timing, bar, quality, and payload in Normalized while adding canonical/server context separately.
 - Adds session-aware EXPECTED/NOT_EXPECTED freshness and distinguishes normal closure from missing or stale data.
