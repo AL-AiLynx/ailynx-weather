@@ -1,5 +1,16 @@
 # AS1 Pipeline Changelog
 
+## as1.v1.3 - 2026-08-13
+
+- Orthogonalizes `asset_class` and `instrument_type` and models contract/continuous-series rollover separately from Source Profiles.
+- Preserves Raw instrument, session hint, timing, bar, quality, and payload in Normalized while adding canonical/server context separately.
+- Adds session-aware EXPECTED/NOT_EXPECTED freshness and distinguishes normal closure from missing or stale data.
+- Separates ingest protocol compatibility from Registry lifecycle and removes duplicated `minimum_schema_version`/`is_active` authorities.
+- Extends Fusion provenance, layout classifications, and flags.
+- Defines versioned `AS1_VIS_V1` visibility with missing-in-denominator, NOT_EXPECTED exclusion, coherence, and Decimal HALF_UP rules.
+- Adds four executable cross-layer fixtures, independent formula recomputation, and a passing negative audit for known v1.2 defects.
+- Does not modify Pine sources or implement Alerts, Supabase, Edge Functions, live storage, webhooks, or credentials.
+
 ## as1.v1.2 - 2026-07-27
 
 - Adds `asset_class`, `market_type`, contract metadata, and session hints.

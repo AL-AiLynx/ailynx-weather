@@ -1,0 +1,1 @@
+{"example_id":"FUSION_SNAPSHOT_SAMPLE_V1_3","fixture_id":"AS1_V13_NORMAL_001","fixture_path":"../tests/fixtures/v1.3/AS1_V13_NORMAL_001.json","json_pointer":"/fusion_snapshot","status":"FIXTURE_REFERENCE","notice":"The referenced Fusion snapshot is validated and independently recomputed by the fixture test."}
