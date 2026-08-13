@@ -21,7 +21,7 @@ This repository contains the v1.3 contract, schemas, Registry/runtime/ingest con
 - Final consistency patch = PASS
 - V1_3_FIXTURE_VALIDATION = PASS
 - LEGACY_V1_2_REGRESSION_AUDIT = PASS
-- Contract status = FROZEN CANDIDATE
+- Contract status = FROZEN
 - Production/Test schema isolation = PASS
 - Fixture registry validation = PASS
 - Async MTF fixture validation = PASS
@@ -29,7 +29,10 @@ This repository contains the v1.3 contract, schemas, Registry/runtime/ingest con
 - Negative mutation tests = PASS
 - Pine Exporter = NOT IMPLEMENTED
 - TradingView Alert = NOT CREATED
-- Supabase = NOT CONNECTED
+- Supabase Edge Function = NOT IMPLEMENTED
+- Live Supabase ingest = NOT STARTED
+
+Next step: **HORUS A Exporter Patch**.
 
 No Pine source under `archive` or `current` is modified by this revision.
 

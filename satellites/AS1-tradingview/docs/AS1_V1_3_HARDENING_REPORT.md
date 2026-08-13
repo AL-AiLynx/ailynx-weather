@@ -37,3 +37,11 @@ Fusion summary sets are recomputed from selected components and expected slots. 
 Freshness is deterministic: NOT_EXPECTED maps to NOT_EXPECTED; for EXPECTED, assembly before the next observation is FRESH, assembly from the next observation through the deadline is AGING, and assembly after the deadline is STALE. Missing schedule inputs fail fixture validation with `DETERMINISTIC_FRESHNESS_INPUT_INCOMPLETE`; age remains independently derived from bar close time.
 
 New in-memory mutations prove that incorrect freshness and an empty stale summary are detected without editing fixture files. The full v1.3 validation and the actually executed legacy known-issues audit both pass. With metadata isolation and all final invariants passing, `as1.v1.3` is a **FROZEN PIPELINE CONTRACT CANDIDATE**.
+
+## Freeze Gate Final Patch
+
+The CLOSED scenario now explicitly represents HORUS_A, HORUS_B, MAAT, and MAAT2 through complete Raw, Normalized, ingestion-receipt, and Fusion component chains. All four are NOT_EXPECTED; expected and missing sets remain empty, and visibility remains null/NOT_EXPECTED.
+
+Normalized-to-Fusion provenance now proves that component `expectation_state` equals `session_context.expectation_state` and component `received_at` equals `server_evaluation.received_at`. The seven visibility breakdown counts are independently recomputed from component and summary state rather than trusted as fixture values.
+
+In-memory mutations cover both added provenance fields and a corrupted breakdown count. The final v1.3 fixture validation and legacy v1.2 known-issues regression audit pass, completing the freeze gate for `as1.v1.3`.

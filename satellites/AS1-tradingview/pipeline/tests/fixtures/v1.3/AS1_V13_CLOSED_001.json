@@ -63,6 +63,195 @@
       "payload": {
         "state": "CLOSED"
       }
+    },
+    {
+      "schema_version": "as1.v1.3",
+      "satellite_id": "AS1",
+      "platform": "TRADINGVIEW",
+      "layout_id": "HORUS_B",
+      "observer": "HORUS",
+      "code_version": "fixture-v1.3",
+      "source_profile_code": "TEST_EQUITY_SESSION_V1",
+      "instrument": {
+        "ticker_id": "NASDAQ:TEST",
+        "venue": "NASDAQ",
+        "symbol": "TEST",
+        "base_asset": "TEST",
+        "quote_asset": "USD",
+        "asset_class": "EQUITY",
+        "instrument_type": "EQUITY",
+        "contract": {
+          "contract_type": "NONE",
+          "contract_id": null,
+          "series_symbol": null,
+          "expiry_kind": "NONE",
+          "expiry_time": null,
+          "settlement_asset": "USD",
+          "contract_multiplier": null,
+          "continuous_series": false,
+          "adjustment_mode": "NONE",
+          "adjustment_applied": false,
+          "roll_state": "NONE",
+          "roll_event": false
+        }
+      },
+      "session_hint": {
+        "session_type": "EXCHANGE_SESSION",
+        "session_state": "CLOSED",
+        "is_market_open": false
+      },
+      "timing": {
+        "timeframe": "60",
+        "bar_open_time": 1785100000000,
+        "bar_close_time": 1785103600000,
+        "sent_at": 1785103601000
+      },
+      "bar": {
+        "open": 100,
+        "high": 101,
+        "low": 99,
+        "close": 100,
+        "volume": 1000,
+        "volume_unit": "BASE_ASSET",
+        "volume_basis": "EXCHANGE_NATIVE"
+      },
+      "packet_type": "BAR_CLOSE_SNAPSHOT",
+      "confirmed": true,
+      "quality": {
+        "sensor_quality": "GOOD",
+        "valid": true,
+        "flags": []
+      },
+      "client_event_key": "AS1|HORUS_B|NASDAQ:TEST|60|1785103600000|as1.v1.3",
+      "payload": {
+        "state": "CLOSED"
+      }
+    },
+    {
+      "schema_version": "as1.v1.3",
+      "satellite_id": "AS1",
+      "platform": "TRADINGVIEW",
+      "layout_id": "MAAT",
+      "observer": "MAAT",
+      "code_version": "fixture-v1.3",
+      "source_profile_code": "TEST_EQUITY_SESSION_V1",
+      "instrument": {
+        "ticker_id": "NASDAQ:TEST",
+        "venue": "NASDAQ",
+        "symbol": "TEST",
+        "base_asset": "TEST",
+        "quote_asset": "USD",
+        "asset_class": "EQUITY",
+        "instrument_type": "EQUITY",
+        "contract": {
+          "contract_type": "NONE",
+          "contract_id": null,
+          "series_symbol": null,
+          "expiry_kind": "NONE",
+          "expiry_time": null,
+          "settlement_asset": "USD",
+          "contract_multiplier": null,
+          "continuous_series": false,
+          "adjustment_mode": "NONE",
+          "adjustment_applied": false,
+          "roll_state": "NONE",
+          "roll_event": false
+        }
+      },
+      "session_hint": {
+        "session_type": "EXCHANGE_SESSION",
+        "session_state": "CLOSED",
+        "is_market_open": false
+      },
+      "timing": {
+        "timeframe": "60",
+        "bar_open_time": 1785100000000,
+        "bar_close_time": 1785103600000,
+        "sent_at": 1785103601000
+      },
+      "bar": {
+        "open": 100,
+        "high": 101,
+        "low": 99,
+        "close": 100,
+        "volume": 1000,
+        "volume_unit": "BASE_ASSET",
+        "volume_basis": "EXCHANGE_NATIVE"
+      },
+      "packet_type": "BAR_CLOSE_SNAPSHOT",
+      "confirmed": true,
+      "quality": {
+        "sensor_quality": "GOOD",
+        "valid": true,
+        "flags": []
+      },
+      "client_event_key": "AS1|MAAT|NASDAQ:TEST|60|1785103600000|as1.v1.3",
+      "payload": {
+        "state": "CLOSED"
+      }
+    },
+    {
+      "schema_version": "as1.v1.3",
+      "satellite_id": "AS1",
+      "platform": "TRADINGVIEW",
+      "layout_id": "MAAT2",
+      "observer": "MAAT2",
+      "code_version": "fixture-v1.3",
+      "source_profile_code": "TEST_EQUITY_SESSION_V1",
+      "instrument": {
+        "ticker_id": "NASDAQ:TEST",
+        "venue": "NASDAQ",
+        "symbol": "TEST",
+        "base_asset": "TEST",
+        "quote_asset": "USD",
+        "asset_class": "EQUITY",
+        "instrument_type": "EQUITY",
+        "contract": {
+          "contract_type": "NONE",
+          "contract_id": null,
+          "series_symbol": null,
+          "expiry_kind": "NONE",
+          "expiry_time": null,
+          "settlement_asset": "USD",
+          "contract_multiplier": null,
+          "continuous_series": false,
+          "adjustment_mode": "NONE",
+          "adjustment_applied": false,
+          "roll_state": "NONE",
+          "roll_event": false
+        }
+      },
+      "session_hint": {
+        "session_type": "EXCHANGE_SESSION",
+        "session_state": "CLOSED",
+        "is_market_open": false
+      },
+      "timing": {
+        "timeframe": "60",
+        "bar_open_time": 1785100000000,
+        "bar_close_time": 1785103600000,
+        "sent_at": 1785103601000
+      },
+      "bar": {
+        "open": 100,
+        "high": 101,
+        "low": 99,
+        "close": 100,
+        "volume": 1000,
+        "volume_unit": "BASE_ASSET",
+        "volume_basis": "EXCHANGE_NATIVE"
+      },
+      "packet_type": "BAR_CLOSE_SNAPSHOT",
+      "confirmed": true,
+      "quality": {
+        "sensor_quality": "GOOD",
+        "valid": true,
+        "flags": []
+      },
+      "client_event_key": "AS1|MAAT2|NASDAQ:TEST|60|1785103600000|as1.v1.3",
+      "payload": {
+        "state": "CLOSED"
+      }
     }
   ],
   "normalized_observations": [
@@ -175,6 +364,336 @@
       "payload": {
         "state": "CLOSED"
       }
+    },
+    {
+      "normalized_schema_version": "as1.normalized.v1.3",
+      "source_schema_version": "as1.v1.3",
+      "normalized_observation_id": "norm-closed-b",
+      "raw_event_id": "raw-closed-b",
+      "satellite_id": "AS1",
+      "layout_id": "HORUS_B",
+      "observer": "HORUS",
+      "code_version": "fixture-v1.3",
+      "source_profile_code": "TEST_EQUITY_SESSION_V1",
+      "canonical_regime_id": "test-equity-regime-001",
+      "instrument": {
+        "ticker_id": "NASDAQ:TEST",
+        "venue": "NASDAQ",
+        "symbol": "TEST",
+        "base_asset": "TEST",
+        "quote_asset": "USD",
+        "asset_class": "EQUITY",
+        "instrument_type": "EQUITY",
+        "contract": {
+          "contract_type": "NONE",
+          "contract_id": null,
+          "series_symbol": null,
+          "expiry_kind": "NONE",
+          "expiry_time": null,
+          "settlement_asset": "USD",
+          "contract_multiplier": null,
+          "continuous_series": false,
+          "adjustment_mode": "NONE",
+          "adjustment_applied": false,
+          "roll_state": "NONE",
+          "roll_event": false
+        }
+      },
+      "canonical_instrument": {
+        "ticker_id": "NASDAQ:TEST",
+        "venue": "NASDAQ",
+        "symbol": "TEST",
+        "base_asset": "TEST",
+        "quote_asset": "USD",
+        "asset_class": "EQUITY",
+        "instrument_type": "EQUITY",
+        "contract": {
+          "contract_type": "NONE",
+          "contract_id": null,
+          "series_symbol": null,
+          "expiry_kind": "NONE",
+          "expiry_time": null,
+          "settlement_asset": "USD",
+          "contract_multiplier": null,
+          "continuous_series": false,
+          "adjustment_mode": "NONE",
+          "adjustment_applied": false,
+          "roll_state": "NONE",
+          "roll_event": false
+        }
+      },
+      "series_segment_id": null,
+      "registry_snapshot_version": "as1-source-profile-registry.v1.3",
+      "session_hint": {
+        "session_type": "EXCHANGE_SESSION",
+        "session_state": "CLOSED",
+        "is_market_open": false
+      },
+      "session_context": {
+        "validated": true,
+        "session_calendar_id": "TEST_XNAS",
+        "session_timezone": "America/New_York",
+        "canonical_session_state": "CLOSED",
+        "expectation_state": "NOT_EXPECTED",
+        "expected_next_observation_at": null,
+        "freshness_deadline_at": null,
+        "validation_flags": []
+      },
+      "timing": {
+        "timeframe": "60",
+        "bar_open_time": 1785100000000,
+        "bar_close_time": 1785103600000,
+        "sent_at": 1785103601000
+      },
+      "bar": {
+        "open": 100,
+        "high": 101,
+        "low": 99,
+        "close": 100,
+        "volume": 1000,
+        "volume_unit": "BASE_ASSET",
+        "volume_basis": "EXCHANGE_NATIVE"
+      },
+      "quality": {
+        "sensor_quality": "GOOD",
+        "valid": true,
+        "flags": []
+      },
+      "server_evaluation": {
+        "schema_valid": true,
+        "registry_validation_status": "VALID",
+        "registry_validation_flags": [],
+        "received_at": 1785103601500,
+        "delivery_delay_seconds": 0.5,
+        "age_seconds": 86400,
+        "freshness": "NOT_EXPECTED",
+        "accepted": true,
+        "quarantine_reason": null
+      },
+      "dedup_key": "dedup-closed-b",
+      "payload": {
+        "state": "CLOSED"
+      }
+    },
+    {
+      "normalized_schema_version": "as1.normalized.v1.3",
+      "source_schema_version": "as1.v1.3",
+      "normalized_observation_id": "norm-closed-m",
+      "raw_event_id": "raw-closed-m",
+      "satellite_id": "AS1",
+      "layout_id": "MAAT",
+      "observer": "MAAT",
+      "code_version": "fixture-v1.3",
+      "source_profile_code": "TEST_EQUITY_SESSION_V1",
+      "canonical_regime_id": "test-equity-regime-001",
+      "instrument": {
+        "ticker_id": "NASDAQ:TEST",
+        "venue": "NASDAQ",
+        "symbol": "TEST",
+        "base_asset": "TEST",
+        "quote_asset": "USD",
+        "asset_class": "EQUITY",
+        "instrument_type": "EQUITY",
+        "contract": {
+          "contract_type": "NONE",
+          "contract_id": null,
+          "series_symbol": null,
+          "expiry_kind": "NONE",
+          "expiry_time": null,
+          "settlement_asset": "USD",
+          "contract_multiplier": null,
+          "continuous_series": false,
+          "adjustment_mode": "NONE",
+          "adjustment_applied": false,
+          "roll_state": "NONE",
+          "roll_event": false
+        }
+      },
+      "canonical_instrument": {
+        "ticker_id": "NASDAQ:TEST",
+        "venue": "NASDAQ",
+        "symbol": "TEST",
+        "base_asset": "TEST",
+        "quote_asset": "USD",
+        "asset_class": "EQUITY",
+        "instrument_type": "EQUITY",
+        "contract": {
+          "contract_type": "NONE",
+          "contract_id": null,
+          "series_symbol": null,
+          "expiry_kind": "NONE",
+          "expiry_time": null,
+          "settlement_asset": "USD",
+          "contract_multiplier": null,
+          "continuous_series": false,
+          "adjustment_mode": "NONE",
+          "adjustment_applied": false,
+          "roll_state": "NONE",
+          "roll_event": false
+        }
+      },
+      "series_segment_id": null,
+      "registry_snapshot_version": "as1-source-profile-registry.v1.3",
+      "session_hint": {
+        "session_type": "EXCHANGE_SESSION",
+        "session_state": "CLOSED",
+        "is_market_open": false
+      },
+      "session_context": {
+        "validated": true,
+        "session_calendar_id": "TEST_XNAS",
+        "session_timezone": "America/New_York",
+        "canonical_session_state": "CLOSED",
+        "expectation_state": "NOT_EXPECTED",
+        "expected_next_observation_at": null,
+        "freshness_deadline_at": null,
+        "validation_flags": []
+      },
+      "timing": {
+        "timeframe": "60",
+        "bar_open_time": 1785100000000,
+        "bar_close_time": 1785103600000,
+        "sent_at": 1785103601000
+      },
+      "bar": {
+        "open": 100,
+        "high": 101,
+        "low": 99,
+        "close": 100,
+        "volume": 1000,
+        "volume_unit": "BASE_ASSET",
+        "volume_basis": "EXCHANGE_NATIVE"
+      },
+      "quality": {
+        "sensor_quality": "GOOD",
+        "valid": true,
+        "flags": []
+      },
+      "server_evaluation": {
+        "schema_valid": true,
+        "registry_validation_status": "VALID",
+        "registry_validation_flags": [],
+        "received_at": 1785103601500,
+        "delivery_delay_seconds": 0.5,
+        "age_seconds": 86400,
+        "freshness": "NOT_EXPECTED",
+        "accepted": true,
+        "quarantine_reason": null
+      },
+      "dedup_key": "dedup-closed-m",
+      "payload": {
+        "state": "CLOSED"
+      }
+    },
+    {
+      "normalized_schema_version": "as1.normalized.v1.3",
+      "source_schema_version": "as1.v1.3",
+      "normalized_observation_id": "norm-closed-m2",
+      "raw_event_id": "raw-closed-m2",
+      "satellite_id": "AS1",
+      "layout_id": "MAAT2",
+      "observer": "MAAT2",
+      "code_version": "fixture-v1.3",
+      "source_profile_code": "TEST_EQUITY_SESSION_V1",
+      "canonical_regime_id": "test-equity-regime-001",
+      "instrument": {
+        "ticker_id": "NASDAQ:TEST",
+        "venue": "NASDAQ",
+        "symbol": "TEST",
+        "base_asset": "TEST",
+        "quote_asset": "USD",
+        "asset_class": "EQUITY",
+        "instrument_type": "EQUITY",
+        "contract": {
+          "contract_type": "NONE",
+          "contract_id": null,
+          "series_symbol": null,
+          "expiry_kind": "NONE",
+          "expiry_time": null,
+          "settlement_asset": "USD",
+          "contract_multiplier": null,
+          "continuous_series": false,
+          "adjustment_mode": "NONE",
+          "adjustment_applied": false,
+          "roll_state": "NONE",
+          "roll_event": false
+        }
+      },
+      "canonical_instrument": {
+        "ticker_id": "NASDAQ:TEST",
+        "venue": "NASDAQ",
+        "symbol": "TEST",
+        "base_asset": "TEST",
+        "quote_asset": "USD",
+        "asset_class": "EQUITY",
+        "instrument_type": "EQUITY",
+        "contract": {
+          "contract_type": "NONE",
+          "contract_id": null,
+          "series_symbol": null,
+          "expiry_kind": "NONE",
+          "expiry_time": null,
+          "settlement_asset": "USD",
+          "contract_multiplier": null,
+          "continuous_series": false,
+          "adjustment_mode": "NONE",
+          "adjustment_applied": false,
+          "roll_state": "NONE",
+          "roll_event": false
+        }
+      },
+      "series_segment_id": null,
+      "registry_snapshot_version": "as1-source-profile-registry.v1.3",
+      "session_hint": {
+        "session_type": "EXCHANGE_SESSION",
+        "session_state": "CLOSED",
+        "is_market_open": false
+      },
+      "session_context": {
+        "validated": true,
+        "session_calendar_id": "TEST_XNAS",
+        "session_timezone": "America/New_York",
+        "canonical_session_state": "CLOSED",
+        "expectation_state": "NOT_EXPECTED",
+        "expected_next_observation_at": null,
+        "freshness_deadline_at": null,
+        "validation_flags": []
+      },
+      "timing": {
+        "timeframe": "60",
+        "bar_open_time": 1785100000000,
+        "bar_close_time": 1785103600000,
+        "sent_at": 1785103601000
+      },
+      "bar": {
+        "open": 100,
+        "high": 101,
+        "low": 99,
+        "close": 100,
+        "volume": 1000,
+        "volume_unit": "BASE_ASSET",
+        "volume_basis": "EXCHANGE_NATIVE"
+      },
+      "quality": {
+        "sensor_quality": "GOOD",
+        "valid": true,
+        "flags": []
+      },
+      "server_evaluation": {
+        "schema_valid": true,
+        "registry_validation_status": "VALID",
+        "registry_validation_flags": [],
+        "received_at": 1785103601500,
+        "delivery_delay_seconds": 0.5,
+        "age_seconds": 86400,
+        "freshness": "NOT_EXPECTED",
+        "accepted": true,
+        "quarantine_reason": null
+      },
+      "dedup_key": "dedup-closed-m2",
+      "payload": {
+        "state": "CLOSED"
+      }
     }
   ],
   "fusion_snapshot": {
@@ -188,7 +707,7 @@
     "visibility_formula_version": "AS1_VIS_V1",
     "visibility_breakdown": {
       "expected_count": 0,
-      "not_expected_count": 1,
+      "not_expected_count": 4,
       "fresh_count": 0,
       "aging_count": 0,
       "stale_count": 0,
@@ -222,11 +741,68 @@
         "dedup_key": "dedup-closed-a",
         "contract_id": null,
         "series_segment_id": null
+      },
+      {
+        "layout_id": "HORUS_B",
+        "normalized_observation_id": "norm-closed-b",
+        "raw_event_id": "raw-closed-b",
+        "ticker_id": "NASDAQ:TEST",
+        "canonical_regime_id": "test-equity-regime-001",
+        "timeframe": "60",
+        "bar_close_time": 1785103600000,
+        "received_at": 1785103601500,
+        "expectation_state": "NOT_EXPECTED",
+        "age_seconds": 86400,
+        "sensor_quality": "GOOD",
+        "freshness": "NOT_EXPECTED",
+        "valid": true,
+        "dedup_key": "dedup-closed-b",
+        "contract_id": null,
+        "series_segment_id": null
+      },
+      {
+        "layout_id": "MAAT",
+        "normalized_observation_id": "norm-closed-m",
+        "raw_event_id": "raw-closed-m",
+        "ticker_id": "NASDAQ:TEST",
+        "canonical_regime_id": "test-equity-regime-001",
+        "timeframe": "60",
+        "bar_close_time": 1785103600000,
+        "received_at": 1785103601500,
+        "expectation_state": "NOT_EXPECTED",
+        "age_seconds": 86400,
+        "sensor_quality": "GOOD",
+        "freshness": "NOT_EXPECTED",
+        "valid": true,
+        "dedup_key": "dedup-closed-m",
+        "contract_id": null,
+        "series_segment_id": null
+      },
+      {
+        "layout_id": "MAAT2",
+        "normalized_observation_id": "norm-closed-m2",
+        "raw_event_id": "raw-closed-m2",
+        "ticker_id": "NASDAQ:TEST",
+        "canonical_regime_id": "test-equity-regime-001",
+        "timeframe": "60",
+        "bar_close_time": 1785103600000,
+        "received_at": 1785103601500,
+        "expectation_state": "NOT_EXPECTED",
+        "age_seconds": 86400,
+        "sensor_quality": "GOOD",
+        "freshness": "NOT_EXPECTED",
+        "valid": true,
+        "dedup_key": "dedup-closed-m2",
+        "contract_id": null,
+        "series_segment_id": null
       }
     ],
     "expected_layouts": [],
     "not_expected_layouts": [
-      "HORUS_A"
+      "HORUS_A",
+      "HORUS_B",
+      "MAAT",
+      "MAAT2"
     ],
     "missing_layouts": [],
     "stale_layouts": [],
@@ -245,6 +821,18 @@
     {
       "raw_event_index": 0,
       "raw_event_id": "raw-closed-a"
+    },
+    {
+      "raw_event_index": 1,
+      "raw_event_id": "raw-closed-b"
+    },
+    {
+      "raw_event_index": 2,
+      "raw_event_id": "raw-closed-m"
+    },
+    {
+      "raw_event_index": 3,
+      "raw_event_id": "raw-closed-m2"
     }
   ]
 }

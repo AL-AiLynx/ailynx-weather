@@ -26,6 +26,7 @@ CHECKS = [
     "RAW_NORMALIZED_SESSION_HINT_PRESERVATION", "RAW_NORMALIZED_TIMING_PRESERVATION",
     "RAW_NORMALIZED_BAR_PRESERVATION", "RAW_NORMALIZED_QUALITY_PRESERVATION",
     "RAW_NORMALIZED_PAYLOAD_PRESERVATION", "NORMALIZED_FUSION_PROVENANCE",
+    "NORMALIZED_FUSION_EXPECTATION_PROVENANCE", "NORMALIZED_FUSION_RECEIVED_AT_PROVENANCE",
     "FIXTURE_REGISTRY_SCHEMA_VALIDATION", "FIXTURE_SOURCE_PROFILE_RESOLUTION",
     "CANONICAL_REGIME_FROM_REGISTRY", "CONTRACT_LIFECYCLE_CONSISTENCY",
     "SESSION_POLICY_SCHEMA_VALIDATION", "SESSION_EXPECTATION_CONSISTENCY",
@@ -34,16 +35,20 @@ CHECKS = [
     "FUSION_STALE_LAYOUT_SET_CONSISTENCY", "FUSION_INVALID_LAYOUT_SET_CONSISTENCY",
     "FUSION_MISSING_LAYOUT_SET_CONSISTENCY", "FUSION_NOT_EXPECTED_LAYOUT_SET_CONSISTENCY",
     "FUSION_FLAG_CONSISTENCY",
+    "CLOSED_ALL_LAYOUTS_NOT_EXPECTED", "VISIBILITY_BREAKDOWN_COUNT_RECOMPUTATION",
     "ASYNC_MULTITIMEFRAME_COVERAGE", "ASYNC_BAR_CLOSE_TIME_COVERAGE",
     "VISIBILITY_RECOMPUTATION", "VISIBILITY_ROUNDING",
     "NEGATIVE_MUTATION_AGE_SECONDS", "NEGATIVE_MUTATION_SOURCE_PROFILE",
     "NEGATIVE_MUTATION_CONTRACT", "NEGATIVE_MUTATION_FUSION_PROVENANCE",
     "NEGATIVE_MUTATION_FRESHNESS", "NEGATIVE_MUTATION_FUSION_SUMMARY",
+    "NEGATIVE_MUTATION_EXPECTATION_PROVENANCE", "NEGATIVE_MUTATION_RECEIVED_AT_PROVENANCE",
+    "NEGATIVE_MUTATION_VISIBILITY_BREAKDOWN",
     "FIXTURE_ID_CONSISTENCY",
 ]
 QUALITY = {"GOOD": Decimal("1"), "LIMITED": Decimal("0.75"), "WATCH": Decimal("0.50"), "INVALID": Decimal("0")}
 FRESHNESS = {"FRESH": Decimal("1"), "AGING": Decimal("0.70"), "STALE": Decimal("0.25")}
 COHERENCE = {"ALIGNED": Decimal("1"), "MIXED": Decimal("0.85"), "CONFLICT": Decimal("0.60"), "INSUFFICIENT": Decimal("1")}
+ALL_LAYOUTS = {"HORUS_A", "HORUS_B", "MAAT", "MAAT2"}
 
 
 def load(path: Path):
@@ -136,6 +141,8 @@ def validate_fixture(fixture: dict, validators: dict, profiles: dict) -> None:
             "raw_event_id": norm["raw_event_id"], "layout_id": norm["layout_id"],
             "ticker_id": norm["canonical_instrument"]["ticker_id"], "canonical_regime_id": norm["canonical_regime_id"],
             "timeframe": norm["timing"]["timeframe"], "bar_close_time": norm["timing"]["bar_close_time"],
+            "received_at": norm["server_evaluation"]["received_at"],
+            "expectation_state": norm["session_context"]["expectation_state"],
             "sensor_quality": norm["quality"]["sensor_quality"], "freshness": norm["server_evaluation"]["freshness"],
             "valid": norm["quality"]["valid"], "dedup_key": norm["dedup_key"],
             "contract_id": norm["canonical_instrument"]["contract"]["contract_id"], "series_segment_id": norm["series_segment_id"],
@@ -167,6 +174,17 @@ def validate_fixture(fixture: dict, validators: dict, profiles: dict) -> None:
     if fid == "AS1_V13_CLOSED_001":
         assert "SESSION_CLOSED" in flags and not expected
     result, breakdown = recompute_visibility(fusion), fusion["visibility_breakdown"]
+    recomputed_counts = {
+        "expected_count": len(fusion["expected_layouts"]),
+        "not_expected_count": len(fusion["not_expected_layouts"]),
+        "fresh_count": sum(c["expectation_state"] == "EXPECTED" and c["freshness"] == "FRESH" for c in components),
+        "aging_count": sum(c["expectation_state"] == "EXPECTED" and c["freshness"] == "AGING" for c in components),
+        "stale_count": len(fusion["stale_layouts"]),
+        "missing_count": len(fusion["missing_layouts"]),
+        "invalid_count": len(fusion["invalid_layouts"]),
+    }
+    for field, value in recomputed_counts.items():
+        assert breakdown[field] == value, f"{fid}: visibility breakdown mismatch for {field}"
     assert breakdown["base_visibility"] == (None if result["base"] is None else float(result["base"]))
     assert fusion["visibility_score"] == result["score"] and fusion["visibility_state"] == result["state"]
     assert breakdown["rounding_mode"] == "DECIMAL_HALF_UP"
@@ -175,6 +193,10 @@ def validate_fixture(fixture: dict, validators: dict, profiles: dict) -> None:
     assert isinstance(fixture["expected_assertions"], dict)
     assert fixture["expected_assertions"]["visibility_score"] == fusion["visibility_score"]
     assert fixture["expected_assertions"]["visibility_state"] == fusion["visibility_state"]
+    if fid == "AS1_V13_CLOSED_001":
+        assert set(fusion["not_expected_layouts"]) == ALL_LAYOUTS
+        assert fusion["expected_layouts"] == [] and fusion["missing_layouts"] == []
+        assert fusion["visibility_score"] is None and fusion["visibility_state"] == "NOT_EXPECTED"
     if fid == "AS1_V13_NORMAL_001":
         assert len({n["timing"]["timeframe"] for n in fixture["normalized_observations"]}) >= 3
         assert len({n["timing"]["bar_close_time"] for n in fixture["normalized_observations"]}) >= 2
@@ -237,6 +259,9 @@ def main() -> int:
             f["fusion_snapshot"]["component_states"][0]["freshness"] = "AGING"
         mutation_must_fail(roll, mutate_freshness, validators, profiles)
         mutation_must_fail(roll, lambda f: f["fusion_snapshot"].__setitem__("stale_layouts", []), validators, profiles)
+        mutation_must_fail(normal, lambda f: f["fusion_snapshot"]["component_states"][0].__setitem__("expectation_state", "NOT_EXPECTED"), validators, profiles)
+        mutation_must_fail(normal, lambda f: f["fusion_snapshot"]["component_states"][0].__setitem__("received_at", f["fusion_snapshot"]["component_states"][0]["received_at"] + 1), validators, profiles)
+        mutation_must_fail(roll, lambda f: f["fusion_snapshot"]["visibility_breakdown"].__setitem__("stale_count", f["fusion_snapshot"]["visibility_breakdown"]["stale_count"] + 1), validators, profiles)
     except Exception as exc:
         print(f"V1_3_FIXTURE_VALIDATION = FAIL: {exc}", file=sys.stderr)
         return 1

@@ -2,6 +2,13 @@
 
 ## as1.v1.3 - 2026-08-13
 
+### Freeze Gate Final Patch
+
+- Expands CLOSED into explicit NOT_EXPECTED chains for all four AS1 layouts.
+- Adds expectation-state and receipt-time Normalized-to-Fusion provenance checks and mutations.
+- Independently recomputes all seven visibility breakdown counts and adds a count-corruption mutation.
+- Completes the v1.3 freeze gate without changing schemas or contract semantics.
+
 ### Final Consistency Patch
 
 - Removes `fixture_id` from Production Normalized and Fusion schemas and objects, leaving it only on Fixture Wrappers.
