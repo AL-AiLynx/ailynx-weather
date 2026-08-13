@@ -17,7 +17,11 @@ Coinbase spot and legacy OKX perpetual must not be automatically price- or volum
 This repository contains the v1.3 contract, schemas, Registry/runtime/ingest configuration, mappings, and executable fixtures. Pine Exporter integration, TradingView Alert creation, Supabase Registry storage, Edge Function validation, live data storage, webhook delivery, and credentials are not implemented. The next step is **HORUS A Exporter patch design**.
 
 - Active contract = `as1.v1.3`
-- v1.3 hardening = applied
+- Hardening = PASS
+- Final consistency patch = PASS
+- V1_3_FIXTURE_VALIDATION = PASS
+- LEGACY_V1_2_REGRESSION_AUDIT = PASS
+- Contract status = FROZEN CANDIDATE
 - Production/Test schema isolation = PASS
 - Fixture registry validation = PASS
 - Async MTF fixture validation = PASS

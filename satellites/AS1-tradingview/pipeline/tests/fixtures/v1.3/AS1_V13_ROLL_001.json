@@ -132,7 +132,6 @@
     {
       "normalized_schema_version": "as1.normalized.v1.3",
       "source_schema_version": "as1.v1.3",
-      "fixture_id": "AS1_V13_ROLL_001",
       "normalized_observation_id": "norm-roll-old",
       "raw_event_id": "raw-roll-old",
       "satellite_id": "AS1",
@@ -243,7 +242,6 @@
     {
       "normalized_schema_version": "as1.normalized.v1.3",
       "source_schema_version": "as1.v1.3",
-      "fixture_id": "AS1_V13_ROLL_001",
       "normalized_observation_id": "norm-roll-new",
       "raw_event_id": "raw-roll-new",
       "satellite_id": "AS1",
@@ -354,7 +352,6 @@
   ],
   "fusion_snapshot": {
     "schema_version": "as1.fusion.v1.3",
-    "fixture_id": "AS1_V13_ROLL_001",
     "satellite_id": "AS1",
     "instrument_key": "CME_MINI:NQ1!",
     "assembly_time": 1781090300000,
@@ -364,7 +361,7 @@
     "visibility_formula_version": "AS1_VIS_V1",
     "visibility_breakdown": {
       "expected_count": 2,
-      "not_expected_count": 2,
+      "not_expected_count": 0,
       "fresh_count": 1,
       "aging_count": 0,
       "stale_count": 1,
@@ -422,17 +419,17 @@
       "HORUS_A",
       "HORUS_B"
     ],
-    "not_expected_layouts": [
-      "MAAT",
-      "MAAT2"
-    ],
+    "not_expected_layouts": [],
     "missing_layouts": [],
-    "stale_layouts": [],
+    "stale_layouts": [
+      "HORUS_A"
+    ],
     "invalid_layouts": [],
     "conflicting_layouts": [],
     "flags": [
       "CONTRACT_MIXED_COMPONENTS",
-      "SERIES_SEGMENT_MIXED_COMPONENTS"
+      "SERIES_SEGMENT_MIXED_COMPONENTS",
+      "STALE_COMPONENT_PRESENT"
     ]
   },
   "expected_assertions": {

@@ -2,6 +2,14 @@
 
 ## as1.v1.3 - 2026-08-13
 
+### Final Consistency Patch
+
+- Removes `fixture_id` from Production Normalized and Fusion schemas and objects, leaving it only on Fixture Wrappers.
+- Enforces exact Fusion stale, invalid, missing, and not-expected set invariants plus corresponding flags.
+- Fixes ROLL summary state to include `HORUS_A` as stale and adds `STALE_COMPONENT_PRESENT`.
+- Defines deterministic NOT_EXPECTED/FRESH/AGING/STALE schedule classification and rejects incomplete EXPECTED inputs.
+- Adds in-memory freshness and Fusion-summary negative mutations and revalidates the v1.2 known-issues audit.
+
 ### Hardening / Test Integrity Patch
 
 - Removes fixture/server identifiers from the Production Raw schema and models server-generated Raw IDs in fixture ingestion receipts.

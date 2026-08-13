@@ -270,7 +270,6 @@
     {
       "normalized_schema_version": "as1.normalized.v1.3",
       "source_schema_version": "as1.v1.3",
-      "fixture_id": "AS1_V13_NORMAL_001",
       "normalized_observation_id": "norm-normal-a",
       "raw_event_id": "raw-normal-a",
       "satellite_id": "AS1",
@@ -384,7 +383,6 @@
     {
       "normalized_schema_version": "as1.normalized.v1.3",
       "source_schema_version": "as1.v1.3",
-      "fixture_id": "AS1_V13_NORMAL_001",
       "normalized_observation_id": "norm-normal-b",
       "raw_event_id": "raw-normal-b",
       "satellite_id": "AS1",
@@ -498,7 +496,6 @@
     {
       "normalized_schema_version": "as1.normalized.v1.3",
       "source_schema_version": "as1.v1.3",
-      "fixture_id": "AS1_V13_NORMAL_001",
       "normalized_observation_id": "norm-normal-m",
       "raw_event_id": "raw-normal-m",
       "satellite_id": "AS1",
@@ -612,7 +609,6 @@
     {
       "normalized_schema_version": "as1.normalized.v1.3",
       "source_schema_version": "as1.v1.3",
-      "fixture_id": "AS1_V13_NORMAL_001",
       "normalized_observation_id": "norm-normal-m2",
       "raw_event_id": "raw-normal-m2",
       "satellite_id": "AS1",
@@ -726,7 +722,6 @@
   ],
   "fusion_snapshot": {
     "schema_version": "as1.fusion.v1.3",
-    "fixture_id": "AS1_V13_NORMAL_001",
     "satellite_id": "AS1",
     "instrument_key": "COINBASE:BTCUSD",
     "assembly_time": 1785149100000,

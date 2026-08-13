@@ -22,7 +22,7 @@ AGE_TOLERANCE_SECONDS = Decimal("0")
 
 CHECKS = [
     "JSON_SCHEMA_VALIDATION", "PRODUCTION_SCHEMA_TEST_METADATA_ISOLATION",
-    "RAW_EVENT_ID_SERVER_OWNERSHIP", "RAW_NORMALIZED_INSTRUMENT_PRESERVATION",
+    "FIXTURE_METADATA_ISOLATION", "RAW_EVENT_ID_SERVER_OWNERSHIP", "RAW_NORMALIZED_INSTRUMENT_PRESERVATION",
     "RAW_NORMALIZED_SESSION_HINT_PRESERVATION", "RAW_NORMALIZED_TIMING_PRESERVATION",
     "RAW_NORMALIZED_BAR_PRESERVATION", "RAW_NORMALIZED_QUALITY_PRESERVATION",
     "RAW_NORMALIZED_PAYLOAD_PRESERVATION", "NORMALIZED_FUSION_PROVENANCE",
@@ -30,11 +30,15 @@ CHECKS = [
     "CANONICAL_REGIME_FROM_REGISTRY", "CONTRACT_LIFECYCLE_CONSISTENCY",
     "SESSION_POLICY_SCHEMA_VALIDATION", "SESSION_EXPECTATION_CONSISTENCY",
     "NOT_EXPECTED_HANDLING", "EXPECTED_MISSING_HANDLING",
-    "AGE_SECONDS_RECOMPUTATION", "FRESHNESS_RECOMPUTATION",
+    "AGE_SECONDS_RECOMPUTATION", "FRESHNESS_RECOMPUTATION", "DETERMINISTIC_FRESHNESS_RECOMPUTATION",
+    "FUSION_STALE_LAYOUT_SET_CONSISTENCY", "FUSION_INVALID_LAYOUT_SET_CONSISTENCY",
+    "FUSION_MISSING_LAYOUT_SET_CONSISTENCY", "FUSION_NOT_EXPECTED_LAYOUT_SET_CONSISTENCY",
+    "FUSION_FLAG_CONSISTENCY",
     "ASYNC_MULTITIMEFRAME_COVERAGE", "ASYNC_BAR_CLOSE_TIME_COVERAGE",
     "VISIBILITY_RECOMPUTATION", "VISIBILITY_ROUNDING",
     "NEGATIVE_MUTATION_AGE_SECONDS", "NEGATIVE_MUTATION_SOURCE_PROFILE",
     "NEGATIVE_MUTATION_CONTRACT", "NEGATIVE_MUTATION_FUSION_PROVENANCE",
+    "NEGATIVE_MUTATION_FRESHNESS", "NEGATIVE_MUTATION_FUSION_SUMMARY",
     "FIXTURE_ID_CONSISTENCY",
 ]
 QUALITY = {"GOOD": Decimal("1"), "LIMITED": Decimal("0.75"), "WATCH": Decimal("0.50"), "INVALID": Decimal("0")}
@@ -48,6 +52,22 @@ def load(path: Path):
 
 def half_up(value: Decimal, places: int) -> Decimal:
     return value.quantize(Decimal("1").scaleb(-places), rounding=ROUND_HALF_UP)
+
+
+def recompute_freshness(session_context: dict, assembly_time: int) -> str:
+    expectation = session_context["expectation_state"]
+    if expectation == "NOT_EXPECTED":
+        return "NOT_EXPECTED"
+    assert expectation == "EXPECTED", "DETERMINISTIC_FRESHNESS_EXPECTATION_UNKNOWN"
+    next_at = session_context["expected_next_observation_at"]
+    deadline = session_context["freshness_deadline_at"]
+    assert next_at is not None and deadline is not None, "DETERMINISTIC_FRESHNESS_INPUT_INCOMPLETE"
+    assert next_at <= deadline, "DETERMINISTIC_FRESHNESS_WINDOW_INVALID"
+    if assembly_time < next_at:
+        return "FRESH"
+    if assembly_time <= deadline:
+        return "AGING"
+    return "STALE"
 
 
 def recompute_visibility(fusion: dict) -> dict:
@@ -72,6 +92,7 @@ def recompute_visibility(fusion: dict) -> dict:
 
 def validate_fixture(fixture: dict, validators: dict, profiles: dict) -> None:
     fid = fixture["fixture_id"]
+    assert isinstance(fid, str) and fid
     raw_events = fixture["raw_events"]
     receipts = fixture["simulated_ingestion"]
     assert len(raw_events) == len(receipts) == len(fixture["normalized_observations"]), f"{fid}: ingestion cardinality"
@@ -97,7 +118,7 @@ def validate_fixture(fixture: dict, validators: dict, profiles: dict) -> None:
         assert raw["bar"]["volume_unit"] == profile["volume_unit"], "PROFILE_VOLUME_UNIT_MISMATCH"
     for norm in fixture["normalized_observations"]:
         validators["normalized"].validate(norm)
-        assert norm["fixture_id"] == fid
+        assert "fixture_id" not in norm
         raw = raw_by_id[norm["raw_event_id"]]
         profile = profiles[norm["source_profile_code"]]
         assert norm["canonical_regime_id"] == profile["canonical_regime_id"]
@@ -105,12 +126,9 @@ def validate_fixture(fixture: dict, validators: dict, profiles: dict) -> None:
             assert raw[field] == norm[field], f"{fid}: raw/normalized {field} changed"
         for field in ("satellite_id", "layout_id", "observer", "code_version", "source_profile_code"):
             assert raw[field] == norm[field], f"{fid}: raw/normalized {field} changed"
-        expectation = norm["session_context"]["expectation_state"]
-        freshness = norm["server_evaluation"]["freshness"]
-        assert (expectation == "NOT_EXPECTED") == (freshness == "NOT_EXPECTED")
     fusion = fixture["fusion_snapshot"]
     validators["fusion"].validate(fusion)
-    assert fusion["fixture_id"] == fid
+    assert "fixture_id" not in fusion
     assembly = fusion["assembly_time"]
     for component in fusion["component_states"]:
         norm = norm_by_id[component["normalized_observation_id"]]
@@ -129,18 +147,32 @@ def validate_fixture(fixture: dict, validators: dict, profiles: dict) -> None:
         assert abs(Decimal(str(norm["server_evaluation"]["age_seconds"])) - recomputed_age) <= AGE_TOLERANCE_SECONDS
         assert abs(Decimal(str(component["age_seconds"])) - recomputed_age) <= AGE_TOLERANCE_SECONDS
         context, freshness = norm["session_context"], norm["server_evaluation"]["freshness"]
-        if context["expectation_state"] == "EXPECTED" and context["freshness_deadline_at"] is not None and assembly > context["freshness_deadline_at"]:
-            assert freshness != "FRESH", f"{fid}: deadline exceeded but FRESH"
-    assert set(fusion["expected_layouts"]).isdisjoint(fusion["not_expected_layouts"])
-    assert set(fusion["missing_layouts"]) <= set(fusion["expected_layouts"])
-    if fusion["missing_layouts"]:
-        assert "EXPECTED_COMPONENT_MISSING" in fusion["flags"]
+        assert freshness == recompute_freshness(context, assembly), f"{fid}: deterministic freshness mismatch"
+    components = fusion["component_states"]
+    selected = {component["layout_id"] for component in components}
+    expected = set(fusion["expected_layouts"])
+    recomputed_not_expected = {c["layout_id"] for c in components if c["expectation_state"] == "NOT_EXPECTED"}
+    recomputed_stale = {c["layout_id"] for c in components if c["expectation_state"] == "EXPECTED" and c["freshness"] == "STALE"}
+    recomputed_invalid = {c["layout_id"] for c in components if not c["valid"] or c["sensor_quality"] == "INVALID"}
+    recomputed_missing = expected - selected
+    assert set(fusion["not_expected_layouts"]) == recomputed_not_expected
+    assert set(fusion["stale_layouts"]) == recomputed_stale
+    assert set(fusion["invalid_layouts"]) == recomputed_invalid
+    assert set(fusion["missing_layouts"]) == recomputed_missing
+    assert expected.isdisjoint(recomputed_not_expected)
+    flags = set(fusion["flags"])
+    assert ("STALE_COMPONENT_PRESENT" in flags) == bool(recomputed_stale)
+    assert ("INVALID_COMPONENT_PRESENT" in flags) == bool(recomputed_invalid)
+    assert ("EXPECTED_COMPONENT_MISSING" in flags) == bool(recomputed_missing)
+    if fid == "AS1_V13_CLOSED_001":
+        assert "SESSION_CLOSED" in flags and not expected
     result, breakdown = recompute_visibility(fusion), fusion["visibility_breakdown"]
     assert breakdown["base_visibility"] == (None if result["base"] is None else float(result["base"]))
     assert fusion["visibility_score"] == result["score"] and fusion["visibility_state"] == result["state"]
     assert breakdown["rounding_mode"] == "DECIMAL_HALF_UP"
     for layout, score in result["scores"].items():
         assert Decimal(str(breakdown["component_scores"][layout])) == score
+    assert isinstance(fixture["expected_assertions"], dict)
     assert fixture["expected_assertions"]["visibility_score"] == fusion["visibility_score"]
     assert fixture["expected_assertions"]["visibility_state"] == fusion["visibility_state"]
     if fid == "AS1_V13_NORMAL_001":
@@ -172,8 +204,13 @@ def main() -> int:
     ingest_schema = load(SCHEMA_DIR / "as1-ingest-policy-v1.3.json")
     for schema in [common, *schemas.values(), registry_schema, ingest_schema]:
         jsonschema.Draft202012Validator.check_schema(schema)
-    assert not ({"fixture_id", "raw_event_id"} & set(schemas["raw"].get("required", [])))
-    assert not ({"fixture_id", "raw_event_id"} & set(schemas["raw"]["properties"]))
+    for name in ("raw", "normalized", "fusion"):
+        assert "fixture_id" not in schemas[name].get("required", [])
+        assert "fixture_id" not in schemas[name]["properties"]
+    assert "raw_event_id" not in schemas["raw"].get("required", [])
+    assert "raw_event_id" not in schemas["raw"]["properties"]
+    assert "raw_event_id" in schemas["normalized"].get("required", [])
+    assert "raw_event_id" in schemas["normalized"]["properties"]
     store = {common["$id"]: common, "as1-common-types-v1.3.json": common}
     validators = {name: jsonschema.Draft202012Validator(schema, resolver=jsonschema.RefResolver.from_schema(schema, store=store)) for name, schema in schemas.items()}
     registry_validator = jsonschema.Draft202012Validator(registry_schema, resolver=jsonschema.RefResolver.from_schema(registry_schema, store=store))
@@ -185,13 +222,21 @@ def main() -> int:
     jsonschema.Draft202012Validator(ingest_schema).validate(load(PIPELINE / "config" / "as1-ingest-policy-v1.3.json"))
     fixtures = [load(path) for path in sorted(FIXTURE_DIR.glob("AS1_V13_*.json"))]
     try:
+        fixture_ids = [fixture["fixture_id"] for fixture in fixtures]
+        assert len(fixture_ids) == len(set(fixture_ids))
         for fixture in fixtures:
             validate_fixture(fixture, validators, profiles)
         normal = next(f for f in fixtures if f["fixture_id"] == "AS1_V13_NORMAL_001")
+        roll = next(f for f in fixtures if f["fixture_id"] == "AS1_V13_ROLL_001")
         mutation_must_fail(normal, lambda f: f["normalized_observations"][0]["server_evaluation"].__setitem__("age_seconds", f["normalized_observations"][0]["server_evaluation"]["age_seconds"] + 300), validators, profiles)
         mutation_must_fail(normal, lambda f: f["raw_events"][0].__setitem__("source_profile_code", "UNKNOWN_PROFILE"), validators, profiles)
         mutation_must_fail(normal, lambda f: f["normalized_observations"][0]["instrument"]["contract"].pop("contract_id"), validators, profiles)
         mutation_must_fail(normal, lambda f: f["fusion_snapshot"]["component_states"][0].__setitem__("timeframe", "999"), validators, profiles)
+        def mutate_freshness(f):
+            f["normalized_observations"][0]["server_evaluation"]["freshness"] = "AGING"
+            f["fusion_snapshot"]["component_states"][0]["freshness"] = "AGING"
+        mutation_must_fail(roll, mutate_freshness, validators, profiles)
+        mutation_must_fail(roll, lambda f: f["fusion_snapshot"].__setitem__("stale_layouts", []), validators, profiles)
     except Exception as exc:
         print(f"V1_3_FIXTURE_VALIDATION = FAIL: {exc}", file=sys.stderr)
         return 1

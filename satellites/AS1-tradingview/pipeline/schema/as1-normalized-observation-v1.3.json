@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://ailynx.local/schemas/as1-normalized-observation-v1.3.json", "title": "AS1 Normalized Observation v1.3",
   "type": "object", "additionalProperties": false,
-  "required": ["normalized_schema_version", "source_schema_version", "fixture_id", "normalized_observation_id", "raw_event_id", "satellite_id", "layout_id", "observer", "code_version", "source_profile_code", "canonical_regime_id", "instrument", "canonical_instrument", "series_segment_id", "registry_snapshot_version", "session_hint", "session_context", "timing", "bar", "quality", "server_evaluation", "dedup_key", "payload"],
+  "required": ["normalized_schema_version", "source_schema_version", "normalized_observation_id", "raw_event_id", "satellite_id", "layout_id", "observer", "code_version", "source_profile_code", "canonical_regime_id", "instrument", "canonical_instrument", "series_segment_id", "registry_snapshot_version", "session_hint", "session_context", "timing", "bar", "quality", "server_evaluation", "dedup_key", "payload"],
   "properties": {
-    "normalized_schema_version": {"const": "as1.normalized.v1.3"}, "source_schema_version": {"const": "as1.v1.3"}, "fixture_id": {"type": "string"}, "normalized_observation_id": {"type": "string", "minLength": 1}, "raw_event_id": {"type": "string", "minLength": 1},
+    "normalized_schema_version": {"const": "as1.normalized.v1.3"}, "source_schema_version": {"const": "as1.v1.3"}, "normalized_observation_id": {"type": "string", "minLength": 1}, "raw_event_id": {"type": "string", "minLength": 1},
     "satellite_id": {"const": "AS1"}, "layout_id": {"$ref": "as1-common-types-v1.3.json#/$defs/layoutId"}, "observer": {"type": "string"}, "code_version": {"type": "string"}, "source_profile_code": {"type": "string"}, "canonical_regime_id": {"type": "string"},
     "instrument": {"$ref": "as1-common-types-v1.3.json#/$defs/instrument"}, "canonical_instrument": {"$ref": "as1-common-types-v1.3.json#/$defs/instrument"}, "series_segment_id": {"type": ["string", "null"]}, "registry_snapshot_version": {"const": "as1-source-profile-registry.v1.3"},
     "session_hint": {"$ref": "as1-common-types-v1.3.json#/$defs/sessionHint"},

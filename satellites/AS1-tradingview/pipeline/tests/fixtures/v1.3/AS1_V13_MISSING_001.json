@@ -69,7 +69,6 @@
     {
       "normalized_schema_version": "as1.normalized.v1.3",
       "source_schema_version": "as1.v1.3",
-      "fixture_id": "AS1_V13_MISSING_001",
       "normalized_observation_id": "norm-missing-a",
       "raw_event_id": "raw-missing-a",
       "satellite_id": "AS1",
@@ -180,7 +179,6 @@
   ],
   "fusion_snapshot": {
     "schema_version": "as1.fusion.v1.3",
-    "fixture_id": "AS1_V13_MISSING_001",
     "satellite_id": "AS1",
     "instrument_key": "COINBASE:BTCUSD",
     "assembly_time": 1785149100000,
@@ -190,7 +188,7 @@
     "visibility_formula_version": "AS1_VIS_V1",
     "visibility_breakdown": {
       "expected_count": 2,
-      "not_expected_count": 2,
+      "not_expected_count": 0,
       "fresh_count": 1,
       "aging_count": 0,
       "stale_count": 0,
@@ -230,10 +228,7 @@
       "HORUS_A",
       "HORUS_B"
     ],
-    "not_expected_layouts": [
-      "MAAT",
-      "MAAT2"
-    ],
+    "not_expected_layouts": [],
     "missing_layouts": [
       "HORUS_B"
     ],

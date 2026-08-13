@@ -27,3 +27,13 @@ In-memory negative tests prove rejection of a 300-second age mutation, unknown S
 ## Freeze conditions
 
 The v1.3 validator, all JSON parsing/schema checks, and the legacy v1.2 known-issues audit must pass together. Pine Exporter, TradingView Alert, and Supabase remain unimplemented and outside this freeze.
+
+## Final Consistency Patch
+
+`fixture_id` is now exclusively Fixture Wrapper metadata. Production Raw, Normalized, and Fusion schemas and their fixture objects reject or omit it; server-owned `raw_event_id` remains present only from Normalized onward.
+
+Fusion summary sets are recomputed from selected components and expected slots. `stale_layouts`, `invalid_layouts`, `not_expected_layouts`, and `missing_layouts` must exactly match component/slot state. The presence of `STALE_COMPONENT_PRESENT`, `INVALID_COMPONENT_PRESENT`, and `EXPECTED_COMPONENT_MISSING` must match the corresponding recomputed set. ROLL therefore stores `stale_layouts=["HORUS_A"]` and `STALE_COMPONENT_PRESENT` while preserving its contract and segment flags.
+
+Freshness is deterministic: NOT_EXPECTED maps to NOT_EXPECTED; for EXPECTED, assembly before the next observation is FRESH, assembly from the next observation through the deadline is AGING, and assembly after the deadline is STALE. Missing schedule inputs fail fixture validation with `DETERMINISTIC_FRESHNESS_INPUT_INCOMPLETE`; age remains independently derived from bar close time.
+
+New in-memory mutations prove that incorrect freshness and an empty stale summary are detected without editing fixture files. The full v1.3 validation and the actually executed legacy known-issues audit both pass. With metadata isolation and all final invariants passing, `as1.v1.3` is a **FROZEN PIPELINE CONTRACT CANDIDATE**.

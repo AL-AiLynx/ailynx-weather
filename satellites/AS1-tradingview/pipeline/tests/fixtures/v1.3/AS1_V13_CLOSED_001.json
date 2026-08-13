@@ -69,7 +69,6 @@
     {
       "normalized_schema_version": "as1.normalized.v1.3",
       "source_schema_version": "as1.v1.3",
-      "fixture_id": "AS1_V13_CLOSED_001",
       "normalized_observation_id": "norm-closed-a",
       "raw_event_id": "raw-closed-a",
       "satellite_id": "AS1",
@@ -180,7 +179,6 @@
   ],
   "fusion_snapshot": {
     "schema_version": "as1.fusion.v1.3",
-    "fixture_id": "AS1_V13_CLOSED_001",
     "satellite_id": "AS1",
     "instrument_key": "NASDAQ:TEST",
     "assembly_time": 1785190000000,
@@ -190,7 +188,7 @@
     "visibility_formula_version": "AS1_VIS_V1",
     "visibility_breakdown": {
       "expected_count": 0,
-      "not_expected_count": 4,
+      "not_expected_count": 1,
       "fresh_count": 0,
       "aging_count": 0,
       "stale_count": 0,
@@ -228,10 +226,7 @@
     ],
     "expected_layouts": [],
     "not_expected_layouts": [
-      "HORUS_A",
-      "HORUS_B",
-      "MAAT",
-      "MAAT2"
+      "HORUS_A"
     ],
     "missing_layouts": [],
     "stale_layouts": [],
