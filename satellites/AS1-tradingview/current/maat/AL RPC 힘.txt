@@ -1,0 +1,887 @@
+//@version=6
+indicator("AL RPC 힘", overlay=true, max_bars_back=3000, max_labels_count=0, max_lines_count=0)
+
+string G_CORE = "허브1 | 핵심 설정"
+string G_WEIGHT = "허브1 | 가중치"
+string G_TABLE = "허브1 | 표 설정"
+string groupAlertBus = "HUB Alert Bus"
+
+bool enableAlertBus = input.bool(false, "Enable unified alert() JSON bus", group=groupAlertBus, display=display.none)
+bool sendSnapshots = input.bool(true, "Send snapshot on bar close", group=groupAlertBus, display=display.none)
+bool sendTriggers = input.bool(false, "Send trigger changes", group=groupAlertBus, display=display.none)
+string briefPolicy = input.string("STORE_ONLY", "Brief policy", options=["STORE_ONLY", "CHANGE_ONLY"], group=groupAlertBus, display=display.none)
+
+
+int atrLen = input.int(14, "ATR 길이", minval=1, group=G_CORE, display=display.none)
+int emaFastLen = input.int(21, "빠른 EMA", minval=1, group=G_CORE, display=display.none)
+int emaSlowLen = input.int(55, "느린 EMA", minval=2, group=G_CORE, display=display.none)
+int emaMajorFastLen = input.int(50, "방패 빠른 EMA", minval=2, group=G_CORE, display=display.none)
+int emaMajorSlowLen = input.int(200, "방패 느린 EMA", minval=5, group=G_CORE, display=display.none)
+int dmiLen = input.int(14, "DMI 길이", minval=1, group=G_CORE, display=display.none)
+int dmiSmooth = input.int(14, "DMI 스무딩", minval=1, group=G_CORE, display=display.none)
+int volLen = input.int(20, "거래량 SMA 길이", minval=1, group=G_CORE, display=display.none)
+float minAtrPct = input.float(0.05, "최소 ATR %", minval=0.0, step=0.01, group=G_CORE, display=display.none)
+float alertLevel = input.float(70.0, "얼러트 임계값", minval=1.0, maxval=100.0, step=1.0, group=G_CORE, display=display.none)
+
+int armorStructLen = input.int(24, "갑옷 구조 길이", minval=5, maxval=300, group=G_CORE, display=display.none)
+float armorBreakAtr = input.float(0.10, "갑옷 돌파 버퍼 ATR", minval=0.0, step=0.05, group=G_CORE, display=display.none)
+float armorVolNeed = input.float(1.25, "갑옷 거래량 배수", minval=0.5, step=0.05, group=G_CORE, display=display.none)
+int pivotLen = input.int(5, "피벗 확인 길이", minval=2, maxval=20, group=G_CORE, display=display.none)
+int helmetSweepLen = input.int(24, "헬멧 스윕 탐색 길이", minval=5, maxval=300, group=G_CORE, display=display.none)
+int helmetHoldBars = input.int(18, "헬멧 상태 유지 봉 수", minval=1, maxval=200, group=G_CORE, display=display.none)
+int sensorLookback = input.int(50, "반지/귀걸이 거래량 탐색 길이", minval=5, maxval=300, group=G_CORE, display=display.none)
+float sensorVolMult = input.float(1.80, "반지/귀걸이 거래량 배수", minval=1.05, step=0.05, group=G_CORE, display=display.none)
+int flowLookback = input.int(20, "목걸이 자금 흐름 탐색 길이", minval=5, maxval=300, group=G_CORE, display=display.none)
+int shoesLookback = input.int(24, "신발 극값 탐색 길이", minval=5, maxval=200, group=G_CORE, display=display.none)
+float shoesPullbackAtr = input.float(1.20, "신발 되돌림 ATR", minval=0.2, step=0.1, group=G_CORE, display=display.none)
+int pantsLookback = input.int(8, "바지 현재 시간봉 탐색 길이", minval=1, maxval=100, group=G_CORE, display=display.none)
+
+float wShield = input.float(1.35, "방패", minval=0.0, step=0.05, group=G_WEIGHT, display=display.none)
+float wArmor = input.float(1.20, "갑옷", minval=0.0, step=0.05, group=G_WEIGHT, display=display.none)
+float wHelmetState = input.float(1.50, "헬멧 상태", minval=0.0, step=0.05, group=G_WEIGHT, display=display.none)
+float wPants = input.float(1.05, "바지", minval=0.0, step=0.05, group=G_WEIGHT, display=display.none)
+float wHelmetFake = input.float(1.50, "헬멧 함정", minval=0.0, step=0.05, group=G_WEIGHT, display=display.none)
+float wRing = input.float(1.00, "반지", minval=0.0, step=0.05, group=G_WEIGHT, display=display.none)
+float wEarring = input.float(1.00, "귀걸이", minval=0.0, step=0.05, group=G_WEIGHT, display=display.none)
+float wNecklace = input.float(1.40, "목걸이", minval=0.0, step=0.05, group=G_WEIGHT, display=display.none)
+float wGlove = input.float(1.00, "장갑", minval=0.0, step=0.05, group=G_WEIGHT, display=display.none)
+float wShoes = input.float(1.10, "신발", minval=0.0, step=0.05, group=G_WEIGHT, display=display.none)
+
+bool showTable = input.bool(true, "표 표시", group=G_TABLE, display=display.none)
+string tablePosOpt = input.string("우측 상단", "표 위치", options=["좌측 상단", "중앙 상단", "우측 상단", "좌측 중앙", "정중앙", "우측 중앙", "좌측 하단", "중앙 하단", "우측 하단"], group=G_TABLE, display=display.none)
+int tableSizeScale = input.int(4, "표 크기 1~10", minval=1, maxval=10, group=G_TABLE, display=display.none)
+int cellWidthOpt = input.int(0, "셀 너비 (0 = 자동)", minval=0, maxval=40, group=G_TABLE, display=display.none)
+int cellHeightOpt = input.int(0, "셀 높이 (0 = 자동)", minval=0, maxval=20, group=G_TABLE, display=display.none)
+bool showTableFrame = input.bool(true, "표 외곽선 표시", group=G_TABLE, display=display.none)
+bool showTableGrid = input.bool(true, "표 내부 그리드 표시", group=G_TABLE, display=display.none)
+int frameWidthOpt = input.int(1, "외곽선 두께", minval=0, maxval=5, group=G_TABLE, display=display.none)
+int gridWidthOpt = input.int(1, "그리드 두께", minval=0, maxval=5, group=G_TABLE, display=display.none)
+color tableFrameColor = input.color(color.new(color.white, 70), "표 외곽선 색상", group=G_TABLE, display=display.none)
+color tableBorderColor = input.color(color.new(color.white, 85), "표 테두리 색상", group=G_TABLE, display=display.none)
+color tableHeaderBg = input.color(color.new(color.teal, 35), "헤더 배경색", group=G_TABLE, display=display.none)
+color tableBodyBg = input.color(color.new(color.black, 20), "본문 배경색", group=G_TABLE, display=display.none)
+color tableSummaryBg = input.color(color.new(color.black, 15), "종합 행 배경색", group=G_TABLE, display=display.none)
+color tableTextColor = input.color(color.white, "기본 글자색", group=G_TABLE, display=display.none)
+color tableLongColor = input.color(color.lime, "UP 글자색", group=G_TABLE, display=display.none)
+color tableShortColor = input.color(color.red, "DOWN 글자색", group=G_TABLE, display=display.none)
+color tableWarnColor = input.color(color.orange, "경고 글자색", group=G_TABLE, display=display.none)
+color tableNeutralColor = input.color(color.gray, "중립 글자색", group=G_TABLE, display=display.none)
+color tableStateLongBg = input.color(color.rgb(0, 60, 0), "UP 압력 배경색", group=G_TABLE, display=display.none)
+color tableStateShortBg = input.color(color.rgb(60, 0, 0), "DOWN 압력 배경색", group=G_TABLE, display=display.none)
+color tableStateNeutralBg = input.color(color.rgb(40, 40, 0), "중립 상태 배경색", group=G_TABLE, display=display.none)
+int tableBgTransp = input.int(20, "표 배경 투명도", minval=0, maxval=100, group=G_TABLE, display=display.none)
+int headerBgTransp = input.int(35, "헤더 배경 투명도", minval=0, maxval=100, group=G_TABLE, display=display.none)
+int riskBgTransp = input.int(35, "위험/경고 배경 투명도", minval=0, maxval=100, group=G_TABLE, display=display.none)
+string langMode = input.string("CODE", "상태 언어", options=["KR", "EN", "CODE"], group=G_TABLE, display=display.none)
+string columnMode = input.string("NORMAL", "열 표시 모드", options=["COMPACT", "NORMAL", "DEBUG"], group=G_TABLE, display=display.none)
+bool debugMode = input.bool(false, "디버그 모드", group=G_TABLE, display=display.none)
+bool compactRows = input.bool(true, "행 간격 압축", group=G_TABLE, display=display.none)
+bool showStateRow = input.bool(true, "STATE 행 표시", group=G_TABLE, display=display.none)
+bool showForceRow = input.bool(true, "FORCE 행 표시", group=G_TABLE, display=display.none)
+bool showLongRow = input.bool(true, "LONG 행 표시", group=G_TABLE, display=display.none)
+bool showShortRow = input.bool(true, "SHORT 행 표시", group=G_TABLE, display=display.none)
+bool showRiskRow = input.bool(true, "RISK 행 표시", group=G_TABLE, display=display.none)
+bool showEventRow = input.bool(true, "EVENT 행 표시", group=G_TABLE, display=display.none)
+bool showBusRow = input.bool(true, "BUS 행 표시", group=G_TABLE, display=display.none)
+
+bool showHTF = input.bool(true, "상위흐름 표시", group=G_CORE, display=display.none)
+string htfFast = input.timeframe("60", "상위흐름 빠른 TF", group=G_CORE, display=display.none)
+string htfSlow = input.timeframe("240", "상위흐름 느린 TF", group=G_CORE, display=display.none)
+
+f_clamp(float v, float lo, float hi) =>
+    math.max(lo, math.min(hi, v))
+
+f_clamp01(float v) =>
+    f_clamp(v, 0.0, 1.0)
+
+f_pct(float v) =>
+    float(math.round(f_clamp(v, 0.0, 100.0)))
+
+f_pos(string opt) =>
+    result = position.top_right
+    if opt == "좌측 상단"
+        result := position.top_left
+    else if opt == "중앙 상단"
+        result := position.top_center
+    else if opt == "우측 상단"
+        result := position.top_right
+    else if opt == "좌측 중앙"
+        result := position.middle_left
+    else if opt == "정중앙"
+        result := position.middle_center
+    else if opt == "우측 중앙"
+        result := position.middle_right
+    else if opt == "좌측 하단"
+        result := position.bottom_left
+    else if opt == "중앙 하단"
+        result := position.bottom_center
+    else if opt == "우측 하단"
+        result := position.bottom_right
+    result
+
+f_sizeFromScale(int scale) =>
+    result = size.small
+    if scale <= 2
+        result := size.tiny
+    else if scale <= 5
+        result := size.small
+    else if scale <= 7
+        result := size.normal
+    else if scale <= 9
+        result := size.large
+    else
+        result := size.huge
+    result
+
+f_tableCell(t, int col, int row, string txt, color txtColor, color bgColor, txtSize) =>
+    if cellWidthOpt > 0 and cellHeightOpt > 0
+        table.cell(t, col, row, txt, width=cellWidthOpt, height=cellHeightOpt, text_color=txtColor, bgcolor=bgColor, text_size=txtSize)
+    else if cellWidthOpt > 0
+        table.cell(t, col, row, txt, width=cellWidthOpt, text_color=txtColor, bgcolor=bgColor, text_size=txtSize)
+    else if cellHeightOpt > 0
+        table.cell(t, col, row, txt, height=cellHeightOpt, text_color=txtColor, bgcolor=bgColor, text_size=txtSize)
+    else
+        table.cell(t, col, row, txt, text_color=txtColor, bgcolor=bgColor, text_size=txtSize)
+
+f_row3(t, int row, string a, string b, string c, color ca, color cb, color cc, color bg, txtSize) =>
+    f_tableCell(t, 0, row, a, ca, bg, txtSize)
+    f_tableCell(t, 1, row, b, cb, bg, txtSize)
+    f_tableCell(t, 2, row, c, cc, bg, txtSize)
+
+f_dirCode(float upPct, float downPct) =>
+    int result = 0
+    if upPct > downPct + 5.0
+        result := 1
+    else if downPct > upPct + 5.0
+        result := -1
+    result
+
+f_dirText(int dirCode, string lang) =>
+    string txt = "N"
+    if lang == "KR"
+        if dirCode > 0
+            txt := "상승"
+        else if dirCode < 0
+            txt := "하락"
+        else
+            txt := "중립"
+    else if lang == "EN"
+        if dirCode > 0
+            txt := "BULL"
+        else if dirCode < 0
+            txt := "BEAR"
+        else
+            txt := "NEUT"
+    else
+        if dirCode > 0
+            txt := "B"
+        else if dirCode < 0
+            txt := "S"
+        else
+            txt := "N"
+    txt
+
+f_riskCode(float riskPct) =>
+    int result = 0
+    if riskPct >= 80
+        result := 5
+    else if riskPct >= 65
+        result := 4
+    else if riskPct >= 50
+        result := 3
+    else if riskPct >= 30
+        result := 2
+    else if riskPct >= 15
+        result := 1
+    result
+
+f_riskText(int riskCode, string lang) =>
+    string txt = "R" + str.tostring(riskCode)
+    if lang == "KR"
+        if riskCode >= 4
+            txt := "과열"
+        else if riskCode >= 3
+            txt := "위험"
+        else if riskCode >= 1
+            txt := "주의"
+        else
+            txt := "안정"
+    else if lang == "EN"
+        if riskCode >= 4
+            txt := "OVERHEAT"
+        else if riskCode >= 3
+            txt := "RISK"
+        else if riskCode >= 1
+            txt := "CAUTION"
+        else
+            txt := "SAFE"
+    txt
+
+f_eventText(int eventCode, string lang) =>
+    string txt = "E" + str.tostring(eventCode)
+    if lang == "KR"
+        if eventCode == 9
+            txt := "개방"
+        else if eventCode == 8
+            txt := "차단"
+        else if eventCode == 4
+            txt := "감시"
+        else if eventCode == 3
+            txt := "무에너지"
+        else if eventCode == 2
+            txt := "충돌"
+        else if eventCode == 1
+            txt := "공명"
+        else
+            txt := "-"
+    else if lang == "EN"
+        if eventCode == 9
+            txt := "OPEN"
+        else if eventCode == 8
+            txt := "BLOCK"
+        else if eventCode == 4
+            txt := "WATCH"
+        else if eventCode == 3
+            txt := "NO ENERGY"
+        else if eventCode == 2
+            txt := "CONFLICT"
+        else if eventCode == 1
+            txt := "SYNC"
+        else
+            txt := "-"
+    else
+        if eventCode == 9
+            txt := "OP"
+        else if eventCode == 8
+            txt := "BL"
+        else if eventCode == 4
+            txt := "W"
+        else if eventCode == 3
+            txt := "NE"
+        else if eventCode == 2
+            txt := "CF"
+        else if eventCode == 1
+            txt := "S"
+        else
+            txt := "-"
+    txt
+
+f_stateText(string state, string lang) =>
+    string txt = state
+    if lang == "KR"
+        if state == "UP_PRESSURE"
+            txt := "상승압력"
+        else if state == "DOWN_PRESSURE"
+            txt := "하락압력"
+        else if state == "CONFLICT"
+            txt := "충돌"
+        else if state == "OBSERVE"
+            txt := "관찰"
+        else
+            txt := "감시"
+    else if lang == "CODE"
+        if state == "UP_PRESSURE"
+            txt := "UP"
+        else if state == "DOWN_PRESSURE"
+            txt := "DN"
+        else if state == "CONFLICT"
+            txt := "CF"
+        else if state == "OBSERVE"
+            txt := "OBS"
+        else
+            txt := "W"
+    txt
+
+f_allDown(float src, int bars) =>
+    bool ok = true
+    for i = 0 to bars - 1
+        ok := ok and not na(src[i + 1]) and src[i] < src[i + 1]
+    ok
+
+f_allUp(float src, int bars) =>
+    bool ok = true
+    for i = 0 to bars - 1
+        ok := ok and not na(src[i + 1]) and src[i] > src[i + 1]
+    ok
+
+f_tfShort(string tf) =>
+    string out = tf
+    if tf == "1"
+        out := "1M"
+    else if tf == "3"
+        out := "3M"
+    else if tf == "5"
+        out := "5M"
+    else if tf == "15"
+        out := "15M"
+    else if tf == "30"
+        out := "30M"
+    else if tf == "45"
+        out := "45M"
+    else if tf == "60"
+        out := "1H"
+    else if tf == "120"
+        out := "2H"
+    else if tf == "180"
+        out := "3H"
+    else if tf == "240"
+        out := "4H"
+    else if tf == "360"
+        out := "6H"
+    else if tf == "480"
+        out := "8H"
+    else if tf == "720"
+        out := "12H"
+    else if tf == "D" or tf == "1D"
+        out := "1D"
+    else if tf == "W" or tf == "1W"
+        out := "1W"
+    else if tf == "M" or tf == "1M"
+        out := "1MO"
+    out
+
+
+f_jsonSafe(string s) =>
+    string out = str.replace_all(s, "\\", "\\\\")
+    out := str.replace_all(out, "\"", "\\\"")
+    out := str.replace_all(out, "\n", " ")
+    out
+
+f_kv(string k, string v) =>
+    "\"" + k + "\":\"" + f_jsonSafe(v) + "\""
+
+f_kvNum(string k, float v) =>
+    "\"" + k + "\":" + str.tostring(v)
+
+f_kvBool(string k, bool v) =>
+    "\"" + k + "\":" + (v ? "true" : "false")
+
+f_band(float v) =>
+    float x = f_clamp(v, 0.0, 100.0)
+    string out = "NONE"
+    if x >= 80.0
+        out := "EXTREME"
+    else if x >= 60.0
+        out := "HIGH"
+    else if x >= 40.0
+        out := "MID"
+    else if x >= 20.0
+        out := "LOW"
+    out
+
+f_htfDir() =>
+    float hEmaFast = ta.ema(close, emaMajorFastLen)
+    float hEmaSlow = ta.ema(close, emaMajorSlowLen)
+    float hRsi = ta.rsi(close, 14)
+    [hPdi, hMdi, hAdx] = ta.dmi(dmiLen, dmiSmooth)
+    int result = 0
+    if hEmaFast > hEmaSlow and hRsi > 52.0 and hPdi > hMdi and hAdx >= 15.0
+        result := 1
+    else if hEmaFast < hEmaSlow and hRsi < 48.0 and hMdi > hPdi and hAdx >= 15.0
+        result := -1
+    result
+
+float atrV = ta.atr(atrLen)
+float atrPct = atrV / math.max(close, syminfo.mintick) * 100.0
+float emaFast = ta.ema(close, emaFastLen)
+float emaSlow = ta.ema(close, emaSlowLen)
+float ema50 = ta.ema(close, emaMajorFastLen)
+float ema200 = ta.ema(close, emaMajorSlowLen)
+float rsi14 = ta.rsi(close, 14)
+float volSma = ta.sma(nz(volume, 0.0), volLen)
+float volRatio = volSma > 0.0 ? nz(volume, 0.0) / volSma : 1.0
+[pdiV, mdiV, adxV] = ta.dmi(dmiLen, dmiSmooth)
+
+bool atrFilterOK = atrPct >= minAtrPct
+
+// [3-1] Shield: EMA50/200 + RSI + ADX + ATR filter.
+float shieldLongBits = 0.0
+shieldLongBits += ema50 > ema200 ? 0.30 : 0.0
+shieldLongBits += close > ema50 ? 0.20 : 0.0
+shieldLongBits += rsi14 > 52.0 ? 0.20 : 0.0
+shieldLongBits += pdiV > mdiV ? 0.15 : 0.0
+shieldLongBits += adxV >= 20.0 ? 0.15 : 0.0
+
+float shieldShortBits = 0.0
+shieldShortBits += ema50 < ema200 ? 0.30 : 0.0
+shieldShortBits += close < ema50 ? 0.20 : 0.0
+shieldShortBits += rsi14 < 48.0 ? 0.20 : 0.0
+shieldShortBits += mdiV > pdiV ? 0.15 : 0.0
+shieldShortBits += adxV >= 20.0 ? 0.15 : 0.0
+float shieldStructureBias = ema50 > ema200 ? 0.18 : ema50 < ema200 ? -0.18 : 0.0
+float shieldNorm = f_clamp((atrFilterOK ? shieldLongBits - shieldShortBits : 0.0) + shieldStructureBias, -1.0, 1.0)
+
+// [3-2] Armor: structure break with volume and pivot confirmation.
+float structHi = ta.highest(high[1], armorStructLen)
+float structLo = ta.lowest(low[1], armorStructLen)
+float pivH = ta.pivothigh(high, pivotLen, pivotLen)
+float pivL = ta.pivotlow(low, pivotLen, pivotLen)
+var float lastPivH = na
+var float lastPivL = na
+if not na(pivH)
+    lastPivH := pivH
+if not na(pivL)
+    lastPivL := pivL
+
+bool armorUpBreakRaw = not na(structHi) and close > structHi + atrV * armorBreakAtr
+bool armorDnBreakRaw = not na(structLo) and close < structLo - atrV * armorBreakAtr
+bool armorUpConfirmed = armorUpBreakRaw and volRatio >= armorVolNeed and (na(lastPivH) or close > lastPivH)
+bool armorDnConfirmed = armorDnBreakRaw and volRatio >= armorVolNeed and (na(lastPivL) or close < lastPivL)
+
+var int armorSide = 0
+var float armorLevel = na
+var int armorStartBar = na
+if armorUpConfirmed
+    armorSide := 1
+    armorLevel := structHi
+    armorStartBar := bar_index
+else if armorDnConfirmed
+    armorSide := -1
+    armorLevel := structLo
+    armorStartBar := bar_index
+else if armorSide == 1 and close < nz(armorLevel, close) - atrV
+    armorSide := 0
+else if armorSide == -1 and close > nz(armorLevel, close) + atrV
+    armorSide := 0
+
+float armorHold = armorSide != 0 and not na(armorStartBar) ? f_clamp01(float(bar_index - armorStartBar) / 20.0) : 0.0
+float armorDist = armorSide == 1 and not na(armorLevel) ? f_clamp01((close - armorLevel) / math.max(atrV * 2.0, syminfo.mintick)) : armorSide == -1 and not na(armorLevel) ? f_clamp01((armorLevel - close) / math.max(atrV * 2.0, syminfo.mintick)) : 0.0
+float armorPower = f_clamp01(0.40 * f_clamp01((volRatio - 1.0) / 1.0) + 0.35 * armorDist + 0.25 * armorHold)
+float armorNorm = float(armorSide) * armorPower
+
+// [3-3] Helmet: sweep return state and session VWAP.
+bool newSession = ta.change(time("D")) != 0
+var float sessPV = na
+var float sessV = na
+float barVol = nz(volume, 0.0)
+if barstate.isfirst or newSession
+    sessPV := hlc3 * barVol
+    sessV := barVol
+else
+    sessPV += hlc3 * barVol
+    sessV += barVol
+float sessVWAP = sessV > 0.0 ? sessPV / sessV : hlc3
+
+float hiPrev = ta.highest(high[1], helmetSweepLen)
+float loPrev = ta.lowest(low[1], helmetSweepLen)
+bool rawSweepUp = not na(hiPrev) and high > hiPrev
+bool rawSweepDn = not na(loPrev) and low < loPrev
+bool sweepUpReturn = rawSweepUp and close < sessVWAP and close < open
+bool sweepDnReturn = rawSweepDn and close > sessVWAP and close > open
+bool helmetFakeLong = rawSweepUp and close < sessVWAP
+bool helmetFakeShort = rawSweepDn and close > sessVWAP
+
+var int helmetState = 0
+var float helmetQuality = 0.0
+if sweepUpReturn
+    helmetState := -1
+    helmetQuality := f_clamp01((high - hiPrev) / math.max(atrV, syminfo.mintick) + 0.25)
+else if sweepDnReturn
+    helmetState := 1
+    helmetQuality := f_clamp01((loPrev - low) / math.max(atrV, syminfo.mintick) + 0.25)
+else if helmetState != 0 and nz(ta.barssince(sweepUpReturn or sweepDnReturn), helmetHoldBars + 1) > helmetHoldBars
+    helmetState := 0
+    helmetQuality := 0.0
+
+float helmetFade = helmetState == 0 ? 0.0 : f_clamp01(1.0 - float(nz(ta.barssince(sweepUpReturn or sweepDnReturn), 0)) / float(math.max(helmetHoldBars, 1)))
+float helmetStateNorm = float(helmetState) * helmetQuality * helmetFade
+
+// [3-4] Pants: chart-timeframe directional volume. This follows the timeframe currently open on the chart.
+float pantsBullVol = nz(ta.sma(close > open ? barVol : 0.0, pantsLookback), 0.0) * pantsLookback
+float pantsBearVol = nz(ta.sma(close < open ? barVol : 0.0, pantsLookback), 0.0) * pantsLookback
+float pantsTotalVol = pantsBullVol + pantsBearVol
+float pantsBodyQuality = f_clamp01(math.abs(close - open) / math.max(high - low, syminfo.mintick))
+float pantsNormRaw = pantsTotalVol > 0.0 ? (pantsBullVol - pantsBearVol) / pantsTotalVol : 0.0
+float pantsNorm = f_clamp(pantsNormRaw * (0.75 + pantsBodyQuality * 0.25), -1.0, 1.0)
+
+// [4-2]/[4-3] Ring and Earring: abnormal volume, engulfing, RSI/Williams filters.
+float willR = ta.wpr(14)
+bool willOversold = willR < -80.0
+bool willOverbought = willR > -20.0
+float volHighestPrev = ta.highest(volume[1], sensorLookback)
+bool highVolEvent = not na(volHighestPrev) and volume > volHighestPrev and volRatio >= sensorVolMult
+bool bullEngulf = close > open and close >= open[1] and open <= close[1]
+bool bearEngulf = close < open and close <= open[1] and open >= close[1]
+bool ringRsiRecover = ta.crossover(rsi14, 35.0) or (willOversold and rsi14 > rsi14[1])
+bool earringRsiReject = ta.crossunder(rsi14, 65.0) or (willOverbought and rsi14 < rsi14[1])
+bool ringFired = highVolEvent and close > open and (bullEngulf or ringRsiRecover)
+bool earringFired = highVolEvent and close < open and (bearEngulf or earringRsiReject)
+float ringNorm = ringFired ? f_clamp01(0.45 + 0.35 * f_clamp01((volRatio - sensorVolMult) / sensorVolMult) + (bullEngulf ? 0.20 : 0.0)) : 0.0
+float earringNorm = earringFired ? f_clamp01(0.45 + 0.35 * f_clamp01((volRatio - sensorVolMult) / sensorVolMult) + (bearEngulf ? 0.20 : 0.0)) : 0.0
+
+// [4-4] Necklace: MFI, CMF, OBV, ADL exhaustion.
+float tp = hlc3
+float mf = tp * barVol
+float posFlow = tp > tp[1] ? mf : 0.0
+float negFlow = tp < tp[1] ? mf : 0.0
+float posSum = ta.sma(posFlow, 14) * 14.0
+float negSum = ta.sma(negFlow, 14) * 14.0
+float mfiV = negSum == 0.0 ? 100.0 : 100.0 - (100.0 / (1.0 + posSum / math.max(negSum, 1.0)))
+float obv = ta.cum(close > close[1] ? barVol : close < close[1] ? -barVol : 0.0)
+float mfm = high != low ? ((close - low) - (high - close)) / (high - low) : 0.0
+float adl = ta.cum(mfm * barVol)
+float cmf = ta.sma(mfm * barVol, 20) / math.max(ta.sma(barVol, 20), 1.0)
+bool newHighSignal = high >= ta.highest(high[1], flowLookback)
+bool newLowSignal = low <= ta.lowest(low[1], flowLookback)
+bool bearDivObv = newHighSignal and obv <= ta.highest(obv[1], flowLookback)
+bool bearDivAdl = newHighSignal and adl <= ta.highest(adl[1], flowLookback)
+bool bullDivObv = newLowSignal and obv >= ta.lowest(obv[1], flowLookback)
+bool bullDivAdl = newLowSignal and adl >= ta.lowest(adl[1], flowLookback)
+bool mfiBearWeak = mfiV[2] > 70.0 and mfiV[1] < mfiV[2] and mfiV < mfiV[1]
+bool mfiBullWeak = mfiV[2] < 30.0 and mfiV[1] > mfiV[2] and mfiV > mfiV[1]
+bool necklaceUpExhaust = (bearDivObv or bearDivAdl or mfiBearWeak) and cmf < 0.10
+bool necklaceDnExhaust = (bullDivObv or bullDivAdl or mfiBullWeak) and cmf > -0.10
+float necklaceUpNorm = f_clamp01((bearDivObv ? 0.25 : 0.0) + (bearDivAdl ? 0.25 : 0.0) + (mfiBearWeak ? 0.35 : 0.0) + (cmf < 0.0 ? 0.15 : 0.0))
+float necklaceDnNorm = f_clamp01((bullDivObv ? 0.25 : 0.0) + (bullDivAdl ? 0.25 : 0.0) + (mfiBullWeak ? 0.35 : 0.0) + (cmf > 0.0 ? 0.15 : 0.0))
+
+// [4-5] Glove: DMI/ADX/EMA weakening.
+bool trendUp = emaFast > emaSlow and pdiV > mdiV and adxV >= 20.0 and atrFilterOK
+bool trendDown = emaFast < emaSlow and mdiV > pdiV and adxV >= 20.0 and atrFilterOK
+float diGap = math.abs(pdiV - mdiV)
+bool adxFalling = adxV >= 12.0 and f_allDown(adxV, 2)
+bool emaFastFalling = f_allDown(emaFast, 2)
+bool emaFastRising = f_allUp(emaFast, 2)
+bool diGapShrinking = not na(diGap[1]) and diGap < diGap[1]
+float gloveUpScore = trendUp ? ((adxFalling ? 30.0 : 0.0) + (diGapShrinking ? 20.0 : 0.0) + (emaFastFalling ? 25.0 : 0.0) + (close < emaFast ? 15.0 : 0.0)) : 0.0
+float gloveDnScore = trendDown ? ((adxFalling ? 30.0 : 0.0) + (diGapShrinking ? 20.0 : 0.0) + (emaFastRising ? 25.0 : 0.0) + (close > emaFast ? 15.0 : 0.0)) : 0.0
+bool gloveUpWeak = gloveUpScore >= 55.0
+bool gloveDnWeak = gloveDnScore >= 55.0
+
+// [4-6] Shoes: trend-end pullback and anchored VWAP loss/recovery.
+float shoesHighPrev = ta.highest(high[1], shoesLookback)
+float shoesLowPrev = ta.lowest(low[1], shoesLookback)
+bool newTrendHigh = trendUp and not na(shoesHighPrev) and high >= shoesHighPrev
+bool newTrendLow = trendDown and not na(shoesLowPrev) and low <= shoesLowPrev
+var int shoesTrackDir = 0
+var int shoesAnchorBar = na
+var float shoesAnchorPrice = na
+var float shoesPV = 0.0
+var float shoesV = 0.0
+if newTrendHigh
+    shoesTrackDir := 1
+    shoesAnchorBar := bar_index
+    shoesAnchorPrice := high
+    shoesPV := hlc3 * barVol
+    shoesV := barVol
+else if newTrendLow
+    shoesTrackDir := -1
+    shoesAnchorBar := bar_index
+    shoesAnchorPrice := low
+    shoesPV := hlc3 * barVol
+    shoesV := barVol
+else if shoesTrackDir != 0
+    shoesPV += hlc3 * barVol
+    shoesV += barVol
+
+float shoesAvwap = shoesV > 0.0 ? shoesPV / shoesV : na
+bool shoesExpired = shoesTrackDir != 0 and not na(shoesAnchorBar) and bar_index - shoesAnchorBar > 80
+if shoesExpired
+    shoesTrackDir := 0
+    shoesAnchorBar := na
+    shoesAnchorPrice := na
+    shoesPV := 0.0
+    shoesV := 0.0
+
+bool upDeepPullback = shoesTrackDir == 1 and not na(shoesAnchorPrice) and close <= shoesAnchorPrice - atrV * shoesPullbackAtr
+bool dnDeepPullback = shoesTrackDir == -1 and not na(shoesAnchorPrice) and close >= shoesAnchorPrice + atrV * shoesPullbackAtr
+bool avwapLost = shoesTrackDir == 1 and not na(shoesAvwap) and close < shoesAvwap
+bool avwapRecovered = shoesTrackDir == -1 and not na(shoesAvwap) and close > shoesAvwap
+float shoesUpScore = upDeepPullback ? 45.0 + (adxFalling ? 20.0 : 0.0) + (emaFastFalling ? 20.0 : 0.0) + (avwapLost ? 15.0 : 0.0) : 0.0
+float shoesDnScore = dnDeepPullback ? 45.0 + (adxFalling ? 20.0 : 0.0) + (emaFastRising ? 20.0 : 0.0) + (avwapRecovered ? 15.0 : 0.0) : 0.0
+bool shoesUpWeak = shoesUpScore >= 55.0
+bool shoesDnWeak = shoesDnScore >= 55.0
+
+// [6] Timing boost from the source sword indicator.
+float rsi7 = ta.rsi(close, 7)
+float stochK = ta.sma(ta.stoch(close, high, low, 7), 3)
+bool timingLong = ta.crossover(stochK, 20.0) and rsi7 < 55.0
+bool timingShort = ta.crossunder(stochK, 80.0) and rsi7 > 45.0
+
+float dirTotalW = math.max(wShield + wArmor + wHelmetState + wPants, 0.0001)
+float dirLongRaw = math.max(0.0, shieldNorm) * wShield + math.max(0.0, armorNorm) * wArmor + math.max(0.0, helmetStateNorm) * wHelmetState + math.max(0.0, pantsNorm) * wPants
+float dirShortRaw = math.max(0.0, -shieldNorm) * wShield + math.max(0.0, -armorNorm) * wArmor + math.max(0.0, -helmetStateNorm) * wHelmetState + math.max(0.0, -pantsNorm) * wPants
+float dirLongPct = f_pct(dirLongRaw / dirTotalW * 100.0)
+float dirShortPct = f_pct(dirShortRaw / dirTotalW * 100.0)
+
+float riskLongW = math.max(wHelmetFake + wEarring + wNecklace + wGlove + wShoes, 0.0001)
+float riskShortW = math.max(wHelmetFake + wRing + wNecklace + wGlove + wShoes, 0.0001)
+float riskLongRaw = (helmetFakeLong ? wHelmetFake : 0.0) + earringNorm * wEarring + necklaceUpNorm * wNecklace + f_clamp01(gloveUpScore / 100.0) * wGlove + f_clamp01(shoesUpScore / 100.0) * wShoes
+float riskShortRaw = (helmetFakeShort ? wHelmetFake : 0.0) + ringNorm * wRing + necklaceDnNorm * wNecklace + f_clamp01(gloveDnScore / 100.0) * wGlove + f_clamp01(shoesDnScore / 100.0) * wShoes
+float riskLongPct = f_pct(riskLongRaw / riskLongW * 100.0)
+float riskShortPct = f_pct(riskShortRaw / riskShortW * 100.0)
+
+float longPct = f_pct(dirLongPct - riskLongPct + (timingLong ? 5.0 : 0.0))
+float shortPct = f_pct(dirShortPct - riskShortPct + (timingShort ? 5.0 : 0.0))
+float riskLevel = math.max(riskLongPct, riskShortPct)
+
+int htfFastDir = showHTF ? request.security(syminfo.tickerid, htfFast, f_htfDir(), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off) : 0
+int htfSlowDir = showHTF ? request.security(syminfo.tickerid, htfSlow, f_htfDir(), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off) : 0
+string htfPairText = f_tfShort(htfFast) + "/" + f_tfShort(htfSlow)
+string htfText = htfPairText + " 대기"
+if not showHTF
+    htfText := "꺼짐"
+else if htfFastDir > 0 and htfSlowDir > 0
+    htfText := htfPairText + " 상방"
+else if htfFastDir < 0 and htfSlowDir < 0
+    htfText := htfPairText + " 하방"
+else if htfFastDir != 0 and htfSlowDir != 0 and htfFastDir != htfSlowDir
+    htfText := htfPairText + " 엇갈림"
+else if htfFastDir > 0 or htfSlowDir > 0
+    htfText := htfPairText + " 상방대기"
+else if htfFastDir < 0 or htfSlowDir < 0
+    htfText := htfPairText + " 하방대기"
+color htfColor = tableNeutralColor
+if showHTF and htfFastDir > 0 and htfSlowDir > 0
+    htfColor := tableLongColor
+else if showHTF and htfFastDir < 0 and htfSlowDir < 0
+    htfColor := tableShortColor
+else if showHTF and htfFastDir != 0 and htfSlowDir != 0 and htfFastDir != htfSlowDir
+    htfColor := tableWarnColor
+else if showHTF and (htfFastDir > 0 or htfSlowDir > 0)
+    htfColor := tableLongColor
+else if showHTF and (htfFastDir < 0 or htfSlowDir < 0)
+    htfColor := tableShortColor
+
+var array<float> dirCauseVals = array.new_float(5, 0.0)
+var array<string> dirCauseNames = array.from("방패", "갑옷", "헬멧", "바지", "타이밍")
+var array<float> riskCauseVals = array.new_float(5, 0.0)
+var array<string> riskCauseNames = array.new_string(5, "")
+
+int dirSide = dirLongPct >= dirShortPct ? 1 : -1
+array.set(dirCauseVals, 0, (dirSide == 1 ? math.max(0.0, shieldNorm) : math.max(0.0, -shieldNorm)) * wShield)
+array.set(dirCauseVals, 1, (dirSide == 1 ? math.max(0.0, armorNorm) : math.max(0.0, -armorNorm)) * wArmor)
+array.set(dirCauseVals, 2, (dirSide == 1 ? math.max(0.0, helmetStateNorm) : math.max(0.0, -helmetStateNorm)) * wHelmetState)
+array.set(dirCauseVals, 3, (dirSide == 1 ? math.max(0.0, pantsNorm) : math.max(0.0, -pantsNorm)) * wPants)
+array.set(dirCauseVals, 4, (dirSide == 1 and timingLong) or (dirSide == -1 and timingShort) ? 0.25 : 0.0)
+
+int riskSide = riskLongPct >= riskShortPct ? 1 : -1
+array.set(riskCauseVals, 0, (riskSide == 1 ? (helmetFakeLong ? 1.0 : 0.0) : (helmetFakeShort ? 1.0 : 0.0)) * wHelmetFake)
+array.set(riskCauseVals, 1, (riskSide == 1 ? earringNorm * wEarring : ringNorm * wRing))
+array.set(riskCauseVals, 2, (riskSide == 1 ? necklaceUpNorm : necklaceDnNorm) * wNecklace)
+array.set(riskCauseVals, 3, (riskSide == 1 ? gloveUpScore : gloveDnScore) / 100.0 * wGlove)
+array.set(riskCauseVals, 4, (riskSide == 1 ? shoesUpScore : shoesDnScore) / 100.0 * wShoes)
+array.set(riskCauseNames, 0, "헬멧")
+array.set(riskCauseNames, 1, riskSide == 1 ? "귀걸이" : "반지")
+array.set(riskCauseNames, 2, "목걸이")
+array.set(riskCauseNames, 3, "장갑")
+array.set(riskCauseNames, 4, "신발")
+
+string dirCauseText = ""
+for pick = 0 to 1
+    float bestVal = 0.0
+    int bestIdx = -1
+    for i = 0 to array.size(dirCauseVals) - 1
+        float v = array.get(dirCauseVals, i)
+        if v > bestVal
+            bestVal := v
+            bestIdx := i
+    if bestIdx >= 0 and bestVal > 0.05
+        string name = array.get(dirCauseNames, bestIdx)
+        dirCauseText := dirCauseText == "" ? name : dirCauseText + "/" + name
+        array.set(dirCauseVals, bestIdx, -1.0)
+dirCauseText := dirCauseText == "" ? "DIRECTION_WEAK" : (dirSide == 1 ? "UP " : "DOWN ") + dirCauseText
+
+string riskCauseText = ""
+for pick = 0 to 1
+    float bestVal = 0.0
+    int bestIdx = -1
+    for i = 0 to array.size(riskCauseVals) - 1
+        float v = array.get(riskCauseVals, i)
+        if v > bestVal
+            bestVal := v
+            bestIdx := i
+    if bestIdx >= 0 and bestVal > 0.05
+        string name = array.get(riskCauseNames, bestIdx)
+        riskCauseText := riskCauseText == "" ? name : riskCauseText + "/" + name
+        array.set(riskCauseVals, bestIdx, -1.0)
+riskCauseText := riskCauseText == "" ? "RISK_LOW" : (riskSide == 1 ? "UP_RISK " : "DOWN_RISK ") + riskCauseText
+
+string stateMsg = longPct < 20 and shortPct < 20 ? "OBSERVE" : longPct >= 35 and shortPct >= 35 and math.abs(longPct - shortPct) <= 10 ? "CONFLICT" : longPct >= 65 and shortPct < 45 ? "UP_PRESSURE" : shortPct >= 65 and longPct < 45 ? "DOWN_PRESSURE" : "WATCH"
+
+int rpcDirCode = f_dirCode(longPct, shortPct)
+float rpcScore = f_clamp(50.0 + (longPct - shortPct) / 2.0, 0.0, 100.0)
+int rpcRiskCode = f_riskCode(riskLevel)
+int rpcEventCode = 0
+if stateMsg == "CONFLICT"
+    rpcEventCode := 2
+else if stateMsg == "OBSERVE"
+    rpcEventCode := 3
+else if rpcRiskCode >= 4
+    rpcEventCode := 8
+else if math.max(longPct, shortPct) >= 75
+    rpcEventCode := 9
+else if rpcDirCode != 0
+    rpcEventCode := 1
+else
+    rpcEventCode := 4
+
+int T_LAST_COL = 2
+int T_LAST_ROW = 9
+int tableFrameWidth = showTableFrame ? frameWidthOpt : 0
+int tableGridWidth = showTableGrid ? gridWidthOpt : 0
+var table scoreTable = table.new(f_pos(tablePosOpt), T_LAST_COL + 1, T_LAST_ROW + 1, border_width=tableGridWidth, border_color=tableBorderColor, frame_width=tableFrameWidth, frame_color=tableFrameColor)
+
+if barstate.islast
+    table.clear(scoreTable, 0, 0, T_LAST_COL, T_LAST_ROW)
+    if showTable
+        tableSize = f_sizeFromScale(tableSizeScale)
+        string activeMode = debugMode ? "DEBUG" : columnMode
+        color headerBg = color.new(tableHeaderBg, headerBgTransp)
+        color bodyBg = color.new(tableBodyBg, tableBgTransp)
+        color summaryBg = color.new(tableSummaryBg, tableBgTransp)
+        color riskBg = rpcRiskCode >= 3 ? color.new(tableWarnColor, riskBgTransp) : bodyBg
+        color stateBg = stateMsg == "UP_PRESSURE" ? color.new(tableStateLongBg, tableBgTransp) : stateMsg == "DOWN_PRESSURE" ? color.new(tableStateShortBg, tableBgTransp) : color.new(tableStateNeutralBg, tableBgTransp)
+        int row = 0
+        if showStateRow
+            f_row3(scoreTable, row, "RPC", f_stateText(stateMsg, langMode), f_dirText(rpcDirCode, langMode), tableTextColor, tableTextColor, rpcDirCode > 0 ? tableLongColor : rpcDirCode < 0 ? tableShortColor : tableNeutralColor, headerBg, tableSize)
+            row := row + 1
+        if showForceRow
+            string forceLabel = activeMode == "COMPACT" ? "FRC" : "FORCE"
+            string forceText = activeMode == "DEBUG" ? "DIR " + str.tostring(rpcDirCode) + " / SCORE " + str.tostring(math.round(rpcScore)) : str.tostring(math.round(rpcScore))
+            f_row3(scoreTable, row, forceLabel, forceText, "R" + str.tostring(rpcRiskCode), tableTextColor, tableTextColor, rpcRiskCode >= 3 ? tableWarnColor : tableNeutralColor, stateBg, tableSize)
+            row := row + 1
+        if showLongRow and activeMode != "COMPACT"
+            f_row3(scoreTable, row, "LONG", str.tostring(longPct) + "%", str.tostring(dirLongPct) + "%", tableTextColor, longPct >= 65 ? tableLongColor : tableNeutralColor, tableLongColor, bodyBg, tableSize)
+            row := row + 1
+        if showShortRow and activeMode != "COMPACT"
+            f_row3(scoreTable, row, "SHORT", str.tostring(shortPct) + "%", str.tostring(dirShortPct) + "%", tableTextColor, shortPct >= 65 ? tableShortColor : tableNeutralColor, tableShortColor, bodyBg, tableSize)
+            row := row + 1
+        if showRiskRow
+            string riskTxt = activeMode == "DEBUG" ? f_riskText(rpcRiskCode, langMode) + " / L" + str.tostring(riskLevel) : f_riskText(rpcRiskCode, langMode)
+            f_row3(scoreTable, row, "RISK", riskTxt, riskCauseText, tableTextColor, rpcRiskCode >= 3 ? tableWarnColor : tableNeutralColor, tableWarnColor, riskBg, tableSize)
+            row := row + 1
+        if showEventRow and activeMode != "COMPACT"
+            f_row3(scoreTable, row, "EVENT", f_eventText(rpcEventCode, langMode), dirCauseText, tableTextColor, tableTextColor, dirSide == 1 ? tableLongColor : tableShortColor, bodyBg, tableSize)
+            row := row + 1
+        if showBusRow
+            string busText = "D" + str.tostring(rpcDirCode) + " S" + str.tostring(math.round(rpcScore)) + " R" + str.tostring(rpcRiskCode) + " E" + str.tostring(rpcEventCode)
+            string htfCell = activeMode == "DEBUG" ? htfText : f_eventText(rpcEventCode, "CODE")
+            f_row3(scoreTable, row, "BUS", busText, htfCell, tableTextColor, tableTextColor, htfColor, summaryBg, tableSize)
+
+bool upPressureCross = longPct >= alertLevel and nz(longPct[1], 0.0) < alertLevel
+bool downPressureCross = shortPct >= alertLevel and nz(shortPct[1], 0.0) < alertLevel
+alertcondition(upPressureCross, title="AL HUB1 | Up pressure threshold", message="{\"hub\":\"AL_HUB1\",\"event\":\"UP_PRESSURE_THRESHOLD\",\"symbol\":\"{{ticker}}\",\"close\":\"{{close}}\",\"up_pressure_pct\":\"{{plot(\"AL_HUB1_UP_PRESSURE_PCT\")}}\",\"down_pressure_pct\":\"{{plot(\"AL_HUB1_DOWN_PRESSURE_PCT\")}}\"}")
+
+alertcondition(downPressureCross, title="AL HUB1 | Down pressure threshold", message="{\"hub\":\"AL_HUB1\",\"event\":\"DOWN_PRESSURE_THRESHOLD\",\"symbol\":\"{{ticker}}\",\"close\":\"{{close}}\",\"up_pressure_pct\":\"{{plot(\"AL_HUB1_UP_PRESSURE_PCT\")}}\",\"down_pressure_pct\":\"{{plot(\"AL_HUB1_DOWN_PRESSURE_PCT\")}}\"}")
+
+string hub1StateSignature = "UP_" + f_band(longPct) + "|DOWN_" + f_band(shortPct) + "|R_" + f_band(riskLevel) + "|ST_" + stateMsg + "|HTF_" + htfText
+string hub1SnapshotKey = syminfo.tickerid + "|" + timeframe.period + "|" + str.tostring(time) + "|HUB1_DEFENSE_SNAPSHOT"
+string hub1SnapshotEventSig = "HUB1_DEFENSE_SNAPSHOT|" + hub1StateSignature
+string hub1SnapshotJson = "{"
+hub1SnapshotJson += f_kv("source", "TRADINGVIEW") + ","
+hub1SnapshotJson += f_kv("system", "AL_AILYNX") + ","
+hub1SnapshotJson += f_kv("engine", "HUB") + ","
+hub1SnapshotJson += f_kv("observer", "HORUS") + ","
+hub1SnapshotJson += f_kv("group", "RPC") + ","
+hub1SnapshotJson += f_kv("layer", "DEFENSE_RISK") + ","
+hub1SnapshotJson += f_kv("alert_kind", "SNAPSHOT") + ","
+hub1SnapshotJson += f_kv("event", "HUB1_DEFENSE_SNAPSHOT") + ","
+hub1SnapshotJson += f_kv("trigger", "BAR_CLOSE") + ","
+hub1SnapshotJson += f_kv("bar_status", "CLOSED") + ","
+hub1SnapshotJson += f_kv("symbol", syminfo.tickerid) + ","
+hub1SnapshotJson += f_kv("tf", timeframe.period) + ","
+hub1SnapshotJson += f_kv("time", str.tostring(time)) + ","
+hub1SnapshotJson += f_kvNum("open", open) + ","
+hub1SnapshotJson += f_kvNum("high", high) + ","
+hub1SnapshotJson += f_kvNum("low", low) + ","
+hub1SnapshotJson += f_kvNum("close", close) + ","
+hub1SnapshotJson += f_kvNum("volume", nz(volume, 0.0)) + ","
+hub1SnapshotJson += f_kvNum("up_pressure_pct", longPct) + ","
+hub1SnapshotJson += f_kvNum("down_pressure_pct", shortPct) + ","
+hub1SnapshotJson += f_kvNum("risk_level", riskLevel) + ","
+hub1SnapshotJson += f_kvNum("dir_up_pct", dirLongPct) + ","
+hub1SnapshotJson += f_kvNum("dir_down_pct", dirShortPct) + ","
+hub1SnapshotJson += f_kvNum("risk_up_pct", riskLongPct) + ","
+hub1SnapshotJson += f_kvNum("risk_down_pct", riskShortPct) + ","
+hub1SnapshotJson += f_kvNum("shield_structure_bias", shieldStructureBias) + ","
+hub1SnapshotJson += f_kv("state", stateMsg) + ","
+hub1SnapshotJson += f_kv("dir_cause", dirCauseText) + ","
+hub1SnapshotJson += f_kv("risk_cause", riskCauseText) + ","
+hub1SnapshotJson += f_kv("htf_flow", htfText) + ","
+hub1SnapshotJson += f_kv("state_signature", hub1StateSignature) + ","
+hub1SnapshotJson += f_kv("event_signature", hub1SnapshotEventSig) + ","
+hub1SnapshotJson += f_kv("dedup_key", hub1SnapshotKey) + ","
+hub1SnapshotJson += f_kv("brief_policy", briefPolicy) + ","
+hub1SnapshotJson += f_kvBool("gpt_allowed", false) + ","
+hub1SnapshotJson += f_kvBool("voice_allowed", false) + ","
+hub1SnapshotJson += f_kv("version", "HUB_ALERT_BUS_V1")
+hub1SnapshotJson += "}"
+
+bool hub1StateShift = bar_index > 0 and stateMsg != stateMsg[1]
+bool hub1RiskSpike = riskLevel >= 60.0 and nz(riskLevel[1], 0.0) < 60.0
+bool hub1ConflictOn = bar_index > 0 and stateMsg == "CONFLICT" and stateMsg[1] != "CONFLICT"
+bool hub1HtfFlowShift = showHTF and bar_index > 0 and htfText != htfText[1]
+string hub1TriggerEvent = ""
+if hub1ConflictOn
+    hub1TriggerEvent := "HUB1_CONFLICT_ON"
+else if hub1RiskSpike
+    hub1TriggerEvent := "HUB1_RISK_SPIKE"
+else if hub1HtfFlowShift
+    hub1TriggerEvent := "HUB1_HTF_FLOW_SHIFT"
+else if hub1StateShift
+    hub1TriggerEvent := "HUB1_STATE_SHIFT"
+bool hub1TriggerCondition = hub1TriggerEvent != ""
+string hub1TriggerSig = hub1TriggerEvent + "|" + hub1StateSignature
+string hub1TriggerKey = syminfo.tickerid + "|" + timeframe.period + "|" + str.tostring(time) + "|" + hub1TriggerEvent
+string hub1TriggerJson = "{"
+hub1TriggerJson += f_kv("source", "TRADINGVIEW") + ","
+hub1TriggerJson += f_kv("system", "AL_AILYNX") + ","
+hub1TriggerJson += f_kv("engine", "HUB") + ","
+hub1TriggerJson += f_kv("observer", "HORUS") + ","
+hub1TriggerJson += f_kv("group", "RPC") + ","
+hub1TriggerJson += f_kv("layer", "DEFENSE_RISK") + ","
+hub1TriggerJson += f_kv("alert_kind", "TRIGGER") + ","
+hub1TriggerJson += f_kv("event", hub1TriggerEvent) + ","
+hub1TriggerJson += f_kv("trigger", hub1TriggerEvent) + ","
+hub1TriggerJson += f_kv("bar_status", barstate.isconfirmed ? "CLOSED" : "LIVE") + ","
+hub1TriggerJson += f_kv("symbol", syminfo.tickerid) + ","
+hub1TriggerJson += f_kv("tf", timeframe.period) + ","
+hub1TriggerJson += f_kv("time", str.tostring(time)) + ","
+hub1TriggerJson += f_kvNum("open", open) + ","
+hub1TriggerJson += f_kvNum("high", high) + ","
+hub1TriggerJson += f_kvNum("low", low) + ","
+hub1TriggerJson += f_kvNum("close", close) + ","
+hub1TriggerJson += f_kvNum("volume", nz(volume, 0.0)) + ","
+hub1TriggerJson += f_kvNum("up_pressure_pct", longPct) + ","
+hub1TriggerJson += f_kvNum("down_pressure_pct", shortPct) + ","
+hub1TriggerJson += f_kvNum("risk_level", riskLevel) + ","
+hub1TriggerJson += f_kvNum("dir_up_pct", dirLongPct) + ","
+hub1TriggerJson += f_kvNum("dir_down_pct", dirShortPct) + ","
+hub1TriggerJson += f_kvNum("risk_up_pct", riskLongPct) + ","
+hub1TriggerJson += f_kvNum("risk_down_pct", riskShortPct) + ","
+hub1TriggerJson += f_kvNum("shield_structure_bias", shieldStructureBias) + ","
+hub1TriggerJson += f_kv("state", stateMsg) + ","
+hub1TriggerJson += f_kv("dir_cause", dirCauseText) + ","
+hub1TriggerJson += f_kv("risk_cause", riskCauseText) + ","
+hub1TriggerJson += f_kv("htf_flow", htfText) + ","
+hub1TriggerJson += f_kv("state_signature", hub1StateSignature) + ","
+hub1TriggerJson += f_kv("event_signature", hub1TriggerSig) + ","
+hub1TriggerJson += f_kv("dedup_key", hub1TriggerKey) + ","
+hub1TriggerJson += f_kv("brief_policy", briefPolicy) + ","
+hub1TriggerJson += f_kvBool("gpt_allowed", false) + ","
+hub1TriggerJson += f_kvBool("voice_allowed", false) + ","
+hub1TriggerJson += f_kv("version", "HUB_ALERT_BUS_V1")
+hub1TriggerJson += "}"
+
+var string lastSnapshotKey = ""
+var string lastEventSignature = ""
+if enableAlertBus and sendSnapshots and barstate.isconfirmed and barstate.isrealtime and hub1SnapshotKey != lastSnapshotKey
+    alert(hub1SnapshotJson, alert.freq_once_per_bar_close)
+    lastSnapshotKey := hub1SnapshotKey
+if enableAlertBus and sendTriggers and barstate.isrealtime and hub1TriggerCondition and hub1TriggerSig != lastEventSignature
+    alert(hub1TriggerJson, alert.freq_once_per_bar)
+    lastEventSignature := hub1TriggerSig
+
+plot(longPct, "AL_HUB1_UP_PRESSURE_PCT", display=display.data_window)
+plot(shortPct, "AL_HUB1_DOWN_PRESSURE_PCT", display=display.data_window)
+plot(riskLevel, "AL_HUB1_RISK", display=display.data_window)
+plot(sessVWAP, "AL_HUB1_SESSION_VWAP", display=display.data_window)
+plot(dirLongPct, "AL_HUB1_DIR_UP", display=display.none)
+plot(dirShortPct, "AL_HUB1_DIR_DOWN", display=display.none)
+plot(riskLongPct, "AL_HUB1_RISK_UP", display=display.none)
+plot(riskShortPct, "AL_HUB1_RISK_DOWN", display=display.none)
+plot(shieldStructureBias, "AL_HUB1_SHIELD_STRUCTURE_BIAS", display=display.none)
+plot(float(rpcDirCode), title="AL_RPC_DIR_CODE", display=display.none)
+plot(rpcScore, title="AL_RPC_SCORE", display=display.none)
+plot(float(rpcRiskCode), title="AL_RPC_RISK_CODE", display=display.none)
+plot(float(rpcEventCode), title="AL_RPC_EVENT_CODE", display=display.none)

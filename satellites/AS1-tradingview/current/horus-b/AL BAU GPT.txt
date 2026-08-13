@@ -1,0 +1,229 @@
+//@version=6
+indicator("AL BAU GPT", overlay=true, max_lines_count=0, max_boxes_count=0, max_bars_back=3000)
+
+f_rollSum(float x, int len) =>
+    float c = ta.cum(x)
+    float out = na
+    if bar_index >= len
+        out := c - c[len]
+    out
+
+f_clamp100(float x) =>
+    math.max(0.0, math.min(100.0, x))
+
+int ST_IDLE = 0
+int ST_SET = 1
+int ST_TRIG = 2
+int ST_HOLD = 3
+int ST_FAIL = 4
+
+string G_TRACE = "바우 G | 추적"
+int   lookback       = input.int(30, "추적 길이", minval=10, maxval=200, group=G_TRACE, display=display.none)
+int   trendMin       = input.int(6, "최소 추세 캔들 수", minval=2, maxval=30, group=G_TRACE, display=display.none)
+int   cooldownBars   = input.int(10, "재추적 쿨다운", minval=0, maxval=200, group=G_TRACE, display=display.none)
+bool  strictBullBear = input.bool(false, "엄격한 양봉/음봉", group=G_TRACE, display=display.none)
+
+string G_CONFIRM = "바우 G | 확인"
+int acceptBars = input.int(2, "수용 확인 캔들", minval=1, maxval=10, group=G_CONFIRM, display=display.none)
+int failWindowBars = input.int(5, "실패 확인 범위", minval=1, maxval=50, group=G_CONFIRM, display=display.none)
+int structureLifeBars = input.int(80, "구조 추적 유지", minval=5, maxval=500, group=G_CONFIRM, display=display.none)
+float retestAtrTol = input.float(0.20, "리테스트 ATR 허용", minval=0.0, maxval=2.0, step=0.05, group=G_CONFIRM, display=display.none)
+float rejectAtrTol = input.float(0.12, "거절 ATR 돌출", minval=0.0, maxval=2.0, step=0.05, group=G_CONFIRM, display=display.none)
+
+string G_OB = "바우 G | 구조"
+int   obPivotLen = input.int(3, "피벗 길이", minval=2, maxval=10, group=G_OB, display=display.none)
+int   obScan     = input.int(20, "구조 탐색", minval=5, maxval=80, group=G_OB, display=display.none)
+float atrDispMul = input.float(1.2, "보스 강도", step=0.1, group=G_OB, display=display.none)
+float obRangeMul = input.float(0.6, "범위 최소 ATR", step=0.1, group=G_OB, display=display.none)
+
+string G_ALERT = "바우 G | 얼러트"
+bool useAlerts = input.bool(true, "GPT 얼러트 사용", group=G_ALERT, display=display.none)
+
+float bullCount = nz(f_rollSum(close > open ? 1.0 : 0.0, lookback), 0.0)
+float bearCount = nz(f_rollSum(close < open ? 1.0 : 0.0, lookback), 0.0)
+float bodyBias = bullCount - bearCount
+bool biasUp = bodyBias >= trendMin
+bool biasDn = bodyBias <= -trendMin
+
+bool enough = bar_index >= lookback
+float fbHighRaw = ta.highest(high, lookback)
+float fbLowRaw  = ta.lowest(low, lookback)
+float bullHigh = na
+float bearLow = na
+if enough
+    for i = 0 to lookback - 1
+        bool bull = close[i] > open[i]
+        bool bear = close[i] < open[i]
+        if bull
+            bullHigh := na(bullHigh) ? high[i] : math.max(bullHigh, high[i])
+        if bear
+            bearLow := na(bearLow) ? low[i] : math.min(bearLow, low[i])
+float useHigh = strictBullBear ? bullHigh : (na(bullHigh) ? fbHighRaw : bullHigh)
+float useLow  = strictBullBear ? bearLow  : (na(bearLow)  ? fbLowRaw  : bearLow)
+bool rangeValid = enough and not na(useHigh) and not na(useLow) and useHigh > useLow
+
+float atrV = ta.atr(14)
+float retestTol = math.max(atrV * retestAtrTol, syminfo.mintick)
+float rejectTol = math.max(atrV * rejectAtrTol, syminfo.mintick)
+float acceptLowestClose = ta.lowest(close, acceptBars)
+float acceptHighestClose = ta.highest(close, acceptBars)
+float rangeScore = rangeValid ? f_clamp100(((useHigh - useLow) / math.max(atrV, syminfo.mintick)) * 10.0) : 0.0
+float trendScore = f_clamp100(math.abs(bodyBias) / math.max(float(lookback), 1.0) * 100.0)
+
+bool spawnReady = rangeValid and (biasUp or biasDn)
+var bool active = false
+var float hiPx = na
+var float loPx = na
+var int traceDir = 0
+var int lastSpawnBar = na
+var bool structureTracking = false
+var int breakDirMem = 0
+var float breakHiPx = na
+var float breakLoPx = na
+var int breakBar = na
+
+bool structureExpired = structureTracking and not na(breakBar) and bar_index - breakBar > structureLifeBars
+if structureExpired
+    structureTracking := false
+    breakDirMem := 0
+    breakHiPx := na
+    breakLoPx := na
+    breakBar := na
+
+bool cooldownOK = na(lastSpawnBar) or ((bar_index - lastSpawnBar) >= cooldownBars)
+bool spawnNow = (not active) and (not structureTracking) and spawnReady and cooldownOK
+if spawnNow
+    hiPx := useHigh
+    loPx := useLow
+    traceDir := biasUp ? 1 : biasDn ? -1 : 0
+    active := true
+    lastSpawnBar := bar_index
+
+bool brokeUp = active and close > hiPx
+bool brokeDn = active and close < loPx
+bool breakoutNow = brokeUp or brokeDn
+bool rejectUp = active and not brokeUp and high > hiPx + rejectTol and close <= hiPx
+bool rejectDn = active and not brokeDn and low < loPx - rejectTol and close >= loPx
+bool rejectionNow = rejectUp or rejectDn
+bool invalidTrace = active and traceDir == 1 and close < loPx
+invalidTrace := invalidTrace or (active and traceDir == -1 and close > hiPx)
+
+if breakoutNow
+    structureTracking := true
+    breakDirMem := brokeUp ? 1 : -1
+    breakHiPx := hiPx
+    breakLoPx := loPx
+    breakBar := bar_index
+    active := false
+else if invalidTrace or rejectionNow
+    active := false
+
+f_ob(_o, _h, _l, _c, pivLen, scanN, dispMult, minRangeMult) =>
+    float bullTop = na
+    float bullBot = na
+    float bearTop = na
+    float bearBot = na
+    bool newBull = false
+    bool newBear = false
+    float ph = ta.pivothigh(_h, pivLen, pivLen)
+    float pl = ta.pivotlow(_l, pivLen, pivLen)
+    float lastPH = ta.valuewhen(not na(ph), ph, 0)
+    float lastPL = ta.valuewhen(not na(pl), pl, 0)
+    float atr = ta.atr(14)
+    float body = math.abs(_c - _o)
+    bool dispOK = (atr > 0) and (body >= dispMult * atr)
+    bool bosUp = dispOK and (not na(lastPH)) and (_c > lastPH) and (_c[1] <= lastPH)
+    bool bosDn = dispOK and (not na(lastPL)) and (_c < lastPL) and (_c[1] >= lastPL)
+    if bosUp
+        for i = 1 to scanN
+            bool bear = _c[i] < _o[i]
+            float atrI = atr[i]
+            float rngI = _h[i] - _l[i]
+            bool qualOK = (atrI > 0) and (rngI >= minRangeMult * atrI)
+            if bear and qualOK and na(bullTop)
+                bullTop := _h[i]
+                bullBot := _l[i]
+                newBull := true
+    if bosDn
+        for i = 1 to scanN
+            bool bull = _c[i] > _o[i]
+            float atrI2 = atr[i]
+            float rngI2 = _h[i] - _l[i]
+            bool qualOK2 = (atrI2 > 0) and (rngI2 >= minRangeMult * atrI2)
+            if bull and qualOK2 and na(bearTop)
+                bearTop := _h[i]
+                bearBot := _l[i]
+                newBear := true
+    [bullTop, bullBot, bearTop, bearBot, newBull, newBear]
+
+[h1BullTop, h1BullBot, h1BearTop, h1BearBot, h1NewBull, h1NewBear] = request.security(syminfo.tickerid, "60",  f_ob(open, high, low, close, obPivotLen, obScan, atrDispMul, obRangeMul))
+[h4BullTop, h4BullBot, h4BearTop, h4BearBot, h4NewBull, h4NewBear] = request.security(syminfo.tickerid, "240", f_ob(open, high, low, close, obPivotLen, obScan, atrDispMul, obRangeMul))
+
+bool obFresh = h1NewBull or h1NewBear or h4NewBull or h4NewBear
+
+int barsFromBreak = structureTracking and not na(breakBar) ? bar_index - breakBar : 0
+bool trackingUp = structureTracking and breakDirMem == 1
+bool trackingDn = structureTracking and breakDirMem == -1
+bool acceptanceUp = trackingUp and barsFromBreak >= acceptBars and acceptLowestClose > breakHiPx
+bool acceptanceDn = trackingDn and barsFromBreak >= acceptBars and acceptHighestClose < breakLoPx
+bool retestHoldUp = trackingUp and barsFromBreak > 0 and low <= breakHiPx + retestTol and close >= breakHiPx - retestTol
+bool retestHoldDn = trackingDn and barsFromBreak > 0 and high >= breakLoPx - retestTol and close <= breakLoPx + retestTol
+bool retestHold = retestHoldUp or retestHoldDn
+bool acceptConfirmed = acceptanceUp or acceptanceDn or retestHold
+bool failedBreakUp = trackingUp and barsFromBreak <= failWindowBars and close < breakHiPx - retestTol
+bool failedBreakDn = trackingDn and barsFromBreak <= failWindowBars and close > breakLoPx + retestTol
+bool failedBreak = failedBreakUp or failedBreakDn
+bool invalidAfterBreakUp = trackingUp and close < breakLoPx - retestTol
+bool invalidAfterBreakDn = trackingDn and close > breakHiPx + retestTol
+bool invalidNow = invalidTrace or invalidAfterBreakUp or invalidAfterBreakDn
+bool structureConflict = (active and ((traceDir == 1 and biasDn) or (traceDir == -1 and biasUp))) or (structureTracking and ((breakDirMem == 1 and biasDn) or (breakDirMem == -1 and biasUp)))
+bool prevAcceptanceUp = bar_index > 0 ? acceptanceUp[1] : false
+bool prevAcceptanceDn = bar_index > 0 ? acceptanceDn[1] : false
+bool prevRetestHold = bar_index > 0 ? retestHold[1] : false
+bool acceptanceUpOn = acceptanceUp and not prevAcceptanceUp
+bool acceptanceDnOn = acceptanceDn and not prevAcceptanceDn
+bool retestHoldOn = retestHold and not prevRetestHold
+
+float traceScore = active ? f_clamp100(28.0 + trendScore * 0.35 + rangeScore * 0.15) : 0.0
+float breakScore = breakoutNow or structureTracking ? f_clamp100(46.0 + rangeScore * 0.18 + trendScore * 0.20 + (obFresh ? 8.0 : 0.0)) : 0.0
+float acceptScore = acceptConfirmed ? f_clamp100(66.0 + rangeScore * 0.12 + trendScore * 0.12 + (retestHold ? 10.0 : 0.0) + (obFresh ? 6.0 : 0.0)) : 0.0
+float rejectScore = rejectionNow ? f_clamp100(55.0 + rangeScore * 0.15 + trendScore * 0.12) : 0.0
+float invalidScore = invalidNow ? 88.0 : failedBreak ? 78.0 : 0.0
+float trapPressureScore = f_clamp100(math.max(math.max(rejectScore, invalidScore), structureConflict ? 52.0 : 0.0))
+float structureConflictScore = structureConflict ? f_clamp100(45.0 + trendScore * 0.25) : 0.0
+
+int bauDir = acceptConfirmed ? (trackingUp ? 1 : trackingDn ? -1 : 0) : 0
+int bauState = invalidNow or failedBreak or rejectionNow ? ST_FAIL : acceptConfirmed ? ST_HOLD : breakoutNow or structureTracking ? ST_TRIG : active or spawnNow or obFresh ? ST_SET : ST_IDLE
+int bauActive = active or structureTracking or breakoutNow or obFresh or invalidNow or failedBreak or rejectionNow ? 1 : 0
+float bauEvent = invalidNow ? 80.0 : failedBreak ? 81.0 : rejectionNow ? 70.0 : acceptanceUpOn ? 31.0 : acceptanceDnOn ? 32.0 : retestHoldOn ? 41.0 : brokeUp ? 21.0 : brokeDn ? 22.0 : obFresh ? 15.0 : spawnNow ? 10.0 : 0.0
+float bauScore = f_clamp100(math.max(math.max(traceScore, breakScore), math.max(math.max(acceptScore, trapPressureScore), obFresh ? 45.0 : 0.0)))
+
+if invalidNow or failedBreak
+    structureTracking := false
+    breakDirMem := 0
+    breakHiPx := na
+    breakLoPx := na
+    breakBar := na
+
+int prevBauActive = bar_index > 0 ? bauActive[1] : 0
+
+plot(bauScore,               title="AL_BAU_SCORE",       display=display.none)
+plot(float(bauDir),          title="AL_BAU_DIRECTION",   display=display.none)
+plot(float(bauState),        title="AL_BAU_STATE",       display=display.none)
+plot(float(bauActive),       title="AL_BAU_ACTIVE_FLAG", display=display.none)
+plot(float(bauEvent),        title="AL_BAU_EVENT",       display=display.none)
+plot(failedBreak ? 1.0 : 0.0, title="AL_BAU_FAILED_BREAK_FLAG", display=display.none)
+plot(trapPressureScore,      title="AL_BAU_TRAP_PRESSURE_SCORE", display=display.none)
+
+alertcondition(useAlerts and spawnNow,               title="AL BAU G | TRACE ON",    message="AL_BAU_G,TRACE_ON")
+alertcondition(useAlerts and brokeUp,                title="AL BAU G | BREAK UP",    message="AL_BAU_G,BREAK_UP")
+alertcondition(useAlerts and brokeDn,                title="AL BAU G | BREAK DOWN",  message="AL_BAU_G,BREAK_DOWN")
+alertcondition(useAlerts and acceptanceUpOn,         title="AL BAU G | ACCEPT UP",   message="AL_BAU_G,ACCEPT_UP")
+alertcondition(useAlerts and acceptanceDnOn,         title="AL BAU G | ACCEPT DOWN", message="AL_BAU_G,ACCEPT_DOWN")
+alertcondition(useAlerts and retestHoldOn,           title="AL BAU G | RETEST HOLD", message="AL_BAU_G,RETEST_HOLD")
+alertcondition(useAlerts and rejectionNow,           title="AL BAU G | REJECTION",   message="AL_BAU_G,REJECTION")
+alertcondition(useAlerts and failedBreak,            title="AL BAU G | FAILED BREAK", message="AL_BAU_G,FAILED_BREAK")
+alertcondition(useAlerts and obFresh,                title="AL BAU G | OB FRESH",    message="AL_BAU_G,OB_FRESH")
+alertcondition(useAlerts and invalidNow,             title="AL BAU G | INVALID",     message="AL_BAU_G,INVALID")
+alertcondition(useAlerts and bauActive == 1 and prevBauActive == 0, title="AL BAU G | ACTIVE ON",  message="AL_BAU_G,ACTIVE_ON")
+alertcondition(useAlerts and bauActive == 0 and prevBauActive == 1, title="AL BAU G | ACTIVE OFF", message="AL_BAU_G,ACTIVE_OFF")

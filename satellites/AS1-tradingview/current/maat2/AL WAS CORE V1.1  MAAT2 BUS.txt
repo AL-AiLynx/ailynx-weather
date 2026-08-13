@@ -1,0 +1,658 @@
+//@version=6
+indicator("AL WAS CORE V1.1 | MAAT2 BUS", shorttitle="AL WAS MAAT2 BUS", overlay=true, max_lines_count=100, max_labels_count=100, max_bars_back=2000)
+
+showVisuals = input.bool(true, "DISPLAY: FULL (끄면 HEADLESS)", group="00. Render")
+
+// Changelog
+// - Based on AL WAS legacy V1.5 lifecycle
+// - Human Lite lightweight philosophy
+// - V2 hidden BUS philosophy
+// - New final rule: 4H Heikin-Ashi wick memory lines
+// - Micro/Reporter/Macro/G-D ladder excluded from Core V1
+// - Season 2 copy: MAAT2 Compact BUS outputs added
+
+const string lineSource = "HA_WICK"
+
+const int STATE_NONE = 0
+const int STATE_MEMORY = 1
+const int STATE_TOUCH = 2
+const int STATE_ABSORB = 3
+const int STATE_REJECT = 4
+const int STATE_CLOSE_BREAK = 5
+const int STATE_RETEST_HOLD = 6
+const int STATE_SHIFT = 7
+const int STATE_NOISE = 8
+
+const int MAAT2_WAS_EVENT_NONE = 0
+const int MAAT2_WAS_EVENT_MEMORY = 1
+const int MAAT2_WAS_EVENT_TOUCH = 2
+const int MAAT2_WAS_EVENT_ABSORB = 3
+const int MAAT2_WAS_EVENT_REJECT = 4
+const int MAAT2_WAS_EVENT_CLOSE_BREAK = 5
+const int MAAT2_WAS_EVENT_RETEST_HOLD = 6
+const int MAAT2_WAS_EVENT_SHIFT = 7
+const int MAAT2_WAS_EVENT_NOISE = 8
+
+const int IDX_U1 = 0
+const int IDX_U2 = 1
+const int IDX_D1 = 2
+const int IDX_D2 = 3
+
+string G_SOURCE = "01. Source"
+string structTf = input.timeframe("240", "Structure timeframe", group=G_SOURCE)
+string confirmSource = input.string("NORMAL_CLOSE", "Confirmation close", options=["NORMAL_CLOSE", "HA_CLOSE"], group=G_SOURCE)
+
+string G_WICK = "02. Meaningful Wick"
+int pivotLeft = input.int(3, "Pivot left", minval=1, maxval=20, group=G_WICK)
+int pivotRight = input.int(3, "Pivot right", minval=1, maxval=20, group=G_WICK)
+int atrLen = input.int(14, "ATR length", minval=1, maxval=200, group=G_WICK)
+float minWickAtr = input.float(0.25, "Min wick ATR", minval=0.0, step=0.05, group=G_WICK)
+float minBodyAtr = input.float(0.25, "Min body ATR", minval=0.0, step=0.05, group=G_WICK)
+bool usePivotFilter = input.bool(true, "Use pivot filter", group=G_WICK)
+
+string G_LIFE = "03. Lifecycle"
+string takeoverMode = input.string("TRAIL", "Takeover mode", options=["TRAIL", "FLIP"], group=G_LIFE)
+float retireConf = input.float(20.0, "Retire confidence", minval=0.0, maxval=100.0, step=1.0, group=G_LIFE)
+float mergePct = input.float(0.30, "Merge distance %", minval=0.01, maxval=5.0, step=0.01, group=G_LIFE)
+float strongScore = input.float(72.0, "Strong line threshold", minval=1.0, maxval=100.0, step=1.0, group=G_LIFE)
+
+string G_DISPLAY = "04. Display"
+bool showLines = input.bool(true, "Show lines", group=G_DISPLAY)
+bool showLabels = input.bool(true, "Show labels", group=G_DISPLAY)
+bool showTable = input.bool(false, "Show table", group=G_DISPLAY)
+color upperColor = input.color(color.rgb(210, 0, 255), "Upper memory color", group=G_DISPLAY)
+color lowerColor = input.color(color.rgb(0, 170, 255), "Lower memory color", group=G_DISPLAY)
+int activeLineWidth = input.int(2, "Active line width", minval=1, maxval=6, group=G_DISPLAY)
+int previousLineWidth = input.int(1, "Previous line width", minval=1, maxval=5, group=G_DISPLAY)
+int activeTransp = input.int(0, "Active transparency", minval=0, maxval=100, group=G_DISPLAY)
+int previousTransp = input.int(72, "Previous transparency", minval=0, maxval=100, group=G_DISPLAY)
+string activeLineStyle = input.string("DASHED", "Active line style", options=["SOLID", "DASHED", "DOTTED"], group=G_DISPLAY)
+string previousLineStyle = input.string("DOTTED", "Previous line style", options=["SOLID", "DASHED", "DOTTED"], group=G_DISPLAY)
+int labelOffsetBars = input.int(8, "Label offset bars", minval=1, maxval=100, group=G_DISPLAY)
+
+string G_MARKERS = "Display | Markers"
+bool showCandleMarkers = input.bool(false, "캔들 이벤트 마크 표시", group=G_MARKERS)
+bool showDebugMarkers = input.bool(false, "디버그 마크 표시", group=G_MARKERS)
+
+string G_TABLE = "05. Table"
+string tablePosOpt = input.string("bottom_right", "Table position", options=["top_left", "top_center", "top_right", "middle_left", "middle_center", "middle_right", "bottom_left", "bottom_center", "bottom_right"], group=G_TABLE)
+string tableSizeOpt = input.string("small", "Table size", options=["tiny", "small", "normal", "large"], group=G_TABLE)
+int tableBorder = input.int(1, "Table border", minval=0, maxval=5, group=G_TABLE)
+
+string G_ALERT = "06. Alerts"
+bool useAlerts = input.bool(true, "Enable alerts", group=G_ALERT)
+
+var array<float> memPrice = array.new<float>(4, na)
+var array<int> memState = array.new<int>(4, STATE_NONE)
+var array<float> memConf = array.new<float>(4, 0.0)
+var array<int> memTouches = array.new<int>(4, 0)
+var array<int> memAge = array.new<int>(4, 0)
+var array<bool> memActive = array.new<bool>(4, false)
+var array<line> memLine = array.new_line(4, na)
+var array<label> memLabel = array.new_label(4, na)
+
+f_clamp(float x, float lo, float hi) =>
+    math.min(hi, math.max(lo, x))
+
+f_fmt(float price) =>
+    str.tostring(price, format.mintick)
+
+f_style(string opt) =>
+    out = line.style_solid
+    if opt == "DASHED"
+        out := line.style_dashed
+    else if opt == "DOTTED"
+        out := line.style_dotted
+    out
+
+f_pos(string p) =>
+    out = position.bottom_right
+    if p == "top_left"
+        out := position.top_left
+    else if p == "top_center"
+        out := position.top_center
+    else if p == "top_right"
+        out := position.top_right
+    else if p == "middle_left"
+        out := position.middle_left
+    else if p == "middle_center"
+        out := position.middle_center
+    else if p == "middle_right"
+        out := position.middle_right
+    else if p == "bottom_left"
+        out := position.bottom_left
+    else if p == "bottom_center"
+        out := position.bottom_center
+    out
+
+f_size(string s) =>
+    out = size.small
+    if s == "tiny"
+        out := size.tiny
+    else if s == "normal"
+        out := size.normal
+    else if s == "large"
+        out := size.large
+    out
+
+f_slotName(int idx) =>
+    string out = "U1"
+    if idx == IDX_U2
+        out := "U2"
+    else if idx == IDX_D1
+        out := "D1"
+    else if idx == IDX_D2
+        out := "D2"
+    out
+
+f_stateText(int stateCode) =>
+    string out = "NONE"
+    if stateCode == STATE_MEMORY
+        out := "MEMORY"
+    else if stateCode == STATE_TOUCH
+        out := "TOUCH"
+    else if stateCode == STATE_ABSORB
+        out := "ABSORB"
+    else if stateCode == STATE_REJECT
+        out := "REJECT"
+    else if stateCode == STATE_CLOSE_BREAK
+        out := "CLOSE_BREAK"
+    else if stateCode == STATE_RETEST_HOLD
+        out := "RETEST_HOLD"
+    else if stateCode == STATE_SHIFT
+        out := "SHIFT"
+    else if stateCode == STATE_NOISE
+        out := "NOISE"
+    out
+
+f_eventText(int eventCode) =>
+    string out = "NONE"
+    if eventCode == 1
+        out := "TOUCH"
+    else if eventCode == 2
+        out := "ABSORB_REJECT"
+    else if eventCode == 3
+        out := "CLOSE_BREAK"
+    else if eventCode == 4
+        out := "RETEST_HOLD"
+    else if eventCode == 5
+        out := "SHIFT"
+    else if eventCode == 9
+        out := "RESET"
+    out
+
+f_stateToMaat2Event(int stateCode) =>
+    int out = MAAT2_WAS_EVENT_NONE
+    if stateCode == STATE_MEMORY
+        out := MAAT2_WAS_EVENT_MEMORY
+    else if stateCode == STATE_TOUCH
+        out := MAAT2_WAS_EVENT_TOUCH
+    else if stateCode == STATE_ABSORB
+        out := MAAT2_WAS_EVENT_ABSORB
+    else if stateCode == STATE_REJECT
+        out := MAAT2_WAS_EVENT_REJECT
+    else if stateCode == STATE_CLOSE_BREAK
+        out := MAAT2_WAS_EVENT_CLOSE_BREAK
+    else if stateCode == STATE_RETEST_HOLD
+        out := MAAT2_WAS_EVENT_RETEST_HOLD
+    else if stateCode == STATE_SHIFT
+        out := MAAT2_WAS_EVENT_SHIFT
+    else if stateCode == STATE_NOISE
+        out := MAAT2_WAS_EVENT_NOISE
+    out
+
+f_legacyEventToMaat2(int legacyEvent, int nearestState) =>
+    int out = f_stateToMaat2Event(nearestState)
+    if legacyEvent == 1
+        out := MAAT2_WAS_EVENT_TOUCH
+    else if legacyEvent == 2
+        out := nearestState == STATE_REJECT ? MAAT2_WAS_EVENT_REJECT : MAAT2_WAS_EVENT_ABSORB
+    else if legacyEvent == 3
+        out := MAAT2_WAS_EVENT_CLOSE_BREAK
+    else if legacyEvent == 4
+        out := MAAT2_WAS_EVENT_RETEST_HOLD
+    else if legacyEvent == 5
+        out := MAAT2_WAS_EVENT_SHIFT
+    else if legacyEvent == 9
+        out := MAAT2_WAS_EVENT_NONE
+    out
+
+f_max_int(int a, int b) =>
+    a > b ? a : b
+
+f_confRisk(float conf) =>
+    int out = 0
+    if conf < retireConf + 5.0
+        out := 3
+    else if conf < 45.0
+        out := 2
+    else if conf < 60.0
+        out := 1
+    out
+
+f_distRisk(float distPct) =>
+    int out = 0
+    if not na(distPct)
+        if distPct <= mergePct
+            out := 4
+        else if distPct <= mergePct * 2.0
+            out := 3
+        else if distPct <= 1.0
+            out := 2
+        else if distPct <= 2.0
+            out := 1
+    out
+
+f_stateRisk(int stateCode) =>
+    int out = 0
+    if stateCode == STATE_MEMORY
+        out := 1
+    else if stateCode == STATE_TOUCH
+        out := 3
+    else if stateCode == STATE_ABSORB or stateCode == STATE_REJECT
+        out := 2
+    else if stateCode == STATE_CLOSE_BREAK
+        out := 3
+    else if stateCode == STATE_RETEST_HOLD
+        out := 1
+    else if stateCode == STATE_SHIFT
+        out := 4
+    else if stateCode == STATE_NOISE
+        out := 5
+    out
+
+f_eventRisk(int eventCode) =>
+    int out = 0
+    if eventCode == MAAT2_WAS_EVENT_MEMORY
+        out := 1
+    else if eventCode == MAAT2_WAS_EVENT_TOUCH
+        out := 3
+    else if eventCode == MAAT2_WAS_EVENT_ABSORB or eventCode == MAAT2_WAS_EVENT_REJECT
+        out := 2
+    else if eventCode == MAAT2_WAS_EVENT_CLOSE_BREAK
+        out := 3
+    else if eventCode == MAAT2_WAS_EVENT_RETEST_HOLD
+        out := 1
+    else if eventCode == MAAT2_WAS_EVENT_SHIFT
+        out := 4
+    else if eventCode == MAAT2_WAS_EVENT_NOISE
+        out := 5
+    out
+
+f_delete_objects(int idx) =>
+    line l = array.get(memLine, idx)
+    label lb = array.get(memLabel, idx)
+    if showVisuals and not na(l)
+        line.delete(l)
+    if showVisuals and not na(lb)
+        label.delete(lb)
+    array.set(memLine, idx, na)
+    array.set(memLabel, idx, na)
+
+f_empty_values(int idx) =>
+    array.set(memPrice, idx, na)
+    array.set(memState, idx, STATE_NONE)
+    array.set(memConf, idx, 0.0)
+    array.set(memTouches, idx, 0)
+    array.set(memAge, idx, 0)
+    array.set(memActive, idx, false)
+
+f_clear_slot(int idx) =>
+    f_delete_objects(idx)
+    f_empty_values(idx)
+
+f_add_conf(int idx, float delta) =>
+    float nextConf = f_clamp(array.get(memConf, idx) + delta, 0.0, 100.0)
+    array.set(memConf, idx, nextConf)
+    nextConf
+
+f_touch_slot(int idx, bool hasConfirmation) =>
+    int nextTouches = array.get(memTouches, idx) + 1
+    array.set(memTouches, idx, nextTouches)
+    if not hasConfirmation
+        f_add_conf(idx, -5.0)
+    if nextTouches > 2 and nextTouches <= 5
+        f_add_conf(idx, -10.0)
+    nextTouches
+
+f_move_slot(int fromIdx, int toIdx) =>
+    if array.get(memActive, fromIdx)
+        f_delete_objects(toIdx)
+        array.set(memPrice, toIdx, array.get(memPrice, fromIdx))
+        array.set(memState, toIdx, array.get(memState, fromIdx))
+        array.set(memConf, toIdx, array.get(memConf, fromIdx))
+        array.set(memTouches, toIdx, array.get(memTouches, fromIdx))
+        array.set(memAge, toIdx, array.get(memAge, fromIdx))
+        array.set(memActive, toIdx, true)
+        array.set(memLine, toIdx, array.get(memLine, fromIdx))
+        array.set(memLabel, toIdx, array.get(memLabel, fromIdx))
+        array.set(memLine, fromIdx, na)
+        array.set(memLabel, fromIdx, na)
+        f_empty_values(fromIdx)
+    else
+        f_clear_slot(toIdx)
+
+f_set_slot(int idx, float price, float conf) =>
+    f_clear_slot(idx)
+    array.set(memPrice, idx, price)
+    array.set(memState, idx, STATE_MEMORY)
+    array.set(memConf, idx, f_clamp(conf, 0.0, 100.0))
+    array.set(memTouches, idx, 0)
+    array.set(memAge, idx, 0)
+    array.set(memActive, idx, true)
+
+f_find_near(float price, int idxA, int idxB) =>
+    int found = -1
+    if not na(price)
+        float pA = array.get(memPrice, idxA)
+        if array.get(memActive, idxA) and not na(pA) and math.abs(pA) > 0.0
+            float distA = math.abs(price - pA) / math.abs(pA) * 100.0
+            if distA <= mergePct
+                found := idxA
+        if found < 0
+            float pB = array.get(memPrice, idxB)
+            if array.get(memActive, idxB) and not na(pB) and math.abs(pB) > 0.0
+                float distB = math.abs(price - pB) / math.abs(pB) * 100.0
+                if distB <= mergePct
+                    found := idxB
+    found
+
+f_merge_slot(int idx, float price, float conf) =>
+    float oldPrice = array.get(memPrice, idx)
+    float mergedPrice = na(oldPrice) ? price : (oldPrice + price) * 0.5
+    int oldState = array.get(memState, idx)
+    array.set(memPrice, idx, mergedPrice)
+    array.set(memAge, idx, 0)
+    if oldState == STATE_NONE or oldState == STATE_NOISE
+        array.set(memState, idx, STATE_MEMORY)
+    array.set(memActive, idx, true)
+
+f_apply_candidate(bool isUpper, float price, float conf) =>
+    int primary = isUpper ? IDX_U1 : IDX_D1
+    int previous = isUpper ? IDX_U2 : IDX_D2
+    int nearIdx = f_find_near(price, primary, previous)
+    if nearIdx >= 0
+        f_merge_slot(nearIdx, price, conf)
+    else
+        f_move_slot(primary, previous)
+        f_set_slot(primary, price, conf)
+
+f_refresh_slot(int idx) =>
+    bool isActive = array.get(memActive, idx)
+    float price = array.get(memPrice, idx)
+    line l = array.get(memLine, idx)
+    label lb = array.get(memLabel, idx)
+    if not isActive or na(price)
+        f_delete_objects(idx)
+    else
+        bool isUpper = idx == IDX_U1 or idx == IDX_U2
+        bool isPrimary = idx == IDX_U1 or idx == IDX_D1
+        color baseColor = isUpper ? upperColor : lowerColor
+        int lineTransp = isPrimary ? activeTransp : previousTransp
+        int lineWidth = isPrimary ? activeLineWidth : previousLineWidth
+        string styleOpt = isPrimary ? activeLineStyle : previousLineStyle
+        string labelText = f_slotName(idx) + " " + f_stateText(array.get(memState, idx)) + " S" + str.tostring(int(math.round(array.get(memConf, idx)))) + " " + f_fmt(price)
+        if showLines
+            if na(l)
+                l := line.new(bar_index, price, bar_index + 1, price, xloc=xloc.bar_index, extend=extend.right, color=color.new(baseColor, lineTransp), width=lineWidth, style=f_style(styleOpt))
+            else
+                line.set_y1(l, price)
+                line.set_y2(l, price)
+                line.set_color(l, color.new(baseColor, lineTransp))
+                line.set_width(l, lineWidth)
+                line.set_style(l, f_style(styleOpt))
+            array.set(memLine, idx, l)
+            if showLabels
+                if na(lb)
+                    lb := label.new(bar_index + labelOffsetBars, price, labelText, xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_left, textcolor=color.white, color=color.new(baseColor, isPrimary ? 0 : previousTransp), size=size.small)
+                else
+                    label.set_x(lb, bar_index + labelOffsetBars)
+                    label.set_y(lb, price)
+                    label.set_text(lb, labelText)
+                    label.set_color(lb, color.new(baseColor, isPrimary ? 0 : previousTransp))
+                    label.set_textcolor(lb, color.white)
+                array.set(memLabel, idx, lb)
+            else
+                if not na(lb)
+                    label.delete(lb)
+                    lb := na
+                    array.set(memLabel, idx, na)
+        else
+            f_delete_objects(idx)
+
+f_degrade_slot(int idx) =>
+    bool retired = false
+    if array.get(memActive, idx)
+        int nextAge = array.get(memAge, idx) + 1
+        array.set(memAge, idx, nextAge)
+        if nextAge % 48 == 0 and nextAge <= 192
+            f_add_conf(idx, -5.0)
+        if array.get(memConf, idx) < retireConf
+            f_clear_slot(idx)
+            retired := true
+    retired
+
+f_score_candidate(bool meaningfulWick, bool structureOk, bool strongBody) =>
+    float score = 30.0
+    if meaningfulWick
+        score += 20.0
+    if structureOk
+        score += 10.0
+    if strongBody
+        score += 10.0
+    f_clamp(score, 0.0, 100.0)
+
+int dispLen = math.max(pivotLeft + pivotRight, 2)
+string haTicker = ticker.heikinashi(syminfo.tickerid)
+
+f_ha_pack() =>
+    float ph = ta.pivothigh(high, pivotLeft, pivotRight)[1]
+    float pl = ta.pivotlow(low, pivotLeft, pivotRight)[1]
+    bool phOk = not na(ph)
+    bool plOk = not na(pl)
+    float hiRef = ta.highest(high[2], dispLen)
+    float loRef = ta.lowest(low[2], dispLen)
+    bool dispHi = not na(hiRef) and high[1] > hiRef
+    bool dispLo = not na(loRef) and low[1] < loRef
+    float upPrice = phOk ? ph : high[1]
+    float dnPrice = plOk ? pl : low[1]
+    float upWick = phOk ? high[pivotRight + 1] - math.max(open[pivotRight + 1], close[pivotRight + 1]) : high[1] - math.max(open[1], close[1])
+    float dnWick = plOk ? math.min(open[pivotRight + 1], close[pivotRight + 1]) - low[pivotRight + 1] : math.min(open[1], close[1]) - low[1]
+    float upBody = phOk ? math.abs(close[pivotRight + 1] - open[pivotRight + 1]) : math.abs(close[1] - open[1])
+    float dnBody = plOk ? math.abs(close[pivotRight + 1] - open[pivotRight + 1]) : math.abs(close[1] - open[1])
+    float upAtr = phOk ? ta.atr(atrLen)[pivotRight + 1] : ta.atr(atrLen)[1]
+    float dnAtr = plOk ? ta.atr(atrLen)[pivotRight + 1] : ta.atr(atrLen)[1]
+    [open[1], high[1], low[1], close[1], time[1], ta.atr(atrLen)[1], upPrice, upWick, upBody, upAtr, phOk, dispHi, dnPrice, dnWick, dnBody, dnAtr, plOk, dispLo]
+
+[haOpen4h, haHigh4h, haLow4h, haClose4h, haTime4h, haAtr4h, upCandPrice4h, upCandWick4h, upCandBody4h, upCandAtr4h, upPivotOk4h, upDispOk4h, dnCandPrice4h, dnCandWick4h, dnCandBody4h, dnCandAtr4h, dnPivotOk4h, dnDispOk4h] = request.security(haTicker, structTf, f_ha_pack(), gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+[normalOpen4h, normalHigh4h, normalLow4h, normalClose4h, normalTime4h] = request.security(syminfo.tickerid, structTf, [open[1], high[1], low[1], close[1], time[1]], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+
+float confirmClose4h = confirmSource == "HA_CLOSE" ? haClose4h : normalClose4h
+bool newClosed4h = not na(haTime4h) and ta.change(haTime4h) != 0
+
+f_process_line(int idx, bool isUpper) =>
+    int eventCode = 0
+    if array.get(memActive, idx)
+        float p = array.get(memPrice, idx)
+        int priorState = array.get(memState, idx)
+        bool wasBroken = priorState == STATE_CLOSE_BREAK or priorState == STATE_SHIFT
+        bool lineTouched = isUpper ? math.max(haHigh4h, normalHigh4h) >= p : math.min(haLow4h, normalLow4h) <= p
+        bool closeBreak = isUpper ? confirmClose4h > p : confirmClose4h < p
+        bool closeReturn = isUpper ? lineTouched and confirmClose4h < p : lineTouched and confirmClose4h > p
+        bool retestHold = wasBroken and (isUpper ? math.min(haLow4h, normalLow4h) <= p and confirmClose4h >= p : math.max(haHigh4h, normalHigh4h) >= p and confirmClose4h <= p)
+        if retestHold
+            f_touch_slot(idx, true)
+            f_add_conf(idx, 10.0)
+            array.set(memState, idx, STATE_RETEST_HOLD)
+            eventCode := 4
+        else if closeBreak and not wasBroken
+            f_touch_slot(idx, true)
+            bool strongShift = array.get(memConf, idx) >= strongScore
+            bool flipShift = takeoverMode == "FLIP" and array.get(memConf, idx) >= strongScore - 10.0
+            array.set(memState, idx, strongShift or flipShift ? STATE_SHIFT : STATE_CLOSE_BREAK)
+            eventCode := strongShift or flipShift ? 5 : 3
+        else if closeReturn
+            f_touch_slot(idx, true)
+            f_add_conf(idx, 10.0)
+            bool rejectStyle = isUpper ? haClose4h < haOpen4h : haClose4h <= haOpen4h
+            int reactionState = isUpper ? (rejectStyle ? STATE_REJECT : STATE_ABSORB) : (rejectStyle ? STATE_REJECT : STATE_ABSORB)
+            array.set(memState, idx, reactionState)
+            eventCode := 2
+        else if lineTouched
+            int touchN = f_touch_slot(idx, false)
+            array.set(memState, idx, touchN > 3 ? STATE_NOISE : STATE_TOUCH)
+            eventCode := 1
+    eventCode
+
+int confirmedEvent = 0
+bool touchNow = false
+bool absorbRejectNow = false
+bool closeBreakNow = false
+bool retestHoldNow = false
+bool shiftNow = false
+
+if newClosed4h
+    bool resetNow = false
+    for idx = 0 to 3
+        resetNow := f_degrade_slot(idx) or resetNow
+
+    int evU1 = f_process_line(IDX_U1, true)
+    int evU2 = f_process_line(IDX_U2, true)
+    int evD1 = f_process_line(IDX_D1, false)
+    int evD2 = f_process_line(IDX_D2, false)
+
+    touchNow := evU1 == 1 or evU2 == 1 or evD1 == 1 or evD2 == 1
+    absorbRejectNow := evU1 == 2 or evU2 == 2 or evD1 == 2 or evD2 == 2
+    closeBreakNow := evU1 == 3 or evU2 == 3 or evD1 == 3 or evD2 == 3 or evU1 == 5 or evU2 == 5 or evD1 == 5 or evD2 == 5
+    retestHoldNow := evU1 == 4 or evU2 == 4 or evD1 == 4 or evD2 == 4
+    shiftNow := evU1 == 5 or evU2 == 5 or evD1 == 5 or evD2 == 5
+
+    if shiftNow
+        confirmedEvent := 5
+    else if retestHoldNow
+        confirmedEvent := 4
+    else if closeBreakNow
+        confirmedEvent := 3
+    else if absorbRejectNow
+        confirmedEvent := 2
+    else if touchNow
+        confirmedEvent := 1
+    else if resetNow
+        confirmedEvent := 9
+
+    bool upperStructureOk = upPivotOk4h or upDispOk4h
+    bool lowerStructureOk = dnPivotOk4h or dnDispOk4h
+    bool upperWickOk = not na(upCandAtr4h) and upCandAtr4h > 0.0 and upCandWick4h >= upCandAtr4h * minWickAtr
+    bool lowerWickOk = not na(dnCandAtr4h) and dnCandAtr4h > 0.0 and dnCandWick4h >= dnCandAtr4h * minWickAtr
+    bool upperBodyOk = not na(upCandAtr4h) and upCandAtr4h > 0.0 and upCandBody4h >= upCandAtr4h * minBodyAtr
+    bool lowerBodyOk = not na(dnCandAtr4h) and dnCandAtr4h > 0.0 and dnCandBody4h >= dnCandAtr4h * minBodyAtr
+    bool upperConfirmOk = upperBodyOk or (usePivotFilter and upPivotOk4h)
+    bool lowerConfirmOk = lowerBodyOk or (usePivotFilter and dnPivotOk4h)
+    bool upperCandidate = upperStructureOk and upperWickOk and upperConfirmOk and not na(upCandPrice4h)
+    bool lowerCandidate = lowerStructureOk and lowerWickOk and lowerConfirmOk and not na(dnCandPrice4h)
+
+    if upperCandidate
+        float upScore = f_score_candidate(upperWickOk, upperStructureOk, upperBodyOk)
+        f_apply_candidate(true, upCandPrice4h, upScore)
+    if lowerCandidate
+        float dnScore = f_score_candidate(lowerWickOk, lowerStructureOk, lowerBodyOk)
+        f_apply_candidate(false, dnCandPrice4h, dnScore)
+
+if showVisuals
+    for idx = 0 to 3
+        f_refresh_slot(idx)
+
+float upPriceBus = array.get(memActive, IDX_U1) ? array.get(memPrice, IDX_U1) : na
+float dnPriceBus = array.get(memActive, IDX_D1) ? array.get(memPrice, IDX_D1) : na
+float busClose = not na(normalClose4h) and math.abs(normalClose4h) > 0.0 ? normalClose4h : close
+float upDistBus = not na(upPriceBus) and math.abs(busClose) > 0.0 ? math.abs(upPriceBus - busClose) / math.abs(busClose) * 100.0 : na
+float dnDistBus = not na(dnPriceBus) and math.abs(busClose) > 0.0 ? math.abs(dnPriceBus - busClose) / math.abs(busClose) * 100.0 : na
+int nearestSide = 0
+if not na(upDistBus) and not na(dnDistBus)
+    nearestSide := upDistBus <= dnDistBus ? 1 : -1
+else if not na(upDistBus)
+    nearestSide := 1
+else if not na(dnDistBus)
+    nearestSide := -1
+
+int upStateBus = array.get(memActive, IDX_U1) ? array.get(memState, IDX_U1) : STATE_NONE
+int dnStateBus = array.get(memActive, IDX_D1) ? array.get(memState, IDX_D1) : STATE_NONE
+float upConfBus = array.get(memActive, IDX_U1) ? array.get(memConf, IDX_U1) : 0.0
+float dnConfBus = array.get(memActive, IDX_D1) ? array.get(memConf, IDX_D1) : 0.0
+float haDivergenceBus = 0.0
+
+float wasLinePrice = nearestSide == 1 ? upPriceBus : nearestSide == -1 ? dnPriceBus : na
+float wasDistPct = nearestSide == 1 ? upDistBus : nearestSide == -1 ? dnDistBus : na
+int wasStateCode = nearestSide == 1 ? upStateBus : nearestSide == -1 ? dnStateBus : STATE_NONE
+float wasNearestConf = nearestSide == 1 ? upConfBus : nearestSide == -1 ? dnConfBus : 0.0
+bool wasValidMemory = nearestSide != 0 and not na(wasLinePrice) and wasStateCode != STATE_NONE
+int wasValid = wasValidMemory ? 1 : 0
+int wasDirPack = nearestSide == 1 ? 0 : nearestSide == -1 ? 2 : 1
+int wasEventCode = wasValidMemory ? f_legacyEventToMaat2(confirmedEvent, wasStateCode) : MAAT2_WAS_EVENT_NONE
+int wasRiskCode = wasValidMemory ? f_max_int(f_stateRisk(wasStateCode), f_max_int(f_distRisk(wasDistPct), f_max_int(f_confRisk(wasNearestConf), f_eventRisk(wasEventCode)))) : 0
+float wasScore = wasValidMemory ? f_clamp(wasNearestConf, 0.0, 100.0) : 0.0
+int wasPackCode = wasDirPack * 10000 + wasRiskCode * 1000 + wasEventCode * 10 + wasValid
+
+float markerY = not na(confirmClose4h) ? confirmClose4h : close
+plotshape(showVisuals and showLines and showCandleMarkers and touchNow ? markerY : na, title="AL WAS TOUCH MARK", style=shape.circle, location=location.absolute, color=color.new(color.yellow, 0), text="T", textcolor=color.black, size=size.tiny)
+plotshape(showVisuals and showLines and showCandleMarkers and absorbRejectNow ? markerY : na, title="AL WAS ABSORB REJECT MARK", style=shape.diamond, location=location.absolute, color=color.new(color.orange, 0), text="AR", textcolor=color.black, size=size.tiny)
+plotshape(showVisuals and showLines and showCandleMarkers and closeBreakNow ? markerY : na, title="AL WAS CLOSE BREAK MARK", style=shape.square, location=location.absolute, color=color.new(color.fuchsia, 0), text="CB", textcolor=color.white, size=size.tiny)
+plotshape(showVisuals and showLines and showCandleMarkers and retestHoldNow ? markerY : na, title="AL WAS RETEST HOLD MARK", style=shape.triangleup, location=location.absolute, color=color.new(color.aqua, 0), text="RH", textcolor=color.black, size=size.tiny)
+plotshape(showVisuals and showLines and showCandleMarkers and shiftNow ? markerY : na, title="AL WAS SHIFT MARK", style=shape.flag, location=location.absolute, color=color.new(color.white, 0), text="SH", textcolor=color.black, size=size.small)
+
+var table wasTable = showVisuals ? table.new(f_pos(tablePosOpt), 4, 7, border_width=tableBorder) : na
+if barstate.islast and showVisuals
+    table.clear(wasTable, 0, 0, 3, 6)
+    if showTable
+        tsz = f_size(tableSizeOpt)
+        color headBg = color.new(color.gray, 35)
+        color rowBg = color.new(color.black, 18)
+        table.cell(wasTable, 0, 0, "AL WAS CORE", text_color=color.white, bgcolor=headBg, text_size=tsz)
+        table.cell(wasTable, 1, 0, lineSource, text_color=color.white, bgcolor=headBg, text_size=tsz)
+        table.cell(wasTable, 2, 0, structTf, text_color=color.white, bgcolor=headBg, text_size=tsz)
+        table.cell(wasTable, 3, 0, confirmSource, text_color=color.white, bgcolor=headBg, text_size=tsz)
+        table.cell(wasTable, 0, 1, "U1", text_color=color.white, bgcolor=rowBg, text_size=tsz)
+        table.cell(wasTable, 1, 1, f_stateText(upStateBus), text_color=color.white, bgcolor=rowBg, text_size=tsz)
+        table.cell(wasTable, 2, 1, na(upPriceBus) ? "-" : f_fmt(upPriceBus), text_color=color.white, bgcolor=rowBg, text_size=tsz)
+        table.cell(wasTable, 3, 1, "S" + str.tostring(int(math.round(upConfBus))), text_color=color.white, bgcolor=rowBg, text_size=tsz)
+        table.cell(wasTable, 0, 2, "U2", text_color=color.white, bgcolor=rowBg, text_size=tsz)
+        table.cell(wasTable, 1, 2, f_stateText(array.get(memActive, IDX_U2) ? array.get(memState, IDX_U2) : STATE_NONE), text_color=color.white, bgcolor=rowBg, text_size=tsz)
+        table.cell(wasTable, 2, 2, array.get(memActive, IDX_U2) ? f_fmt(array.get(memPrice, IDX_U2)) : "-", text_color=color.white, bgcolor=rowBg, text_size=tsz)
+        table.cell(wasTable, 3, 2, "S" + str.tostring(int(math.round(array.get(memActive, IDX_U2) ? array.get(memConf, IDX_U2) : 0.0))), text_color=color.white, bgcolor=rowBg, text_size=tsz)
+        table.cell(wasTable, 0, 3, "D1", text_color=color.white, bgcolor=rowBg, text_size=tsz)
+        table.cell(wasTable, 1, 3, f_stateText(dnStateBus), text_color=color.white, bgcolor=rowBg, text_size=tsz)
+        table.cell(wasTable, 2, 3, na(dnPriceBus) ? "-" : f_fmt(dnPriceBus), text_color=color.white, bgcolor=rowBg, text_size=tsz)
+        table.cell(wasTable, 3, 3, "S" + str.tostring(int(math.round(dnConfBus))), text_color=color.white, bgcolor=rowBg, text_size=tsz)
+        table.cell(wasTable, 0, 4, "D2", text_color=color.white, bgcolor=rowBg, text_size=tsz)
+        table.cell(wasTable, 1, 4, f_stateText(array.get(memActive, IDX_D2) ? array.get(memState, IDX_D2) : STATE_NONE), text_color=color.white, bgcolor=rowBg, text_size=tsz)
+        table.cell(wasTable, 2, 4, array.get(memActive, IDX_D2) ? f_fmt(array.get(memPrice, IDX_D2)) : "-", text_color=color.white, bgcolor=rowBg, text_size=tsz)
+        table.cell(wasTable, 3, 4, "S" + str.tostring(int(math.round(array.get(memActive, IDX_D2) ? array.get(memConf, IDX_D2) : 0.0))), text_color=color.white, bgcolor=rowBg, text_size=tsz)
+        table.cell(wasTable, 0, 5, "NEAREST", text_color=color.white, bgcolor=rowBg, text_size=tsz)
+        table.cell(wasTable, 1, 5, nearestSide == 1 ? "UPPER" : nearestSide == -1 ? "LOWER" : "NONE", text_color=color.white, bgcolor=rowBg, text_size=tsz)
+        table.cell(wasTable, 2, 5, nearestSide == 1 and not na(upDistBus) ? str.tostring(upDistBus, "#.##") + "%" : nearestSide == -1 and not na(dnDistBus) ? str.tostring(dnDistBus, "#.##") + "%" : "-", text_color=color.white, bgcolor=rowBg, text_size=tsz)
+        table.cell(wasTable, 3, 5, f_eventText(confirmedEvent), text_color=color.white, bgcolor=rowBg, text_size=tsz)
+
+alertcondition(useAlerts and touchNow, title="AL WAS | TOUCH", message="AL WAS Core V1: 4H memory line touch.")
+alertcondition(useAlerts and absorbRejectNow, title="AL WAS | ABSORB_REJECT", message="AL WAS Core V1: 4H absorb/reject reaction.")
+alertcondition(useAlerts and closeBreakNow, title="AL WAS | CLOSE_BREAK", message="AL WAS Core V1: 4H close break.")
+alertcondition(useAlerts and retestHoldNow, title="AL WAS | RETEST_HOLD", message="AL WAS Core V1: 4H retest hold.")
+alertcondition(useAlerts and shiftNow, title="AL WAS | SHIFT", message="AL WAS Core V1: 4H structural shift.")
+
+plot(float(upStateBus), title="WAS_UP_STATE", display=display.none)
+plot(upPriceBus, title="WAS_UP_PRICE", display=display.none)
+plot(upConfBus, title="WAS_UP_CONF", display=display.none)
+plot(upDistBus, title="WAS_UP_DIST", display=display.none)
+plot(float(dnStateBus), title="WAS_DN_STATE", display=display.none)
+plot(dnPriceBus, title="WAS_DN_PRICE", display=display.none)
+plot(dnConfBus, title="WAS_DN_CONF", display=display.none)
+plot(dnDistBus, title="WAS_DN_DIST", display=display.none)
+plot(float(nearestSide), title="WAS_NEAREST_SIDE", display=display.none)
+plot(float(confirmedEvent), title="WAS_EVENT_CONFIRMED", display=display.none)
+plot(haDivergenceBus, title="WAS_HA_DIVERGENCE", display=display.none)
+
+plot(float(wasPackCode), title="AL_WAS_PACK_CODE", display=display.none)
+plot(wasScore, title="AL_WAS_SCORE", display=display.none)
+plot(wasLinePrice, title="AL_WAS_LINE_PRICE", display=display.none)
+plot(wasDistPct, title="AL_WAS_DIST_PCT", display=display.none)
+plot(float(wasStateCode), title="AL_WAS_STATE_CODE", display=display.none)
+plot(float(wasEventCode), title="AL_WAS_EVENT_CODE", display=display.none)

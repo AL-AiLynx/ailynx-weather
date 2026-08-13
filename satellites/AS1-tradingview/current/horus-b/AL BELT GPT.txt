@@ -1,0 +1,425 @@
+//@version=6
+indicator("AL BELT GPT", overlay=true, max_bars_back=3000, max_labels_count=0)
+
+//==================================================
+// [0] GPT 표
+//==================================================
+string GROUP_PANEL = "BELT B | Panel"
+bool   showTable      = input.bool(true, "Show GPT Table", group=GROUP_PANEL, display=display.none)
+string tablePosOpt    = input.string("TR", "Table Position", options=["TL","TC","TR","ML","MC","MR","BL","BC","BR"], group=GROUP_PANEL, display=display.none)
+string tableSizeOpt   = input.string("SMALL", "Table Size", options=["TINY","SMALL","NORMAL","LARGE"], group=GROUP_PANEL, display=display.none)
+color  headerBg       = input.color(color.new(color.black, 0), "Header Background", group=GROUP_PANEL, display=display.none)
+color  cellBg         = input.color(color.new(color.black, 10), "Cell Background", group=GROUP_PANEL, display=display.none)
+color  headerText     = input.color(color.white, "Header Text", group=GROUP_PANEL, display=display.none)
+color  keyTextColor   = input.color(color.silver, "Key Text", group=GROUP_PANEL, display=display.none)
+color  codeTextColor  = input.color(color.white, "Code Text", group=GROUP_PANEL, display=display.none)
+color  numTextColor   = input.color(color.aqua, "Number Text", group=GROUP_PANEL, display=display.none)
+color  noteTextColor  = input.color(color.orange, "Note Text", group=GROUP_PANEL, display=display.none)
+
+//==================================================
+// [1] Core
+//==================================================
+string GROUP_CORE = "BELT B | Core"
+int   bbLen   = input.int(20, "BB Length", minval=2, group=GROUP_CORE, display=display.none)
+float bbMult  = input.float(2.0, "BB Mult", minval=0.1, step=0.1, group=GROUP_CORE, display=display.none)
+int   kcLen   = input.int(20, "KC Length", minval=2, group=GROUP_CORE, display=display.none)
+float kcMult  = input.float(1.5, "KC Mult", minval=0.1, step=0.1, group=GROUP_CORE, display=display.none)
+int   atrLen  = input.int(14, "ATR Length", minval=1, group=GROUP_CORE, display=display.none)
+
+string GROUP_COMP = "BELT B | Compression"
+int compLookback = input.int(200, "Compression Lookback", minval=50, group=GROUP_COMP, display=display.none)
+
+string GROUP_EXP = "BELT B | Expansion"
+int   expMaxBars   = input.int(60, "Expansion Max Bars", minval=5, group=GROUP_EXP, display=display.none)
+float expNeedGrow  = input.float(0.02, "Expansion Growth Min", minval=0.0, step=0.01, group=GROUP_EXP, display=display.none)
+float expNeedMoveA = input.float(0.5, "Move ATR x", minval=0.0, step=0.1, group=GROUP_EXP, display=display.none)
+
+string GROUP_FILTER = "BELT B | Filter"
+int   minHoldBars       = input.int(4, "Minimum Expansion Hold Bars", minval=0, maxval=30, group=GROUP_FILTER, display=display.none)
+int   fizzleNeedBars    = input.int(2, "Weak Bars To End", minval=1, maxval=10, group=GROUP_FILTER, display=display.none)
+bool  requireExpConfirm = input.bool(true, "Require Release Confirmation", group=GROUP_FILTER, display=display.none)
+
+string GROUP_HOOK = "BELT B | Links"
+float srcBraceDir   = input.source(close, "AL_BRACELET_DIRECTION", group=GROUP_HOOK, display=display.none)
+float srcBraceK     = input.source(close, "AL_BRACELET_SCORE", group=GROUP_HOOK, display=display.none)
+float srcBraceEvent = input.source(close, "AL_BRACELET_EVENT", group=GROUP_HOOK, display=display.none)
+float srcWatchAxis  = input.source(close, "WATCH_AXIS_SOURCE", group=GROUP_HOOK, display=display.none)
+
+string GROUP_GATE = "BELT B | Resonance Gate"
+bool useWatchTight = input.bool(true, "Use Watch Tight Gate", group=GROUP_GATE, display=display.none)
+int  r2ConfirmBars = input.int(2, "R2 Confirm Bars", minval=1, maxval=6, group=GROUP_GATE, display=display.none)
+
+string GROUP_ALERT = "BELT B | Alerts"
+bool useAlerts = input.bool(true, "Use Alerts", group=GROUP_ALERT, display=display.none)
+
+//==================================================
+// [2] 헬퍼
+//==================================================
+f_tablePos(_opt) =>
+    pos = position.top_right
+    if _opt == "TL"
+        pos := position.top_left
+    else if _opt == "TC"
+        pos := position.top_center
+    else if _opt == "TR"
+        pos := position.top_right
+    else if _opt == "ML"
+        pos := position.middle_left
+    else if _opt == "MC"
+        pos := position.middle_center
+    else if _opt == "MR"
+        pos := position.middle_right
+    else if _opt == "BL"
+        pos := position.bottom_left
+    else if _opt == "BC"
+        pos := position.bottom_center
+    else
+        pos := position.bottom_right
+    pos
+
+f_textSize(_opt) =>
+    sz = size.small
+    if _opt == "TINY"
+        sz := size.tiny
+    else if _opt == "SMALL"
+        sz := size.small
+    else if _opt == "NORMAL"
+        sz := size.normal
+    else
+        sz := size.large
+    sz
+
+f_dirCode(_dir) =>
+    string out = "FLAT"
+    if _dir > 0
+        out := "LONG"
+    else if _dir < 0
+        out := "SHORT"
+    out
+
+f_stateCode(_state) =>
+    string out = "IDLE"
+    if _state == -1
+        out := "SQUEEZE"
+    else if _state == 2
+        out := "ACCEPT"
+    else if _state == 1
+        out := "TRACK"
+    out
+
+f_scoreCode(_k) =>
+    string out = "LOW"
+    if _k >= 80
+        out := "STR"
+    else if _k >= 55
+        out := "MID"
+    out
+
+f_evtCode(_evt) =>
+    string out = "NONE"
+    if _evt == 10
+        out := "SQZ_ON"
+    else if _evt == 11
+        out := "RELEASE"
+    else if _evt == 20
+        out := "EXP_ST"
+    else if _evt == 21
+        out := "EXP_END"
+    else if _evt == 30
+        out := "R1"
+    else if _evt == 31
+        out := "R2"
+    else if _evt == 39
+        out := "TRAP"
+    out
+
+f_riskCode(_risk) =>
+    string out = "MID"
+    if _risk == 0
+        out := "SAFE"
+    else if _risk == 2
+        out := "RISK"
+    out
+
+f_note(_state, _evt, _res, _comp, _exp) =>
+    string out = "WAIT"
+    if _evt == 39
+        out := "TRAP WATCH"
+    else if _evt == 31
+        out := "DIR MATCH"
+    else if _evt == 30
+        out := "COMP READY"
+    else if _evt == 20
+        out := "EXPANSION"
+    else if _evt == 11
+        out := "RELEASE"
+    else if _state == -1 and _comp >= 70
+        out := "TIGHT SQUEEZE"
+    else if _state == 1 and _exp >= 60
+        out := "ACTIVE PUSH"
+    else if _res >= 4
+        out := "STRONG RES"
+    out
+
+//==================================================
+// [3] 코어 계산
+//==================================================
+float atrV = ta.atr(atrLen)
+float bbBasis = ta.sma(close, bbLen)
+float bbDev   = bbMult * ta.stdev(close, bbLen)
+float bbUp    = bbBasis + bbDev
+float bbDn    = bbBasis - bbDev
+float kcBasis = ta.ema(close, kcLen)
+float kcRange = kcMult * atrV
+float kcUp    = kcBasis + kcRange
+float kcDn    = kcBasis - kcRange
+bool sqzOn  = (bbUp <= kcUp) and (bbDn >= kcDn)
+bool sqzOff = not sqzOn
+float bbW = math.max(bbUp - bbDn, 1e-6)
+float kcW = math.max(kcUp - kcDn, 1e-6)
+float wRel = bbW / kcW
+
+float wMin  = ta.lowest(wRel, compLookback)
+float wMax  = ta.highest(wRel, compLookback)
+float wSpan = math.max(wMax - wMin, 1e-6)
+float comp01 = 1.0 - ((wRel - wMin) / wSpan)
+comp01 := math.max(0.0, math.min(1.0, comp01))
+int compPct = int(math.round(100.0 * comp01))
+
+bool prevSqzOn = bar_index > 0 ? sqzOn[1] : false
+bool release = prevSqzOn and sqzOff
+float prevClose = bar_index > 0 ? close[1] : close
+float bbWPrev = bar_index > 0 ? bbW[1] : bbW
+float grow    = (bbW - bbWPrev) / math.max(bbWPrev, 1e-6)
+float moveAbs = math.abs(close - prevClose)
+bool  expBar  = (grow >= expNeedGrow) and (moveAbs >= atrV * expNeedMoveA)
+
+bool releaseConfirm = true
+if requireExpConfirm
+    releaseConfirm := expBar or (moveAbs >= atrV * (expNeedMoveA * 1.20))
+bool releaseUnconfirmed = release and not releaseConfirm
+
+var bool expActive   = false
+var int  expStartBar = na
+var int  weakCount   = 0
+if release and releaseConfirm
+    expActive := true
+    expStartBar := bar_index
+    weakCount := 0
+if expActive
+    if expBar
+        weakCount := 0
+    else
+        weakCount += 1
+else
+    weakCount := 0
+
+bool expTooLong   = expActive and not na(expStartBar) and ((bar_index - expStartBar) >= expMaxBars)
+bool expMinHoldOK = (not expActive) or na(expStartBar) ? true : ((bar_index - expStartBar) >= minHoldBars)
+bool expFizzle    = expActive and expMinHoldOK and (weakCount >= fizzleNeedBars)
+bool expEndedNow = false
+if expTooLong or expFizzle
+    expActive := false
+    expStartBar := na
+    weakCount := 0
+    expEndedNow := true
+
+int expPct = 0
+if expActive and not na(expStartBar)
+    float t = float(bar_index - expStartBar)
+    float span = math.max(1.0, float(expMaxBars))
+    float time01 = math.max(0.0, math.min(1.0, 1.0 - (t / span)))
+    float grow01 = math.max(0.0, math.min(1.0, grow / math.max(expNeedGrow, 1e-6)))
+    float move01 = math.max(0.0, math.min(1.0, moveAbs / math.max(atrV * expNeedMoveA, 1e-6)))
+    float s01 = math.max(grow01, move01)
+    expPct := int(math.round(100.0 * (0.65 * s01 + 0.35 * time01)))
+else
+    expPct := 0
+
+int barsSinceSqzOff = int(nz(ta.barssince(not sqzOn), 0))
+int sqzBars = sqzOn ? barsSinceSqzOff : 0
+bool dragState = sqzOn and compPct >= 70 and sqzBars >= minHoldBars
+float kcSlope = kcBasis - (bar_index > 0 ? kcBasis[1] : kcBasis)
+bool biasUp = close >= kcBasis and kcSlope > 0
+bool biasDn = close <= kcBasis and kcSlope < 0
+int structureDir = biasUp ? 1 : biasDn ? -1 : 0
+int priceConfirmDir = moveAbs >= atrV * expNeedMoveA ? (close > prevClose ? 1 : close < prevClose ? -1 : 0) : 0
+int releaseDir = priceConfirmDir != 0 ? priceConfirmDir : expActive and expPct >= 45 ? structureDir : 0
+bool expansionAcceptBase = expActive and releaseDir != 0 and (expBar or expPct >= 60) and not releaseUnconfirmed
+int beltTrackState = sqzOn ? -1 : expActive ? 1 : 0
+
+bool brLinked    = (srcBraceDir != close) or (srcBraceK != close) or (srcBraceEvent != close)
+bool watchLinked = (srcWatchAxis != close)
+int brDir     = brLinked ? int(math.round(nz(srcBraceDir, 0.0))) : 0
+int brK       = brLinked ? int(math.round(nz(srcBraceK, 0.0))) : 0
+int brEvent   = brLinked ? int(math.round(nz(srcBraceEvent, 0.0))) : 0
+int watchAxis = watchLinked ? int(math.round(nz(srcWatchAxis, 0.0))) : 0
+brDir := brDir > 1 ? 1 : brDir < -1 ? -1 : brDir
+brK   := math.max(0, math.min(100, brK))
+
+bool watchArmed = (not useWatchTight) or (not watchLinked) or (watchAxis > 0)
+bool R1 = watchArmed and (beltTrackState == -1) and (compPct >= 70) and (expPct <= 10) and (brEvent != 0 or brK >= 60)
+bool dirMatch = (brDir != 0) and (releaseDir != 0) and (brDir == releaseDir)
+bool R2raw = watchArmed and expansionAcceptBase and (not brLinked or brDir == 0 or dirMatch)
+var int r2Streak = 0
+int prevR2Streak = bar_index > 0 ? r2Streak[1] : 0
+r2Streak := R2raw ? (prevR2Streak + 1) : 0
+bool R2 = r2Streak >= r2ConfirmBars
+bool lowEnergy = (beltTrackState == 0) and (compPct <= 25) and (expPct <= 20)
+bool phaseBad  = (beltTrackState == -1 and expPct > 40) or (beltTrackState == 1 and compPct > 70)
+bool brDirConflict = brDir != 0 and releaseDir != 0 and brDir != releaseDir
+bool R3Trap    = (brEvent != 0 or brK >= 60) and (lowEnergy or phaseBad or brDirConflict)
+bool expansionFail = expFizzle or releaseUnconfirmed or (expActive and weakCount >= fizzleNeedBars and expPct < 35)
+bool fakeRelease = R3Trap or expansionFail
+bool expansionAccept = expansionAcceptBase and not fakeRelease and (R2 or not brLinked or brK < 60)
+int beltDir = expansionAccept ? releaseDir : 0
+int beltState = sqzOn ? -1 : expansionAccept ? 2 : expActive ? 1 : 0
+float compressionScore = sqzOn ? float(compPct) : 0.0
+float releaseScore = (release and releaseConfirm) or expActive ? float(math.max(expPct, release ? 45 : 0)) : 0.0
+float expansionAcceptScore = expansionAccept ? math.max(releaseScore, 60.0) : 0.0
+float fakeReleaseScore = fakeRelease ? math.max(releaseScore, releaseUnconfirmed ? 55.0 : expFizzle ? 50.0 : 0.0) : 0.0
+float trapPressureScore = R3Trap ? float(math.max(60, brK)) : expansionFail ? math.max(fakeReleaseScore, 45.0) : 0.0
+float beltRawK = fakeRelease ? math.max(fakeReleaseScore, trapPressureScore) : expansionAccept ? expansionAcceptScore : beltState == -1 ? float(compPct) : beltState == 1 ? releaseScore : 0.0
+int beltK = int(math.round(math.max(0.0, math.min(100.0, beltRawK))))
+
+int beltRes = 0
+if R1
+    beltRes += 2
+if R2
+    beltRes += 3
+if brEvent != 0
+    beltRes += 1
+if R3Trap
+    beltRes -= 2
+beltRes := math.max(0, math.min(5, beltRes))
+
+bool prevExpActive = bar_index > 0 ? expActive[1] : false
+bool sqzOnStart = sqzOn and not prevSqzOn
+bool sqzOffRel  = release
+bool expStart   = expActive and not prevExpActive
+bool expEnd     = expEndedNow or ((not expActive) and prevExpActive)
+
+int beltEvt = 0
+if sqzOnStart
+    beltEvt := 10
+else if fakeRelease
+    beltEvt := 39
+else if sqzOffRel
+    beltEvt := 11
+else if expStart
+    beltEvt := 20
+else if expEnd
+    beltEvt := 21
+else if R1
+    beltEvt := 30
+else if R2
+    beltEvt := 31
+else
+    beltEvt := 0
+
+int beltActiveFlag = (beltState != 0 or beltK >= 35 or beltEvt != 0 or fakeRelease or dragState) ? 1 : 0
+int beltRisk = fakeRelease or trapPressureScore >= 60 ? 2 : expansionAccept or beltRes >= 4 ? 0 : 1
+
+//==================================================
+// [4] GPT 표
+//==================================================
+var table beltTable = na
+if barstate.islast
+    if showTable
+        if na(beltTable)
+            beltTable := table.new(f_tablePos(tablePosOpt), 4, 10, border_width=1)
+        table.cell(beltTable, 0, 0, "KEY",  text_color=headerText, bgcolor=headerBg, text_size=f_textSize(tableSizeOpt))
+        table.cell(beltTable, 1, 0, "CODE", text_color=headerText, bgcolor=headerBg, text_size=f_textSize(tableSizeOpt))
+        table.cell(beltTable, 2, 0, "NUM",  text_color=headerText, bgcolor=headerBg, text_size=f_textSize(tableSizeOpt))
+        table.cell(beltTable, 3, 0, "NOTE", text_color=headerText, bgcolor=headerBg, text_size=f_textSize(tableSizeOpt))
+
+        int r = 1
+        table.cell(beltTable, 0, r, "DIR",    text_color=keyTextColor,  bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        table.cell(beltTable, 1, r, f_dirCode(beltDir), text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        table.cell(beltTable, 2, r, str.tostring(beltDir), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        table.cell(beltTable, 3, r, beltDir == 0 ? "DIAGNOSTIC" : "CONFIRMED RELEASE", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        r += 1
+
+        table.cell(beltTable, 0, r, "STATE",  text_color=keyTextColor,  bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        table.cell(beltTable, 1, r, f_stateCode(beltState), text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        table.cell(beltTable, 2, r, str.tostring(beltState), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        table.cell(beltTable, 3, r, beltState == -1 ? "SQUEEZE TRACK" : beltState == 2 ? "ACCEPTED" : beltState == 1 ? "RELEASE TRACK" : "WAIT", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        r += 1
+
+        table.cell(beltTable, 0, r, "SCORE", text_color=keyTextColor,  bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        table.cell(beltTable, 1, r, f_scoreCode(beltK), text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        table.cell(beltTable, 2, r, str.tostring(beltK), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        table.cell(beltTable, 3, r, beltState == -1 ? "COMPRESSION" : beltState > 0 ? "RELEASE" : "NONE", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        r += 1
+
+        table.cell(beltTable, 0, r, "RES",   text_color=keyTextColor,  bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        table.cell(beltTable, 1, r, beltRes >= 4 ? "STR" : beltRes >= 2 ? "MID" : "LOW", text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        table.cell(beltTable, 2, r, str.tostring(beltRes), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        table.cell(beltTable, 3, r, R3Trap ? "TRAP PREWARN" : R2 ? "DIR ACCEPT" : R1 ? "COMP READY" : "GENERAL", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        r += 1
+
+        table.cell(beltTable, 0, r, "EVENT", text_color=keyTextColor,  bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        table.cell(beltTable, 1, r, f_evtCode(beltEvt), text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        table.cell(beltTable, 2, r, str.tostring(beltEvt), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        table.cell(beltTable, 3, r, f_note(beltState, beltEvt, beltRes, compPct, expPct), text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        r += 1
+
+        table.cell(beltTable, 0, r, "ACTIVE", text_color=keyTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        table.cell(beltTable, 1, r, beltActiveFlag == 1 ? "ON" : "OFF", text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        table.cell(beltTable, 2, r, str.tostring(beltActiveFlag), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        table.cell(beltTable, 3, r, beltActiveFlag == 1 ? "MONITOR" : "INACTIVE", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        r += 1
+
+        table.cell(beltTable, 0, r, "RISK", text_color=keyTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        table.cell(beltTable, 1, r, f_riskCode(beltRisk), text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        table.cell(beltTable, 2, r, str.tostring(beltRisk), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        table.cell(beltTable, 3, r, beltRisk == 2 ? "TRAP RISK" : beltRisk == 0 ? "STABLE" : "MID", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        r += 1
+
+        table.cell(beltTable, 0, r, "COMP", text_color=keyTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        table.cell(beltTable, 1, r, compPct >= 70 ? "TIGHT" : compPct >= 40 ? "MID" : "LOOSE", text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        table.cell(beltTable, 2, r, str.tostring(compPct), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        table.cell(beltTable, 3, r, "COMPRESSION", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        r += 1
+
+        table.cell(beltTable, 0, r, "EXP", text_color=keyTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        table.cell(beltTable, 1, r, expPct >= 70 ? "PUSH" : expPct >= 40 ? "OPEN" : "WEAK", text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        table.cell(beltTable, 2, r, str.tostring(expPct), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+        table.cell(beltTable, 3, r, "EXPANSION", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    else
+        if not na(beltTable)
+            table.delete(beltTable)
+            beltTable := na
+//==================================================
+// [5] GPT 얼러트
+//==================================================
+int prevBeltRes = bar_index > 0 ? beltRes[1] : 0
+bool beltStrongResStart = beltRes >= 4 and prevBeltRes < 4
+bool expansionAcceptStart = expansionAccept and (bar_index == 0 or not expansionAccept[1])
+bool fakeReleaseStart = fakeRelease and (bar_index == 0 or not fakeRelease[1])
+bool dragStateStart = dragState and (bar_index == 0 or not dragState[1])
+alertcondition(useAlerts and sqzOnStart,       title="AL BELT G | SQUEEZE ON", message="AL_BELT_G,SQUEEZE_ON")
+alertcondition(useAlerts and sqzOffRel,        title="AL BELT G | RELEASE",    message="AL_BELT_G,RELEASE")
+alertcondition(useAlerts and expStart,         title="AL BELT G | EXP START",  message="AL_BELT_G,EXP_START")
+alertcondition(useAlerts and expEnd,           title="AL BELT G | EXP END",    message="AL_BELT_G,EXP_END")
+alertcondition(useAlerts and R1,               title="AL BELT G | COMP READY", message="AL_BELT_G,COMP_READY")
+alertcondition(useAlerts and R2,               title="AL BELT G | DIR MATCH",  message="AL_BELT_G,DIR_MATCH")
+alertcondition(useAlerts and R3Trap,           title="AL BELT G | TRAP",       message="AL_BELT_G,TRAP")
+alertcondition(useAlerts and expansionAcceptStart, title="AL BELT G | EXP ACCEPT", message="AL_BELT_G,EXP_ACCEPT")
+alertcondition(useAlerts and fakeReleaseStart, title="AL BELT G | FAKE RELEASE", message="AL_BELT_G,FAKE_RELEASE")
+alertcondition(useAlerts and dragStateStart,   title="AL BELT G | DRAG",       message="AL_BELT_G,DRAG")
+alertcondition(useAlerts and beltStrongResStart, title="AL BELT G | STRONG RES", message="AL_BELT_G,STRONG_RES")
+
+//==================================================
+// [6] 숨김 출력 (LINK 경량판)
+//==================================================
+plot(float(beltDir),        title="AL_BELT_DIRECTION",   display=display.none)
+plot(float(beltState),      title="AL_BELT_STATE",       display=display.none)
+plot(float(beltK),          title="AL_BELT_SCORE",       display=display.none)
+plot(float(beltEvt),        title="AL_BELT_EVENT",       display=display.none)
+plot(float(beltActiveFlag), title="AL_BELT_ACTIVE_FLAG", display=display.none)
+plot(compressionScore,      title="AL_BELT_COMPRESSION_SCORE", display=display.none)
+plot(releaseScore,          title="AL_BELT_RELEASE_SCORE", display=display.none)
+plot(fakeReleaseScore,      title="AL_BELT_FAKE_RELEASE_SCORE", display=display.none)
+plot(trapPressureScore,     title="AL_BELT_TRAP_PRESSURE_SCORE", display=display.none)
+plot(expansionFail ? 1.0 : 0.0, title="AL_BELT_EXPANSION_FAIL_FLAG", display=display.none)

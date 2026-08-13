@@ -1,0 +1,480 @@
+//@version=6
+indicator("AL PANTS GPT", overlay=true, max_bars_back=3000, max_labels_count=0)
+
+//==================================================
+// [0] GPT 표
+//==================================================
+string GROUP_PANEL = "바지 G | 표"
+
+bool   showTable      = input.bool(true, "GPT 표 표시", group=GROUP_PANEL, display=display.none)
+string tablePosOpt    = input.string("TR", "표 위치", options=["TL","TC","TR","ML","MC","MR","BL","BC","BR"], group=GROUP_PANEL, display=display.none)
+string tableSizeOpt   = input.string("SMALL", "표 크기", options=["TINY","SMALL","NORMAL","LARGE"], group=GROUP_PANEL, display=display.none)
+color  headerBg       = input.color(color.new(color.black, 0), "헤더 배경", group=GROUP_PANEL, display=display.none)
+color  cellBg         = input.color(color.new(color.black, 8), "셀 배경", group=GROUP_PANEL, display=display.none)
+color  borderColor    = input.color(color.new(color.gray, 40), "테두리 색상", group=GROUP_PANEL, display=display.none)
+color  headerText     = input.color(color.white, "헤더 글자색", group=GROUP_PANEL, display=display.none)
+color  keyTextColor   = input.color(color.silver, "KEY 글자색", group=GROUP_PANEL, display=display.none)
+color  codeTextColor  = input.color(color.white, "CODE 글자색", group=GROUP_PANEL, display=display.none)
+color  numTextColor   = input.color(color.aqua, "NUM 글자색", group=GROUP_PANEL, display=display.none)
+color  noteTextColor  = input.color(color.orange, "NOTE 글자색", group=GROUP_PANEL, display=display.none)
+
+//==================================================
+// [1] 핵심
+//==================================================
+string GROUP_CORE = "바지 G | 핵심"
+
+bool   useAutoLtf      = input.bool(true, "하위 시간 자동", group=GROUP_CORE, display=display.none)
+string manualLtfTf     = input.timeframe("5", "수동 하위 시간", group=GROUP_CORE, display=display.none)
+bool   useAutoTFScale  = input.bool(true, "타임프레임 자동 보정", group=GROUP_CORE, display=display.none)
+int    lenVol          = input.int(20, "LTF 거래량 SMA 길이", minval=1, group=GROUP_CORE, display=display.none)
+float  thrMid          = input.float(1.20, "중간 임계값", minval=0.1, step=0.05, group=GROUP_CORE, display=display.none)
+float  thrHigh         = input.float(1.80, "강한 임계값", minval=0.1, step=0.05, group=GROUP_CORE, display=display.none)
+int    aggN            = input.int(12, "집계할 최대 인트라바 수", minval=1, maxval=200, group=GROUP_CORE, display=display.none)
+int    holdBars        = input.int(2, "상태 유지 봉 수", minval=0, maxval=20, group=GROUP_CORE, display=display.none)
+float  bodyPow         = input.float(0.60, "바디 가중치", minval=0.0, maxval=1.0, step=0.05, group=GROUP_CORE, display=display.none)
+float  kBoost          = input.float(1.00, "K 가중치", minval=0.1, maxval=3.0, step=0.05, group=GROUP_CORE, display=display.none)
+int    nkLookback      = input.int(6, "목걸이 프록시 탐색", minval=1, maxval=50, group=GROUP_CORE, display=display.none)
+int    nkMinK          = input.int(55, "목걸이 프록시 최소 점수", minval=0, maxval=100, group=GROUP_CORE, display=display.none)
+float  nkNeedPct       = input.float(0.55, "목걸이 프록시 필요 비율", minval=0.1, maxval=1.0, step=0.05, group=GROUP_CORE, display=display.none)
+
+string GROUP_ALERT = "바지 G | 얼러트"
+bool useAlerts = input.bool(true, "얼러트 사용", group=GROUP_ALERT, display=display.none)
+
+//==================================================
+// [2] 헬퍼
+//==================================================
+f_clampInt(_v, _min, _max) =>
+    math.max(_min, math.min(_max, _v))
+
+f_clampFloat(_v, _min, _max) =>
+    math.max(_min, math.min(_max, _v))
+
+f_tablePos(_opt) =>
+    pos = position.top_right
+    if _opt == "TL"
+        pos := position.top_left
+    else if _opt == "TC"
+        pos := position.top_center
+    else if _opt == "TR"
+        pos := position.top_right
+    else if _opt == "ML"
+        pos := position.middle_left
+    else if _opt == "MC"
+        pos := position.middle_center
+    else if _opt == "MR"
+        pos := position.middle_right
+    else if _opt == "BL"
+        pos := position.bottom_left
+    else if _opt == "BC"
+        pos := position.bottom_center
+    else
+        pos := position.bottom_right
+    pos
+
+f_textSize(_opt) =>
+    sz = size.small
+    if _opt == "TINY"
+        sz := size.tiny
+    else if _opt == "SMALL"
+        sz := size.small
+    else if _opt == "NORMAL"
+        sz := size.normal
+    else
+        sz := size.large
+    sz
+
+f_dirCode(_dir) =>
+    string out = "FLAT"
+    if _dir > 0
+        out := "UP"
+    else if _dir < 0
+        out := "DOWN"
+    else
+        out := "FLAT"
+    out
+
+f_stateCode(_state) =>
+    string out = "IDLE"
+    if _state == 2
+        out := "UP_STR"
+    else if _state == 1
+        out := "UP"
+    else if _state == -1
+        out := "DN"
+    else if _state == -2
+        out := "DN_STR"
+    else
+        out := "IDLE"
+    out
+
+f_scoreCode(_k) =>
+    string out = "LOW"
+    if _k >= 80
+        out := "STR"
+    else if _k >= 55
+        out := "MID"
+    else
+        out := "LOW"
+    out
+
+f_evtCode(_evt) =>
+    string out = "NONE"
+    if _evt == 1
+        out := "UP_PRS_ON"
+    else if _evt == -1
+        out := "DN_PRS_ON"
+    else if _evt == 90
+        out := "RELEASE"
+    else
+        out := "NONE"
+    out
+
+f_riskCode(_risk) =>
+    string out = "MID"
+    if _risk == 0
+        out := "SAFE"
+    else if _risk == 2
+        out := "RISK"
+    else
+        out := "MID"
+    out
+
+f_autoLtf(_chartSec) =>
+    string out = "1"
+    if na(_chartSec)
+        out := "1"
+    else if _chartSec <= 60
+        out := "1"
+    else if _chartSec <= 300
+        out := "1"
+    else if _chartSec <= 900
+        out := "5"
+    else if _chartSec <= 3600
+        out := "15"
+    else if _chartSec <= 14400
+        out := "60"
+    else
+        out := "240"
+    out
+
+f_note(_state, _evt, _proxy, _valid, _tf) =>
+    string out = "WAIT"
+    if not _valid
+        out := "LTF INVALID"
+    else if _evt == 90
+        out := "FLOW RELEASE"
+    else if _state == 2
+        out := "STRONG UP " + _tf
+    else if _state == -2
+        out := "STRONG DOWN " + _tf
+    else if _state == 1
+        out := "UP FLOW " + _tf
+    else if _state == -1
+        out := "DOWN FLOW " + _tf
+    else if _proxy > 0
+        out := "NECK RELAY"
+    else
+        out := "NEUTRAL"
+    out
+
+//==================================================
+// [3] 하위 시간 안전장치 / 자동 TF
+//==================================================
+int chartTfSec = timeframe.in_seconds()
+string selectedLtfTf = useAutoLtf ? f_autoLtf(chartTfSec) : manualLtfTf
+int lowerTfSec = timeframe.in_seconds(selectedLtfTf)
+
+bool tfKnown  = not na(chartTfSec) and not na(lowerTfSec)
+bool ltfValid = tfKnown and chartTfSec >= lowerTfSec and lowerTfSec > 0
+
+float thrMidAdj = thrMid
+float thrHighAdj = thrHigh
+int holdBarsAdj = holdBars
+int aggNAdj = aggN
+
+if useAutoTFScale and not na(chartTfSec)
+    if chartTfSec >= 86400
+        thrMidAdj := thrMid + 0.18
+        thrHighAdj := thrHigh + 0.28
+        holdBarsAdj := holdBars + 2
+        aggNAdj := math.min(aggN + 8, 200)
+    else if chartTfSec >= 14400
+        thrMidAdj := thrMid + 0.12
+        thrHighAdj := thrHigh + 0.20
+        holdBarsAdj := holdBars + 1
+        aggNAdj := math.min(aggN + 4, 200)
+    else if chartTfSec >= 3600
+        thrMidAdj := thrMid + 0.06
+        thrHighAdj := thrHigh + 0.10
+        holdBarsAdj := holdBars + 1
+        aggNAdj := math.min(aggN + 2, 200)
+
+//==================================================
+// [4] 하위 시간 배열
+//==================================================
+array<float> ltfOpen   = array.new_float()
+array<float> ltfHigh   = array.new_float()
+array<float> ltfLow    = array.new_float()
+array<float> ltfClose  = array.new_float()
+array<float> ltfVolume = array.new_float()
+
+if ltfValid
+    ltfOpen   := request.security_lower_tf(syminfo.tickerid, selectedLtfTf, open)
+    ltfHigh   := request.security_lower_tf(syminfo.tickerid, selectedLtfTf, high)
+    ltfLow    := request.security_lower_tf(syminfo.tickerid, selectedLtfTf, low)
+    ltfClose  := request.security_lower_tf(syminfo.tickerid, selectedLtfTf, close)
+    ltfVolume := request.security_lower_tf(syminfo.tickerid, selectedLtfTf, volume)
+
+int arrSize = array.size(ltfClose)
+int useN = math.min(arrSize, aggNAdj)
+
+//==================================================
+// [5] 인트라바 집계
+//==================================================
+float sumK = 0.0
+int upCnt = 0
+int dnCnt = 0
+int validCnt = 0
+
+float vBase = ta.sma(volume, lenVol)
+float vBaseSafeGlobal = math.max(nz(vBase, volume), 1.0)
+
+if ltfValid and useN > 0
+    for i = 0 to useN - 1
+        int idx = arrSize - 1 - i
+
+        float o = array.get(ltfOpen, idx)
+        float c = array.get(ltfClose, idx)
+        float h = array.get(ltfHigh, idx)
+        float l = array.get(ltfLow, idx)
+        float v = array.get(ltfVolume, idx)
+
+        float vRatio = v / vBaseSafeGlobal
+        float body = math.abs(c - o)
+        float barRange = math.max(math.abs(h - l), syminfo.mintick)
+        float bodyRatio = body / barRange
+
+        int dir = 0
+        if c > o
+            dir := 1
+        else if c < o
+            dir := -1
+
+        float strength = 0.0
+        if vRatio >= thrHighAdj
+            strength := 1.0
+        else if vRatio >= thrMidAdj
+            strength := 0.6
+        else
+            strength := 0.2
+
+        float bodyAdj = (1.0 - bodyPow) + (bodyRatio * bodyPow)
+        float kPart = 100.0 * strength * bodyAdj * kBoost
+        kPart := f_clampFloat(kPart, 0.0, 100.0)
+
+        if dir != 0
+            validCnt += 1
+            sumK += kPart
+            upCnt += dir == 1 ? 1 : 0
+            dnCnt += dir == -1 ? 1 : 0
+
+float avgKRaw = validCnt > 0 ? (sumK / validCnt) : 0.0
+int pantsKRaw = int(math.round(avgKRaw))
+pantsKRaw := f_clampInt(pantsKRaw, 0, 100)
+
+int rawDir = 0
+if upCnt > dnCnt
+    rawDir := 1
+else if dnCnt > upCnt
+    rawDir := -1
+
+int stateRaw = 0
+if rawDir == 1
+    if pantsKRaw >= 75
+        stateRaw := 2
+    else if pantsKRaw >= 45
+        stateRaw := 1
+else if rawDir == -1
+    if pantsKRaw >= 75
+        stateRaw := -2
+    else if pantsKRaw >= 45
+        stateRaw := -1
+
+if not ltfValid
+    stateRaw := 0
+    pantsKRaw := 0
+    rawDir := 0
+
+//==================================================
+// [6] 안정화
+//==================================================
+var int pantsState = 0
+var int holdLeft = 0
+
+if stateRaw != pantsState
+    if holdBarsAdj <= 0
+        pantsState := stateRaw
+        holdLeft := 0
+    else
+        if holdLeft <= 0
+            holdLeft := holdBarsAdj
+        else
+            holdLeft -= 1
+            if holdLeft == 0
+                pantsState := stateRaw
+else
+    holdLeft := 0
+
+int pantsDir = 0
+if pantsState > 0
+    pantsDir := 1
+else if pantsState < 0
+    pantsDir := -1
+
+int pantsK = pantsState == 0 ? 0 : pantsKRaw
+
+//==================================================
+// [7] RES / EVT / SIG / ACTIVE / RISK / PROXY
+//==================================================
+int pantsRes = 0
+if pantsState != 0
+    pantsRes += 1
+if pantsState == 2 or pantsState == -2
+    pantsRes += 1
+if pantsK >= 90
+    pantsRes += 2
+else if pantsK >= 75
+    pantsRes += 1
+else if pantsK >= 60
+    pantsRes += 1
+pantsRes := f_clampInt(pantsRes, 0, 5)
+
+int prevPantsState = bar_index > 0 ? pantsState[1] : 0
+bool justOn = pantsState != 0 and prevPantsState == 0
+bool justRelease = pantsState == 0 and prevPantsState != 0
+int pantsEvent = justOn ? pantsDir : justRelease ? 90 : 0
+
+int pantsSigDir = pantsDir > 0 ? 1 : pantsDir < 0 ? -1 : 0
+int pantsSigRes = f_clampInt(pantsRes, 0, 5)
+int pantsSig = pantsSigDir == 0 ? 0 : (pantsSigDir * 100 + pantsSigRes)
+
+int pantsActiveFlag = pantsState != 0 ? 1 : 0
+int pantsRisk = 1
+if pantsActiveFlag == 0
+    pantsRisk := 1
+else if math.abs(pantsState) == 2 and pantsK >= 75
+    pantsRisk := 0
+else if pantsK < 40
+    pantsRisk := 2
+
+int hitCnt = 0
+for j = 0 to nkLookback - 1
+    int histK = nz(pantsK[j], 0)
+    int histDir = nz(pantsDir[j], 0)
+    bool kHit = histK >= nkMinK
+    bool dirHit = histDir != 0
+    hitCnt += (kHit and dirHit) ? 1 : 0
+
+float needCntF = math.ceil(float(nkLookback) * nkNeedPct)
+int needCnt = int(needCntF)
+bool necklaceProxyOn = hitCnt >= needCnt
+int necklaceProxy = necklaceProxyOn ? pantsK : 0
+necklaceProxy := f_clampInt(necklaceProxy, 0, 100)
+int prevNecklaceProxy = bar_index > 0 ? necklaceProxy[1] : 0
+
+//==================================================
+// [8] GPT 표
+//==================================================
+var table pantsTable = na
+textSz = f_textSize(tableSizeOpt)
+
+if barstate.islast and showTable
+    if na(pantsTable)
+        pantsTable := table.new(f_tablePos(tablePosOpt), 4, 11, border_width=1, border_color=borderColor)
+    table.cell(pantsTable, 0, 0, "KEY",  text_color=headerText, bgcolor=headerBg, text_size=textSz)
+    table.cell(pantsTable, 1, 0, "CODE", text_color=headerText, bgcolor=headerBg, text_size=textSz)
+    table.cell(pantsTable, 2, 0, "NUM",  text_color=numTextColor, bgcolor=headerBg, text_size=textSz)
+    table.cell(pantsTable, 3, 0, "NOTE", text_color=headerText, bgcolor=headerBg, text_size=textSz)
+
+    table.cell(pantsTable, 0, 1, "DIR", text_color=keyTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(pantsTable, 1, 1, f_dirCode(pantsDir), text_color=codeTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(pantsTable, 2, 1, str.tostring(pantsDir), text_color=numTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(pantsTable, 3, 1, "intrabar flow dir", text_color=noteTextColor, bgcolor=cellBg, text_size=textSz)
+
+    table.cell(pantsTable, 0, 2, "STATE", text_color=keyTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(pantsTable, 1, 2, f_stateCode(pantsState), text_color=codeTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(pantsTable, 2, 2, str.tostring(pantsState), text_color=numTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(pantsTable, 3, 2, f_note(pantsState, pantsEvent, necklaceProxy, ltfValid, selectedLtfTf), text_color=noteTextColor, bgcolor=cellBg, text_size=textSz)
+
+    table.cell(pantsTable, 0, 3, "SCORE", text_color=keyTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(pantsTable, 1, 3, f_scoreCode(pantsK), text_color=codeTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(pantsTable, 2, 3, str.tostring(pantsK), text_color=numTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(pantsTable, 3, 3, "avg lower-tf K", text_color=noteTextColor, bgcolor=cellBg, text_size=textSz)
+
+    table.cell(pantsTable, 0, 4, "RES", text_color=keyTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(pantsTable, 1, 4, pantsRes >= 4 ? "HARD" : pantsRes >= 2 ? "MID" : "LOW", text_color=codeTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(pantsTable, 2, 4, str.tostring(pantsRes), text_color=numTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(pantsTable, 3, 4, "0-5", text_color=noteTextColor, bgcolor=cellBg, text_size=textSz)
+
+    table.cell(pantsTable, 0, 5, "EVENT", text_color=keyTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(pantsTable, 1, 5, f_evtCode(pantsEvent), text_color=codeTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(pantsTable, 2, 5, str.tostring(pantsEvent), text_color=numTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(pantsTable, 3, 5, "pressure / release", text_color=noteTextColor, bgcolor=cellBg, text_size=textSz)
+
+    table.cell(pantsTable, 0, 6, "RISK", text_color=keyTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(pantsTable, 1, 6, f_riskCode(pantsRisk), text_color=codeTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(pantsTable, 2, 6, str.tostring(pantsRisk), text_color=numTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(pantsTable, 3, 6, "0 safe / 2 risk", text_color=noteTextColor, bgcolor=cellBg, text_size=textSz)
+
+    table.cell(pantsTable, 0, 7, "ACTIVE", text_color=keyTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(pantsTable, 1, 7, pantsActiveFlag == 1 ? "ON" : "OFF", text_color=codeTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(pantsTable, 2, 7, str.tostring(pantsActiveFlag), text_color=numTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(pantsTable, 3, 7, "state live", text_color=noteTextColor, bgcolor=cellBg, text_size=textSz)
+
+    table.cell(pantsTable, 0, 8, "PROXY", text_color=keyTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(pantsTable, 1, 8, necklaceProxy > 0 ? "ON" : "OFF", text_color=codeTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(pantsTable, 2, 8, str.tostring(necklaceProxy), text_color=numTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(pantsTable, 3, 8, "necklace relay", text_color=noteTextColor, bgcolor=cellBg, text_size=textSz)
+
+    table.cell(pantsTable, 0, 9, "LTF", text_color=keyTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(pantsTable, 1, 9, selectedLtfTf, text_color=codeTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(pantsTable, 2, 9, str.tostring(lowerTfSec), text_color=numTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(pantsTable, 3, 9, useAutoLtf ? "auto ltf" : "manual ltf", text_color=noteTextColor, bgcolor=cellBg, text_size=textSz)
+
+    table.cell(pantsTable, 0, 10, "SIGNAL", text_color=keyTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(pantsTable, 1, 10, pantsSig == 0 ? "NONE" : pantsSig > 0 ? "UP_PRS" : "DN_PRS", text_color=codeTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(pantsTable, 2, 10, str.tostring(pantsSig), text_color=numTextColor, bgcolor=cellBg, text_size=textSz)
+    table.cell(pantsTable, 3, 10, "dir*100+res", text_color=noteTextColor, bgcolor=cellBg, text_size=textSz)
+if barstate.islast and not showTable
+    if not na(pantsTable)
+        table.delete(pantsTable)
+        pantsTable := na
+
+//==================================================
+// [9] GPT 얼러트
+//==================================================
+bool pantsLongOpen    = useAlerts and pantsEvent == 1
+bool pantsShortOpen   = useAlerts and pantsEvent == -1
+bool pantsStrongLong  = useAlerts and pantsState == 2 and prevPantsState != 2
+bool pantsStrongShort = useAlerts and pantsState == -2 and prevPantsState != -2
+bool pantsRelease     = useAlerts and pantsEvent == 90
+bool pantsProxyStart  = useAlerts and necklaceProxy > 0 and prevNecklaceProxy == 0
+bool pantsRiskStart   = useAlerts and pantsRisk == 2 and (bar_index > 0 ? pantsRisk[1] : 1) != 2
+
+alertcondition(pantsLongOpen,    title="AL PANTS G | LONG OPEN",    message="AL_PANTS_G,LONG_OPEN")
+alertcondition(pantsShortOpen,   title="AL PANTS G | SHORT OPEN",   message="AL_PANTS_G,SHORT_OPEN")
+alertcondition(pantsStrongLong,  title="AL PANTS G | STRONG LONG",  message="AL_PANTS_G,STRONG_LONG")
+alertcondition(pantsStrongShort, title="AL PANTS G | STRONG SHORT", message="AL_PANTS_G,STRONG_SHORT")
+alertcondition(pantsRelease,     title="AL PANTS G | RELEASE",      message="AL_PANTS_G,RELEASE")
+alertcondition(pantsProxyStart,  title="AL PANTS G | NECK PROXY",   message="AL_PANTS_G,NECK_PROXY")
+alertcondition(pantsRiskStart,   title="AL PANTS G | RISK",         message="AL_PANTS_G,RISK")
+
+//==================================================
+// 숨김 출력 (A 링크 경량)
+//==================================================
+plot(float(pantsDir),        title="AL_PANTS_DIRECTION",   display=display.none)
+plot(float(pantsState),      title="AL_PANTS_STATE",       display=display.none)
+plot(float(pantsK),          title="AL_PANTS_SCORE",       display=display.none)
+plot(float(pantsRes),        title="AL_PANTS_RESISTANCE",  display=display.none)
+plot(float(pantsEvent),      title="AL_PANTS_EVENT",       display=display.none)
+plot(float(pantsActiveFlag), title="AL_PANTS_ACTIVE_FLAG", display=display.none)

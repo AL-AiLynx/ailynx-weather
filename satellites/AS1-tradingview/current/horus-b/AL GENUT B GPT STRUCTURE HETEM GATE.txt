@@ -1,0 +1,1761 @@
+//@version=6
+indicator("AL GENUT B GPT STRUCTURE HETEM GATE", overlay=true, max_bars_back=3000, max_labels_count=0)
+
+//==================================================
+// 헬퍼
+//==================================================
+f_clamp(float x, float lo, float hi) =>
+    math.max(lo, math.min(hi, x))
+
+f_dirCode(int d) =>
+    d > 0 ? "UP" : d < 0 ? "DOWN" : "FLAT"
+
+f_stateCode(int s) =>
+    s == 4 ? "FAIL" : s == 3 ? "HOLD" : s == 2 ? "TRIG" : s == 1 ? "SET" : "IDLE"
+
+f_riskCode(int r) =>
+    r == 0 ? "SAFE" : r == 1 ? "MID" : "RISK"
+
+f_scoreBand(float v) =>
+    v >= 80 ? "EXTREME" : v >= 60 ? "HIGH" : v >= 40 ? "MID" : v >= 20 ? "LOW" : "NONE"
+
+f_reasonCode(int rc) =>
+    rc == 1 ? "FAIL" : rc == 2 ? "THIN" : rc == 3 ? "ALIGN" : rc == 4 ? "RISK" : rc == 5 ? "SETUP" : rc == 6 ? "WAIT" : rc == 7 ? "LINK" : "NONE"
+
+f_pos(string opt) =>
+    p = position.top_left
+    if opt == "TL"
+        p := position.top_left
+    else if opt == "TC"
+        p := position.top_center
+    else if opt == "TR"
+        p := position.top_right
+    else if opt == "ML"
+        p := position.middle_left
+    else if opt == "MC"
+        p := position.middle_center
+    else if opt == "MR"
+        p := position.middle_right
+    else if opt == "BL"
+        p := position.bottom_left
+    else if opt == "BC"
+        p := position.bottom_center
+    else
+        p := position.bottom_right
+    p
+
+f_tsize(string opt) =>
+    sz = size.small
+    if opt == "XS"
+        sz := size.tiny
+    else if opt == "S"
+        sz := size.small
+    else if opt == "M"
+        sz := size.normal
+    else if opt == "L"
+        sz := size.large
+    else
+        sz := size.huge
+    sz
+
+f_tablePos(string opt) =>
+    p = position.bottom_right
+    if opt == "좌상"
+        p := position.top_left
+    else if opt == "상중"
+        p := position.top_center
+    else if opt == "우상"
+        p := position.top_right
+    else if opt == "좌중"
+        p := position.middle_left
+    else if opt == "정중"
+        p := position.middle_center
+    else if opt == "우중"
+        p := position.middle_right
+    else if opt == "좌하"
+        p := position.bottom_left
+    else if opt == "하중"
+        p := position.bottom_center
+    else
+        p := position.bottom_right
+    p
+
+f_textSizeFromScale(int sc) =>
+    sz = size.normal
+    if sc <= 2
+        sz := size.tiny
+    else if sc <= 4
+        sz := size.small
+    else if sc <= 6
+        sz := size.normal
+    else if sc <= 8
+        sz := size.large
+    else
+        sz := size.huge
+    sz
+
+f_numTxt(float v) =>
+    str.tostring(int(math.round(v)))
+
+f_flowChar(float x) =>
+    x >= 3 ? "+" : x <= -3 ? "-" : "."
+
+f_jsonSafe(string s) =>
+    str.replace_all(str.replace_all(str.replace_all(str.tostring(s), "\\", "\\\\"), "\"", "'"), "\n", " ")
+
+f_boolStr(bool b) =>
+    b ? "true" : "false"
+
+f_kv(string k, string v) =>
+    "\"" + k + "\":\"" + f_jsonSafe(v) + "\""
+
+f_kvNum(string k, string v) =>
+    "\"" + k + "\":" + v
+
+f_kvBool(string k, bool b) =>
+    "\"" + k + "\":" + f_boolStr(b)
+
+f_keySafe(string s) =>
+    string out = f_jsonSafe(s)
+    out := str.replace_all(out, ":", "_")
+    out := str.replace_all(out, "/", "_")
+    out := str.replace_all(out, "\\", "_")
+    out := str.replace_all(out, "|", "_")
+    out := str.replace_all(out, " ", "_")
+    out := str.replace_all(out, ",", "_")
+    out
+
+
+//==================================================
+// GAW compact helpers (GPT_CODE table / alert digest)
+//==================================================
+f_gawLayer(string s) =>
+    string out = "L"
+    if s == "FORCE"
+        out := "F"
+    else if s == "STRUCTURE"
+        out := "S"
+    out
+
+f_gawGate(string s) =>
+    string out = "WT"
+    if s == "OPEN"
+        out := "GO"
+    else if s == "BLOCKED"
+        out := "GB"
+    else if s == "CONGESTED"
+        out := "GC"
+    else if s == "CLEARING"
+        out := "CL"
+    else if s == "RISK"
+        out := "RK"
+    out
+
+f_gawBand(string s) =>
+    string out = s
+    if s == "NONE"
+        out := "N"
+    else if s == "LOW"
+        out := "L"
+    else if s == "MID"
+        out := "M"
+    else if s == "HIGH"
+        out := "H"
+    else if s == "EXTREME"
+        out := "X"
+    else if s == "SAFE"
+        out := "N"
+    else if s == "RISK"
+        out := "RK"
+    out
+
+f_gawState(string s) =>
+    string out = s
+    if s == "IDLE"
+        out := "ID"
+    else if s == "SET"
+        out := "ST"
+    else if s == "TRIG"
+        out := "TR"
+    else if s == "HOLD"
+        out := "HD"
+    else if s == "FAIL"
+        out := "FL"
+    out
+
+f_gawRisk(string s) =>
+    string out = s
+    if s == "NONE" or s == "SAFE"
+        out := "N"
+    else if s == "LOW"
+        out := "L"
+    else if s == "MID"
+        out := "M"
+    else if s == "HIGH"
+        out := "H"
+    else if s == "EXTREME"
+        out := "X"
+    else if s == "RISK" or s == "RK"
+        out := "RK"
+    out
+
+f_gawBlock(string s) =>
+    string out = "C"
+    if s == "BLOCK"
+        out := "B"
+    else if s == "HARD_BLOCK"
+        out := "HB"
+    else if s == "SOFT_BLOCK"
+        out := "B"
+    else if s == "PREWARN"
+        out := "PW"
+    else if s == "CLEAR"
+        out := "C"
+    out
+
+f_gawFlow(string s) =>
+    string out = "FL"
+    if s == "UP"
+        out := "UP"
+    else if s == "DOWN"
+        out := "DN"
+    else if s == "DN"
+        out := "DN"
+    else if s == "FLAT"
+        out := "FL"
+    else if s == "SHIFT"
+        out := "SH"
+    else if s == "MIXED"
+        out := "MX"
+    out
+
+f_gawEvent(string s) =>
+    string out = s
+    if s == "TF_SNAPSHOT"
+        out := "TFS"
+    else if s == "FORCE_SHIFT"
+        out := "FS"
+    else if s == "FORCE_CONFIRM"
+        out := "FC"
+    else if s == "FORCE_FADE_BLOCK"
+        out := "FFB"
+    else if s == "PRESSURE_RISING"
+        out := "PR"
+    else if s == "TRAP_WAIT"
+        out := "TW"
+    else if s == "STRUCTURE_SHIFT"
+        out := "SS"
+    else if s == "GATE_BLOCKED"
+        out := "GB"
+    else if s == "GATE_CLEARING"
+        out := "GCL"
+    else if s == "BLOCK_PREWARN"
+        out := "BPW"
+    else if s == "RECOVERY_FAIL"
+        out := "RF"
+    else if s == "TRAP_FAKEOUT_WAIT"
+        out := "TFW"
+    else if s == "OBSERVE"
+        out := "OBS"
+    out
+
+f_gawPressureCode(string s) =>
+    float v = str.tonumber(s)
+    string bandCode = f_gawBand(f_scoreBand(v))
+    bandCode + s
+
+f_gawPressureLine(string s) =>
+    float v = str.tonumber(s)
+    string bandText = f_scoreBand(v)
+    bandText + "_" + s
+
+f_makeAlertBusJson(string alertKind, string eventName, string triggerName, string barStatus, string seasonTxt, string seasonCodeTxt, string busGroup, string busLayer, string dirTxt, string stateTxt, string riskTxt, string totalTxt, string blockTxt, string flowTxt, string nextTfTxt, string modeCodeTxt, string eventCodeTxt, string eventSeverityTxt, string gawPolicyTxt, string schemaVersionTxt, string gateStateTxt, string gateScoreTxt, string pressureIndexTxt, string kemiOkTxt, string kemiScoreTxt, string kemiEventTxt, string kemiConflictTxt, string kemiAbsorptionTxt, string kemiDivergenceTxt, string kemiEffortResultTxt, string kheperOkTxt, string kheperScoreTxt, string kheperEventTxt, string kheperHandoffTxt, string kheperBridgeTxt, string kheperVelocityTxt, string kheperCauseTfTxt, string sensorMaskTxt, string stateSig, string eventSig, string dedupKey, string policy, bool gptOk, bool voiceOk, string versionTxt) =>
+    string gawGateCode = f_gawGate(gateStateTxt)
+    string gawRiskCode = f_gawRisk(riskTxt)
+    string gawBlockCode = f_gawBlock(blockTxt)
+    string gawEventCode = f_gawEvent(eventName)
+    string gawPressureCode = f_gawPressureCode(pressureIndexTxt)
+    string gawPressureLine = f_gawPressureLine(pressureIndexTxt)
+    string gawCode = schemaVersionTxt + "|TF:" + timeframe.period + "|EC:" + gawEventCode + "|ES:" + eventSeverityTxt + "|" + gawPolicyTxt + "|G:" + gawGateCode + "|P:" + gawPressureCode + "|R:" + gawRiskCode + "|B:" + gawBlockCode + "|N:" + nextTfTxt
+    string gawLine = "GAW_V3; TF=" + timeframe.period + "; EC=" + gawEventCode + "; ES=" + eventSeverityTxt + "; " + gawPolicyTxt + "; GATE=" + gateStateTxt + "; PRESSURE=" + gawPressureLine + "; RISK=" + riskTxt + "; BLOCK=" + blockTxt + "; NEXT=" + nextTfTxt
+    string json = "{"
+    json := json + f_kv("source", "TradingView") + ","
+    json := json + f_kv("system", "AiLynx") + ","
+    json := json + f_kv("engine", "GENUT") + ","
+    json := json + f_kv("observer", "HORUS") + ","
+    json := json + f_kv("season", seasonTxt) + ","
+    json := json + f_kv("season_code", seasonCodeTxt) + ","
+    json := json + f_kv("group", busGroup) + ","
+    json := json + f_kv("layer", busLayer) + ","
+    json := json + f_kv("alert_kind", alertKind) + ","
+    json := json + f_kv("event", eventName) + ","
+    json := json + f_kv("trigger", triggerName) + ","
+    json := json + f_kv("bar_status", barStatus) + ","
+    json := json + f_kv("gv", schemaVersionTxt) + ","
+    json := json + f_kv("ec", gawEventCode) + ","
+    json := json + f_kvNum("es", eventSeverityTxt) + ","
+    json := json + f_kv("gp", gawPolicyTxt) + ","
+    json := json + f_kv("symbol", syminfo.tickerid) + ","
+    json := json + f_kv("tf", timeframe.period) + ","
+    json := json + f_kv("time", str.tostring(time)) + ","
+    json := json + f_kv("open", str.tostring(open)) + ","
+    json := json + f_kv("high", str.tostring(high)) + ","
+    json := json + f_kv("low", str.tostring(low)) + ","
+    json := json + f_kv("close", str.tostring(close)) + ","
+    json := json + f_kv("volume", str.tostring(volume)) + ","
+    json := json + f_kv("dir", dirTxt) + ","
+    json := json + f_kv("state", stateTxt) + ","
+    json := json + f_kv("risk", riskTxt) + ","
+    json := json + f_kv("total", totalTxt) + ","
+    json := json + f_kv("block", blockTxt) + ","
+    json := json + f_kv("flow", flowTxt) + ","
+    json := json + f_kv("next_tf", nextTfTxt) + ","
+    json := json + f_kv("mode_code", modeCodeTxt) + ","
+    json := json + f_kv("event_code", eventCodeTxt) + ","
+    json := json + f_kv("gate_state", gateStateTxt) + ","
+    json := json + f_kv("gate_score", gateScoreTxt) + ","
+    json := json + f_kv("pressure_index", pressureIndexTxt) + ","
+    json := json + f_kvNum("kemi_ok", kemiOkTxt) + ","
+    json := json + f_kvNum("kemi_score", kemiScoreTxt) + ","
+    json := json + f_kvNum("kemi_event", kemiEventTxt) + ","
+    json := json + f_kvNum("kemi_conflict", kemiConflictTxt) + ","
+    json := json + f_kvNum("kemi_absorption", kemiAbsorptionTxt) + ","
+    json := json + f_kvNum("kemi_divergence", kemiDivergenceTxt) + ","
+    json := json + f_kvNum("kemi_effort_result", kemiEffortResultTxt) + ","
+    json := json + f_kvNum("kheper_ok", kheperOkTxt) + ","
+    json := json + f_kvNum("kheper_score", kheperScoreTxt) + ","
+    json := json + f_kvNum("kheper_event", kheperEventTxt) + ","
+    json := json + f_kvNum("kheper_handoff", kheperHandoffTxt) + ","
+    json := json + f_kvNum("kheper_bridge", kheperBridgeTxt) + ","
+    json := json + f_kvNum("kheper_velocity", kheperVelocityTxt) + ","
+    json := json + f_kvNum("kheper_cause_tf", kheperCauseTfTxt) + ","
+    json := json + f_kv("sensor_mask", sensorMaskTxt) + ","
+    json := json + f_kv("state_signature", stateSig) + ","
+    json := json + f_kv("event_signature", eventSig) + ","
+    json := json + f_kv("dedup_key", dedupKey) + ","
+    json := json + f_kv("brief_policy", policy) + ","
+    json := json + f_kvBool("gpt_allowed", gptOk) + ","
+    json := json + f_kvBool("voice_allowed", voiceOk) + ","
+    json := json + f_kv("gaw_code", gawCode) + ","
+    json := json + f_kv("gaw_line", gawLine) + ","
+    json := json + f_kv("version", versionTxt)
+    json := json + "}"
+    json
+
+f_tfHintCode(string tf) =>
+    int code = 0
+    if tf == "1"
+        code := 1
+    else if tf == "3"
+        code := 16
+    else if tf == "5"
+        code := 2
+    else if tf == "15"
+        code := 3
+    else if tf == "30"
+        code := 4
+    else if tf == "45"
+        code := 17
+    else if tf == "60"
+        code := 5
+    else if tf == "120"
+        code := 6
+    else if tf == "180"
+        code := 18
+    else if tf == "240"
+        code := 7
+    else if tf == "360"
+        code := 8
+    else if tf == "480"
+        code := 9
+    else if tf == "600"
+        code := 19
+    else if tf == "720"
+        code := 10
+    else if tf == "840"
+        code := 20
+    else if tf == "960"
+        code := 11
+    else if tf == "1080"
+        code := 21
+    else if tf == "1200"
+        code := 12
+    else if tf == "1320"
+        code := 13
+    else if tf == "D" or tf == "1D"
+        code := 14
+    else if tf == "2D"
+        code := 22
+    else if tf == "3D"
+        code := 23
+    else if tf == "W" or tf == "1W"
+        code := 15
+    else if tf == "M" or tf == "1M"
+        code := 24
+    code
+
+f_nextTfHintCode(int code) =>
+    int nextCode = 0
+    if code == 1
+        nextCode := 16
+    else if code == 16
+        nextCode := 2
+    else if code == 2
+        nextCode := 3
+    else if code == 3
+        nextCode := 4
+    else if code == 4
+        nextCode := 17
+    else if code == 17
+        nextCode := 5
+    else if code == 5
+        nextCode := 6
+    else if code == 6
+        nextCode := 18
+    else if code == 18
+        nextCode := 7
+    else if code == 7
+        nextCode := 8
+    else if code == 8
+        nextCode := 9
+    else if code == 9
+        nextCode := 10
+    else if code == 19
+        nextCode := 10
+    else if code == 10
+        nextCode := 11
+    else if code == 20
+        nextCode := 11
+    else if code == 11
+        nextCode := 12
+    else if code == 21
+        nextCode := 12
+    else if code == 12
+        nextCode := 13
+    else if code == 13
+        nextCode := 14
+    else if code == 14
+        nextCode := 15
+    else if code == 22
+        nextCode := 23
+    else if code == 23
+        nextCode := 15
+    else if code == 15
+        nextCode := 24
+    nextCode
+
+f_tfRoleText(int code) =>
+    string txt = "UNK"
+    if code == 0
+        txt := "NONE"
+    else if code == 1
+        txt := "LOWER_NOISE"
+    else if code == 2
+        txt := "SUPPORT"
+    else if code == 3
+        txt := "TRANSFER"
+    else if code == 4
+        txt := "DOM_CAND"
+    else if code == 5
+        txt := "NEXT_TEST"
+    else if code == 6
+        txt := "ANCHOR"
+    txt
+
+f_tfRoleAbbrev(int code) =>
+    string txt = "UN"
+    if code == 0
+        txt := "NO"
+    else if code == 1
+        txt := "LNZ"
+    else if code == 2
+        txt := "SUP"
+    else if code == 3
+        txt := "TRF"
+    else if code == 4
+        txt := "DMC"
+    else if code == 5
+        txt := "NXT"
+    else if code == 6
+        txt := "ANC"
+    txt
+
+f_nextTfText(int code) =>
+    string txt = "UNK"
+    if code == 0
+        txt := "NONE"
+    else if code == 1
+        txt := "1M"
+    else if code == 16
+        txt := "3M"
+    else if code == 2
+        txt := "5M"
+    else if code == 3
+        txt := "15M"
+    else if code == 4
+        txt := "30M"
+    else if code == 17
+        txt := "45M"
+    else if code == 5
+        txt := "1H"
+    else if code == 6
+        txt := "2H"
+    else if code == 18
+        txt := "3H"
+    else if code == 7
+        txt := "4H"
+    else if code == 8
+        txt := "6H"
+    else if code == 9
+        txt := "8H"
+    else if code == 19
+        txt := "10H"
+    else if code == 10
+        txt := "12H"
+    else if code == 20
+        txt := "14H"
+    else if code == 11
+        txt := "16H"
+    else if code == 21
+        txt := "18H"
+    else if code == 12
+        txt := "20H"
+    else if code == 13
+        txt := "22H"
+    else if code == 14
+        txt := "1D"
+    else if code == 22
+        txt := "2D"
+    else if code == 23
+        txt := "3D"
+    else if code == 15
+        txt := "1W"
+    else if code == 24
+        txt := "1MO"
+    txt
+
+f_modeText(int code) =>
+    string txt = "UNK"
+    if code == 0
+        txt := "NONE"
+    else if code == 1
+        txt := "WAIT"
+    else if code == 2
+        txt := "CONFIRM"
+    else if code == 3
+        txt := "FADE"
+    else if code == 4
+        txt := "BLOCK"
+    else if code == 5
+        txt := "TRAP"
+    else if code == 6
+        txt := "CONFLICT"
+    else if code == 7
+        txt := "PREWARN"
+    else if code == 8
+        txt := "RECOVERY_FAIL"
+    else if code == 9
+        txt := "MIXED"
+    txt
+
+f_modeAbbrev(int code) =>
+    string txt = "UN"
+    if code == 0
+        txt := "NO"
+    else if code == 1
+        txt := "WT"
+    else if code == 2
+        txt := "CFM"
+    else if code == 3
+        txt := "FAD"
+    else if code == 4
+        txt := "BLK"
+    else if code == 5
+        txt := "TRP"
+    else if code == 6
+        txt := "CNF"
+    else if code == 7
+        txt := "PW"
+    else if code == 8
+        txt := "RF"
+    else if code == 9
+        txt := "MIX"
+    txt
+
+f_tfRolePanelPos(string opt) =>
+    p = position.top_right
+    if opt == "Top Left"
+        p := position.top_left
+    else if opt == "Top Center"
+        p := position.top_center
+    else if opt == "Top Right"
+        p := position.top_right
+    else if opt == "Middle Left"
+        p := position.middle_left
+    else if opt == "Middle Center"
+        p := position.middle_center
+    else if opt == "Middle Right"
+        p := position.middle_right
+    else if opt == "Bottom Left"
+        p := position.bottom_left
+    else if opt == "Bottom Center"
+        p := position.bottom_center
+    else if opt == "Bottom Right"
+        p := position.bottom_right
+    else
+        p := position.middle_right
+    p
+
+f_tfRolePanelSize(string opt) =>
+    sz = size.normal
+    if opt == "Tiny"
+        sz := size.tiny
+    else if opt == "Small"
+        sz := size.small
+    else if opt == "Normal"
+        sz := size.normal
+    else
+        sz := size.large
+    sz
+
+f_isLowerTfHintCode(int code) =>
+    code == 1 or code == 16 or code == 2 or code == 3
+
+f_isAnchorTfHintCode(int code) =>
+    code == 14 or code == 22 or code == 23 or code == 15 or code == 24
+
+f_isCoreTfHintCode(int code) =>
+    code == 9 or code == 19 or code == 10 or code == 20 or code == 11 or code == 21 or code == 12 or code == 13
+
+f_srcOk(float score, float dir, float state, float act, float evt) =>
+    score >= 0 and score <= 100 and math.abs(dir) <= 1.5 and state >= -4 and state <= 4 and act >= 0 and act <= 1.5 and math.abs(evt) <= 200
+
+f_optScore(float x) =>
+    not na(x) and x >= 0 and x <= 100 and math.abs(x - close) > 0.000001
+
+f_optFlag(float x) =>
+    not na(x) and x >= 0 and x <= 1 and math.abs(x - close) > 0.000001
+
+f_optCode(float x, float lo, float hi) =>
+    not na(x) and x >= lo and x <= hi and math.abs(x - close) > 0.000001
+
+//==================================================
+// 입력 소스
+// B 그룹 최종 LINK5 계약
+// SCORE / DIRECTION / STATE / ACTIVE_FLAG / EVENT
+// 정렬 원칙: 장비명별 묶음(ASHA → BAU → BELT → BRACELET → GER → HET → NUBIA)
+//==================================================
+string G_SRC_ASHA     = "GENUT B | 01 ASHA 소스"
+string G_SRC_BAU      = "GENUT B | 02 BAU 소스"
+string G_SRC_BELT     = "GENUT B | 03 BELT 소스"
+string G_SRC_BRACELET = "GENUT B | 04 BRACELET 소스"
+string G_SRC_GER      = "GENUT B | 05 GER 소스"
+string G_SRC_HET      = "GENUT B | 06 HET 소스"
+string G_SRC_NUBIA    = "GENUT B | 07 NUBIA 소스"
+string G_SRC_KEMI     = "GENUT B | 08 KEMI 소스"
+string G_SRC_KHEPER   = "GENUT B | 09 KHEPER 소스"
+
+// ASHA | LINK5 + diagnostic
+float srcAshaScore = input.source(close, "AL_ASHA_SCORE", group=G_SRC_ASHA, display=display.none)
+float srcAshaDir   = input.source(close, "AL_ASHA_DIRECTION", group=G_SRC_ASHA, display=display.none)
+float srcAshaState = input.source(close, "AL_ASHA_STATE", group=G_SRC_ASHA, display=display.none)
+float srcAshaAct   = input.source(close, "AL_ASHA_ACTIVE_FLAG", group=G_SRC_ASHA, display=display.none)
+float srcAshaEvt   = input.source(close, "AL_ASHA_EVENT", group=G_SRC_ASHA, display=display.none)
+float srcAshaLiquidityWeakScore = input.source(close, "AL_ASHA_LIQUIDITY_WEAK_SCORE", group=G_SRC_ASHA, display=display.none)
+float srcAshaThinLiquidityScore = input.source(close, "AL_ASHA_THIN_LIQUIDITY_SCORE", group=G_SRC_ASHA, display=display.none)
+float srcAshaChurnPressureScore = input.source(close, "AL_ASHA_CHURN_PRESSURE_SCORE", group=G_SRC_ASHA, display=display.none)
+float srcAshaMultiAgreeScore = input.source(close, "AL_ASHA_MULTI_EXCHANGE_AGREE_SCORE", group=G_SRC_ASHA, display=display.none)
+float srcAshaSingleSpikeFlag = input.source(close, "AL_ASHA_SINGLE_EXCHANGE_SPIKE_FLAG", group=G_SRC_ASHA, display=display.none)
+float srcAshaExtremeWeakFlag = input.source(close, "AL_ASHA_EXTREME_WEAK_FLAG", group=G_SRC_ASHA, display=display.none)
+float srcAshaRisk = input.source(close, "AL_ASHA_RISK", group=G_SRC_ASHA, display=display.none)
+float srcAshaLiquidityPrewarn = input.source(close, "AL_ASHA_LIQUIDITY_PREWARN", group=G_SRC_ASHA, display=display.none)
+
+// BAU | LINK5 + diagnostic
+float srcBauScore = input.source(close, "AL_BAU_SCORE", group=G_SRC_BAU, display=display.none)
+float srcBauDir   = input.source(close, "AL_BAU_DIRECTION", group=G_SRC_BAU, display=display.none)
+float srcBauState = input.source(close, "AL_BAU_STATE", group=G_SRC_BAU, display=display.none)
+float srcBauAct   = input.source(close, "AL_BAU_ACTIVE_FLAG", group=G_SRC_BAU, display=display.none)
+float srcBauEvt   = input.source(close, "AL_BAU_EVENT", group=G_SRC_BAU, display=display.none)
+float srcBauTrapPressureScore = input.source(close, "AL_BAU_TRAP_PRESSURE_SCORE", group=G_SRC_BAU, display=display.none)
+float srcBauFailedBreakFlag = input.source(close, "AL_BAU_FAILED_BREAK_FLAG", group=G_SRC_BAU, display=display.none)
+
+// BELT | LINK5 + diagnostic
+float srcBeltScore = input.source(close, "AL_BELT_SCORE", group=G_SRC_BELT, display=display.none)
+float srcBeltDir   = input.source(close, "AL_BELT_DIRECTION", group=G_SRC_BELT, display=display.none)
+float srcBeltState = input.source(close, "AL_BELT_STATE", group=G_SRC_BELT, display=display.none)
+float srcBeltAct   = input.source(close, "AL_BELT_ACTIVE_FLAG", group=G_SRC_BELT, display=display.none)
+float srcBeltEvt   = input.source(close, "AL_BELT_EVENT", group=G_SRC_BELT, display=display.none)
+float srcBeltCompressionScore = input.source(close, "AL_BELT_COMPRESSION_SCORE", group=G_SRC_BELT, display=display.none)
+float srcBeltReleaseScore = input.source(close, "AL_BELT_RELEASE_SCORE", group=G_SRC_BELT, display=display.none)
+float srcBeltFakeReleaseScore = input.source(close, "AL_BELT_FAKE_RELEASE_SCORE", group=G_SRC_BELT, display=display.none)
+float srcBeltTrapPressureScore = input.source(close, "AL_BELT_TRAP_PRESSURE_SCORE", group=G_SRC_BELT, display=display.none)
+float srcBeltExpansionFailFlag = input.source(close, "AL_BELT_EXPANSION_FAIL_FLAG", group=G_SRC_BELT, display=display.none)
+
+// BRACELET | LINK5 + diagnostic
+float srcBraceletScore = input.source(close, "AL_BRACELET_SCORE", group=G_SRC_BRACELET, display=display.none)
+float srcBraceletDir   = input.source(close, "AL_BRACELET_DIRECTION", group=G_SRC_BRACELET, display=display.none)
+float srcBraceletState = input.source(close, "AL_BRACELET_STATE", group=G_SRC_BRACELET, display=display.none)
+float srcBraceletAct   = input.source(close, "AL_BRACELET_ACTIVE_FLAG", group=G_SRC_BRACELET, display=display.none)
+float srcBraceletEvt   = input.source(close, "AL_BRACELET_EVENT", group=G_SRC_BRACELET, display=display.none)
+float srcBraceletRejectionScore = input.source(close, "AL_BRACELET_REJECTION_SCORE", group=G_SRC_BRACELET, display=display.none)
+float srcBraceletFakeoutPressureScore = input.source(close, "AL_BRACELET_FAKEOUT_PRESSURE_SCORE", group=G_SRC_BRACELET, display=display.none)
+
+// GER | LINK5 + diagnostic
+float srcGerScore = input.source(close, "AL_GER_SCORE", group=G_SRC_GER, display=display.none)
+float srcGerDir   = input.source(close, "AL_GER_DIRECTION", group=G_SRC_GER, display=display.none)
+float srcGerState = input.source(close, "AL_GER_STATE", group=G_SRC_GER, display=display.none)
+float srcGerAct   = input.source(close, "AL_GER_ACTIVE_FLAG", group=G_SRC_GER, display=display.none)
+float srcGerEvt   = input.source(close, "AL_GER_EVENT", group=G_SRC_GER, display=display.none)
+float srcGerConflictScore = input.source(close, "AL_GER_CONFLICT_SCORE", group=G_SRC_GER, display=display.none)
+float srcGerFakeTransitionScore = input.source(close, "AL_GER_FAKE_TRANSITION_SCORE", group=G_SRC_GER, display=display.none)
+
+// HET | LINK5 + diagnostic
+float srcHetScore = input.source(close, "AL_HET_SCORE", group=G_SRC_HET, display=display.none)
+float srcHetDir   = input.source(close, "AL_HET_DIRECTION", group=G_SRC_HET, display=display.none)
+float srcHetState = input.source(close, "AL_HET_STATE", group=G_SRC_HET, display=display.none)
+float srcHetAct   = input.source(close, "AL_HET_ACTIVE_FLAG", group=G_SRC_HET, display=display.none)
+float srcHetEvt   = input.source(close, "AL_HET_EVENT", group=G_SRC_HET, display=display.none)
+float srcHetOiConflictScore = input.source(close, "AL_HET_OI_CONFLICT_SCORE", group=G_SRC_HET, display=display.none)
+float srcHetUnconfirmedOiScore = input.source(close, "AL_HET_UNCONFIRMED_OI_SCORE", group=G_SRC_HET, display=display.none)
+float srcHetOiPressureScore = input.source(close, "AL_HET_OI_PRESSURE_SCORE", group=G_SRC_HET, display=display.none)
+float srcHetPriceOpposedFlag = input.source(close, "AL_HET_PRICE_OPPOSED_FLAG", group=G_SRC_HET, display=display.none)
+float srcHetPriceOpposedScore = input.source(close, "AL_HET_PRICE_OPPOSED_SCORE", group=G_SRC_HET, display=display.none)
+float srcHetNeutralOiScore = input.source(close, "AL_HET_NEUTRAL_OI_DIAGNOSTIC_SCORE", group=G_SRC_HET, display=display.none)
+float srcHetPriceConfirmedFlag = input.source(close, "AL_HET_PRICE_CONFIRMED_FLAG", group=G_SRC_HET, display=display.none)
+
+// NUBIA | LINK5 + diagnostic
+float srcNubiaScore = input.source(close, "AL_NUBIA_SCORE", group=G_SRC_NUBIA, display=display.none)
+float srcNubiaDir   = input.source(close, "AL_NUBIA_DIRECTION", group=G_SRC_NUBIA, display=display.none)
+float srcNubiaState = input.source(close, "AL_NUBIA_STATE", group=G_SRC_NUBIA, display=display.none)
+float srcNubiaAct   = input.source(close, "AL_NUBIA_ACTIVE_FLAG", group=G_SRC_NUBIA, display=display.none)
+float srcNubiaEvt   = input.source(close, "AL_NUBIA_EVENT", group=G_SRC_NUBIA, display=display.none)
+float srcNubiaMacroConflictScore = input.source(close, "AL_NUBIA_MACRO_CONFLICT_SCORE", group=G_SRC_NUBIA, display=display.none)
+float srcNubiaNeutralWaitScore = input.source(close, "AL_NUBIA_NEUTRAL_WAIT_SCORE", group=G_SRC_NUBIA, display=display.none)
+
+// KEMI | LINK5 + diagnostic
+bool useKemiSource = input.bool(false, "Use KEMI Source", group=G_SRC_KEMI, display=display.none)
+float srcKemiDir = input.source(close, "AL_KEMI_DIRECTION", group=G_SRC_KEMI, display=display.none)
+float srcKemiState = input.source(close, "AL_KEMI_STATE", group=G_SRC_KEMI, display=display.none)
+float srcKemiScore = input.source(close, "AL_KEMI_SCORE", group=G_SRC_KEMI, display=display.none)
+float srcKemiAct = input.source(close, "AL_KEMI_ACTIVE_FLAG", group=G_SRC_KEMI, display=display.none)
+float srcKemiEvt = input.source(close, "AL_KEMI_EVENT", group=G_SRC_KEMI, display=display.none)
+float srcKemiDeltaProxyScore = input.source(close, "AL_KEMI_DELTA_PROXY_SCORE", group=G_SRC_KEMI, display=display.none)
+float srcKemiAbsorptionScore = input.source(close, "AL_KEMI_ABSORPTION_SCORE", group=G_SRC_KEMI, display=display.none)
+float srcKemiDivergenceScore = input.source(close, "AL_KEMI_DIVERGENCE_SCORE", group=G_SRC_KEMI, display=display.none)
+float srcKemiEffortResultScore = input.source(close, "AL_KEMI_EFFORT_RESULT_SCORE", group=G_SRC_KEMI, display=display.none)
+float srcKemiConflictFlag = input.source(close, "AL_KEMI_CONFLICT_FLAG", group=G_SRC_KEMI, display=display.none)
+
+// KHEPER | LINK5 + diagnostic
+bool useKheperSource = input.bool(false, "Use KHEPER Source", group=G_SRC_KHEPER, display=display.none)
+float srcKheperDir = input.source(close, "AL_KHEPER_DIRECTION", group=G_SRC_KHEPER, display=display.none)
+float srcKheperState = input.source(close, "AL_KHEPER_STATE", group=G_SRC_KHEPER, display=display.none)
+float srcKheperScore = input.source(close, "AL_KHEPER_SCORE", group=G_SRC_KHEPER, display=display.none)
+float srcKheperAct = input.source(close, "AL_KHEPER_ACTIVE_FLAG", group=G_SRC_KHEPER, display=display.none)
+float srcKheperEvt = input.source(close, "AL_KHEPER_EVENT", group=G_SRC_KHEPER, display=display.none)
+float srcKheperHtfPosition = input.source(close, "AL_KHEPER_HTF_POSITION", group=G_SRC_KHEPER, display=display.none)
+float srcKheperHandoff = input.source(close, "AL_KHEPER_HANDOFF", group=G_SRC_KHEPER, display=display.none)
+float srcKheperBridge = input.source(close, "AL_KHEPER_BRIDGE", group=G_SRC_KHEPER, display=display.none)
+float srcKheperVelocity = input.source(close, "AL_KHEPER_VELOCITY", group=G_SRC_KHEPER, display=display.none)
+float srcKheperCauseTf = input.source(close, "AL_KHEPER_CAUSE_TF", group=G_SRC_KHEPER, display=display.none)
+
+string G_W = "GENUT B | Weights"
+float wNubia = input.float(1.25, "NUBIA Weight", step=0.05, group=G_W, display=display.none)
+float wBelt  = input.float(0.95, "BELT Weight", step=0.05, group=G_W, display=display.none)
+float wBracelet = input.float(0.90, "BRACELET Weight", step=0.05, group=G_W, display=display.none)
+float wAsha  = input.float(1.00, "ASHA Weight", step=0.05, group=G_W, display=display.none)
+float wBau   = input.float(1.00, "BAU Weight", step=0.05, group=G_W, display=display.none)
+float wGer   = input.float(0.95, "GER Weight", step=0.05, group=G_W, display=display.none)
+float wHet   = input.float(1.00, "HET Weight", step=0.05, group=G_W, display=display.none)
+float wKemi = input.float(0.35, "KEMI Weight", step=0.05, group=G_W, display=display.none)
+float wKheper = input.float(0.45, "KHEPER Weight", step=0.05, group=G_W, display=display.none)
+
+string G_H = "GENUT B | Flow"
+int histLen = input.int(5, "Flow Length", minval=3, maxval=10, group=G_H, display=display.none)
+
+
+string G_UI = "GENUT B | UI"
+bool showTable = input.bool(true, "표 표시", group=G_UI)
+string tablePosOpt = input.string("우하", "표 위치", options=["좌상","상중","우상","좌중","정중","우중","좌하","하중","우하"], group=G_UI)
+int tableScale = input.int(5, "표 크기 1~9", minval=1, maxval=9, group=G_UI)
+bool showTableBorder = input.bool(true, "표 테두리 표시", group=G_UI)
+color tableFrameColor = input.color(color.new(color.white, 10), "표 외곽선 색상", group=G_UI)
+color tableBorderColor = input.color(color.new(color.white, 45), "표 내부 테두리 색상", group=G_UI)
+int tableFrameWidth = input.int(1, "표 외곽선 두께", minval=0, maxval=3, group=G_UI)
+int tableBorderWidth = input.int(1, "표 내부 테두리 두께", minval=0, maxval=3, group=G_UI)
+int tableBgTransp = input.int(15, "표 배경 투명도", minval=0, maxval=100, group=G_UI)
+color colBg = input.color(color.new(color.black, 18), "Background", group=G_UI, display=display.none)
+color colGrid = input.color(color.new(color.gray, 78), "Grid", group=G_UI, display=display.none)
+color colHead = input.color(color.silver, "Header", group=G_UI, display=display.none)
+color colText = input.color(color.white, "Text", group=G_UI, display=display.none)
+color colSoft = input.color(color.silver, "Soft", group=G_UI, display=display.none)
+color colGood = input.color(color.lime, "Good", group=G_UI, display=display.none)
+color colWarn = input.color(color.orange, "Warn", group=G_UI, display=display.none)
+color colBad = input.color(color.red, "Bad", group=G_UI, display=display.none)
+color colAccent = input.color(color.aqua, "Accent", group=G_UI, display=display.none)
+
+string G_A = "GENUT B | Alerts"
+bool useAlerts = input.bool(true, "Use Alerts", group=G_A, display=display.none)
+
+groupAlertBus = "HETEM Gate Alert Bus"
+enableAlertBus = input.bool(true, "Enable alert() JSON bus", group=groupAlertBus)
+sendSnapshots = input.bool(true, "Send TF snapshot on bar close", group=groupAlertBus)
+sendTriggers = input.bool(true, "Send realtime trigger changes", group=groupAlertBus)
+allowLiveTriggers = input.bool(true, "Allow realtime trigger alerts", group=groupAlertBus)
+gptAllowed = input.bool(true, "GPT allowed", group=groupAlertBus)
+voiceAllowed = input.bool(false, "Voice allowed", group=groupAlertBus)
+briefPolicy = input.string("HETEM_GATE_STATE_ONLY", "Brief policy", options=["HETEM_GATE_STATE_ONLY", "STATE_ONLY", "STORE_ONLY", "CHANGE_ONLY"], group=groupAlertBus)
+alertVersion = input.string("HETEM_GATE_V1", "Alert version", group=groupAlertBus)
+
+string G_TF_ROLE = "GPT TF Role"
+bool showTfRolePanel = input.bool(true, "TF Role Panel", group=G_TF_ROLE)
+string tfRolePanelPosOpt = input.string("Top Left", "TF Role Panel Position", options=["Top Left","Top Center","Top Right","Middle Left","Middle Center","Middle Right","Bottom Left","Bottom Center","Bottom Right"], group=G_TF_ROLE)
+string tfRolePanelSizeOpt = input.string("Small", "TF Role Panel Size", options=["Tiny","Small","Normal","Large"], group=G_TF_ROLE)
+string tfRolePanelMode = input.string("Mini", "TF Role Panel Mode", options=["Detail","Compact","Mini"], group=G_TF_ROLE)
+bool tfRoleUseAbbrev = input.bool(true, "Use Abbrev", group=G_TF_ROLE)
+
+//==================================================
+// 디코드
+//==================================================
+bool nubiaOk = f_srcOk(srcNubiaScore, srcNubiaDir, srcNubiaState, srcNubiaAct, srcNubiaEvt)
+bool beltOk = f_srcOk(srcBeltScore, srcBeltDir, srcBeltState, srcBeltAct, srcBeltEvt)
+bool braceletOk = f_srcOk(srcBraceletScore, srcBraceletDir, srcBraceletState, srcBraceletAct, srcBraceletEvt)
+bool ashaOk = f_srcOk(srcAshaScore, srcAshaDir, srcAshaState, srcAshaAct, srcAshaEvt)
+bool bauOk = f_srcOk(srcBauScore, srcBauDir, srcBauState, srcBauAct, srcBauEvt)
+bool gerOk = f_srcOk(srcGerScore, srcGerDir, srcGerState, srcGerAct, srcGerEvt)
+bool hetOk = f_srcOk(srcHetScore, srcHetDir, srcHetState, srcHetAct, srcHetEvt)
+bool kemiOk = useKemiSource and f_srcOk(srcKemiScore, srcKemiDir, srcKemiState, srcKemiAct, srcKemiEvt)
+bool kheperOk = useKheperSource and f_srcOk(srcKheperScore, srcKheperDir, srcKheperState, srcKheperAct, srcKheperEvt)
+
+float nubiaScore = nubiaOk ? f_clamp(srcNubiaScore, 0, 100) : 0
+float beltScore = beltOk ? f_clamp(srcBeltScore, 0, 100) : 0
+float braceletScore = braceletOk ? f_clamp(srcBraceletScore, 0, 100) : 0
+float ashaScore = ashaOk ? f_clamp(srcAshaScore, 0, 100) : 0
+float bauScore = bauOk ? f_clamp(srcBauScore, 0, 100) : 0
+float gerScore = gerOk ? f_clamp(srcGerScore, 0, 100) : 0
+float hetScore = hetOk ? f_clamp(srcHetScore, 0, 100) : 0
+float kemiScore = kemiOk ? f_clamp(srcKemiScore, 0, 100) : 0.0
+float kheperScore = kheperOk ? f_clamp(srcKheperScore, 0, 100) : 0.0
+
+int nubiaDir = nubiaOk ? int(math.round(srcNubiaDir)) : 0
+int beltDir = beltOk ? int(math.round(srcBeltDir)) : 0
+int braceletDir = braceletOk ? int(math.round(srcBraceletDir)) : 0
+int ashaDir = ashaOk ? int(math.round(srcAshaDir)) : 0
+int bauDir = bauOk ? int(math.round(srcBauDir)) : 0
+int gerDir = gerOk ? int(math.round(srcGerDir)) : 0
+int hetDir = hetOk ? int(math.round(srcHetDir)) : 0
+int kemiDir = kemiOk ? int(f_clamp(math.round(srcKemiDir), -1, 1)) : 0
+int kheperDir = kheperOk ? int(f_clamp(math.round(srcKheperDir), -1, 1)) : 0
+
+int nubiaState = nubiaOk ? int(math.round(srcNubiaState)) : 0
+int beltState = beltOk ? int(math.round(srcBeltState)) : 0
+int braceletState = braceletOk ? int(math.round(srcBraceletState)) : 0
+int ashaState = ashaOk ? int(math.round(srcAshaState)) : 0
+int bauState = bauOk ? int(math.round(srcBauState)) : 0
+int gerState = gerOk ? int(math.round(srcGerState)) : 0
+int hetState = hetOk ? int(math.round(srcHetState)) : 0
+int kemiState = kemiOk ? int(f_clamp(math.round(srcKemiState), 0, 4)) : 0
+int kheperState = kheperOk ? int(f_clamp(math.round(srcKheperState), 0, 4)) : 0
+
+bool nubiaAct = nubiaOk and srcNubiaAct > 0.5
+bool beltAct = beltOk and srcBeltAct > 0.5
+bool braceletAct = braceletOk and srcBraceletAct > 0.5
+bool ashaAct = ashaOk and srcAshaAct > 0.5
+bool bauAct = bauOk and srcBauAct > 0.5
+bool gerAct = gerOk and srcGerAct > 0.5
+bool hetAct = hetOk and srcHetAct > 0.5
+bool kemiAct = kemiOk and srcKemiAct > 0.5
+bool kheperAct = kheperOk and srcKheperAct > 0.5
+
+float beltCompressionDiag = f_optScore(srcBeltCompressionScore) ? srcBeltCompressionScore : (beltState < 0 ? beltScore : 0.0)
+float beltReleaseDiag = f_optScore(srcBeltReleaseScore) ? srcBeltReleaseScore : (beltState > 0 ? beltScore : 0.0)
+float beltFakeReleaseDiag = f_optScore(srcBeltFakeReleaseScore) ? srcBeltFakeReleaseScore : (srcBeltEvt == 21 or srcBeltEvt == 39 ? beltScore : 0.0)
+float beltTrapDiag = f_optScore(srcBeltTrapPressureScore) ? srcBeltTrapPressureScore : (srcBeltEvt == 39 ? math.max(beltScore, 55.0) : 0.0)
+bool beltExpansionFailDiag = f_optFlag(srcBeltExpansionFailFlag) and srcBeltExpansionFailFlag > 0.5
+
+float nubiaMacroConflictDiag = f_optScore(srcNubiaMacroConflictScore) ? srcNubiaMacroConflictScore : 0.0
+float nubiaNeutralWaitDiag = f_optScore(srcNubiaNeutralWaitScore) ? srcNubiaNeutralWaitScore : 0.0
+float braceletRejectionDiag = f_optScore(srcBraceletRejectionScore) ? srcBraceletRejectionScore : 0.0
+float braceletFakeoutDiag = f_optScore(srcBraceletFakeoutPressureScore) ? srcBraceletFakeoutPressureScore : 0.0
+float ashaWeakDiag = f_optScore(srcAshaLiquidityWeakScore) ? srcAshaLiquidityWeakScore : (ashaScore < 45 ? 100.0 - ashaScore : 0.0)
+float ashaThinDiag = f_optScore(srcAshaThinLiquidityScore) ? srcAshaThinLiquidityScore : (ashaScore < 25 ? 100.0 - ashaScore : 0.0)
+float ashaChurnDiag = f_optScore(srcAshaChurnPressureScore) ? srcAshaChurnPressureScore : (srcAshaEvt == 2 ? math.max(ashaScore, 55.0) : 0.0)
+float ashaMultiAgreeDiag = f_optScore(srcAshaMultiAgreeScore) ? srcAshaMultiAgreeScore : (ashaDir != 0 and ashaScore >= 50 ? 35.0 : 0.0)
+bool ashaSingleSpikeDiag = f_optFlag(srcAshaSingleSpikeFlag) and srcAshaSingleSpikeFlag > 0.5
+bool ashaExtremeWeakDiag = f_optFlag(srcAshaExtremeWeakFlag) and srcAshaExtremeWeakFlag > 0.5
+int ashaRiskDiag = f_optCode(srcAshaRisk, 0, 2) ? int(math.round(srcAshaRisk)) : 1
+bool ashaLiquidityPrewarnDiag = f_optFlag(srcAshaLiquidityPrewarn) and srcAshaLiquidityPrewarn > 0.5
+
+float bauTrapDiag = f_optScore(srcBauTrapPressureScore) ? srcBauTrapPressureScore : 0.0
+bool bauFailedBreakDiag = f_optFlag(srcBauFailedBreakFlag) and srcBauFailedBreakFlag > 0.5
+float gerConflictDiag = f_optScore(srcGerConflictScore) ? srcGerConflictScore : 0.0
+float gerFakeTransitionDiag = f_optScore(srcGerFakeTransitionScore) ? srcGerFakeTransitionScore : 0.0
+
+float hetOiConflictDiag = f_optScore(srcHetOiConflictScore) ? srcHetOiConflictScore : (math.abs(srcHetEvt) >= 90 ? hetScore : 0.0)
+float hetUnconfirmedOiDiag = f_optScore(srcHetUnconfirmedOiScore) ? srcHetUnconfirmedOiScore : (hetDir == 0 and hetState == 1 and hetScore >= 35 ? hetScore : 0.0)
+float hetOiPressureDiag = f_optScore(srcHetOiPressureScore) ? srcHetOiPressureScore : (hetAct ? hetScore : 0.0)
+bool hetPriceOpposedDiag = f_optFlag(srcHetPriceOpposedFlag) and srcHetPriceOpposedFlag > 0.5
+float hetPriceOpposedDiagScore = f_optScore(srcHetPriceOpposedScore) ? srcHetPriceOpposedScore : (hetPriceOpposedDiag ? hetScore : 0.0)
+float hetNeutralOiDiag = f_optScore(srcHetNeutralOiScore) ? srcHetNeutralOiScore : hetUnconfirmedOiDiag
+bool hetPriceConfirmedDiag = f_optFlag(srcHetPriceConfirmedFlag) and srcHetPriceConfirmedFlag > 0.5
+
+int kemiEvent = kemiOk ? int(f_clamp(math.round(srcKemiEvt), 0, 200)) : 0
+float kemiDeltaProxyScore = kemiOk ? f_clamp(srcKemiDeltaProxyScore, 0, 100) : 0.0
+float kemiAbsorptionScore = kemiOk ? f_clamp(srcKemiAbsorptionScore, 0, 100) : 0.0
+float kemiDivergenceScore = kemiOk ? f_clamp(srcKemiDivergenceScore, 0, 100) : 0.0
+float kemiEffortResultScore = kemiOk ? f_clamp(srcKemiEffortResultScore, 0, 100) : 0.0
+int kemiConflictFlag = kemiOk ? int(f_clamp(math.round(srcKemiConflictFlag), 0, 1)) : 0
+
+int kheperEvent = kheperOk ? int(f_clamp(math.round(srcKheperEvt), 0, 200)) : 0
+int kheperHtfPosition = kheperOk ? int(f_clamp(math.round(srcKheperHtfPosition), -3, 3)) : 0
+int kheperHandoff = kheperOk ? int(f_clamp(math.round(srcKheperHandoff), -3, 3)) : 0
+int kheperBridge = kheperOk ? int(f_clamp(math.round(srcKheperBridge), 0, 4)) : 0
+int kheperVelocity = kheperOk ? int(f_clamp(math.round(srcKheperVelocity), -2, 2)) : 0
+int kheperCauseTf = kheperOk ? int(f_clamp(math.round(srcKheperCauseTf), 0, 5)) : 0
+
+bool kemiAbsorptionElevated = kemiAbsorptionScore >= 55
+bool kemiDivergenceElevated = kemiDivergenceScore >= 55
+bool kemiEffortWeakElevated = kemiEffortResultScore >= 55
+int kemiCode = 0
+if kemiOk
+    if kemiConflictFlag == 1
+        kemiCode := 5
+    else if kemiAbsorptionElevated and kemiDivergenceElevated and kemiEffortWeakElevated
+        kemiCode := 6
+    else if kemiAbsorptionElevated
+        kemiCode := 2
+    else if kemiDivergenceElevated
+        kemiCode := 3
+    else if kemiEffortWeakElevated
+        kemiCode := 4
+    else
+        kemiCode := 1
+
+int kheperCodeBridge = kheperOk ? int(f_clamp(kheperBridge, 0, 4)) : 0
+int kheperCodeHandoffShifted = kheperOk ? int(f_clamp(kheperHandoff + 3, 0, 6)) : 0
+int kheperCode = kheperOk ? kheperCodeBridge * 10 + kheperCodeHandoffShifted : 0
+
+bool sensorMaskKemiMissing = useKemiSource and not kemiOk
+bool sensorMaskKheperMissing = useKheperSource and not kheperOk
+int sensorMaskCode = 0
+if kemiOk and kheperOk
+    sensorMaskCode := 3
+else if kemiOk and sensorMaskKheperMissing
+    sensorMaskCode := 4
+else if kheperOk and sensorMaskKemiMissing
+    sensorMaskCode := 5
+else if kemiOk
+    sensorMaskCode := 1
+else if kheperOk
+    sensorMaskCode := 2
+else if sensorMaskKemiMissing and sensorMaskKheperMissing
+    sensorMaskCode := -3
+else if sensorMaskKemiMissing
+    sensorMaskCode := -1
+else if sensorMaskKheperMissing
+    sensorMaskCode := -2
+
+float oldReadyCount = (nubiaOk ? 1 : 0) + (beltOk ? 1 : 0) + (braceletOk ? 1 : 0) + (ashaOk ? 1 : 0) + (bauOk ? 1 : 0) + (gerOk ? 1 : 0) + (hetOk ? 1 : 0)
+float optionalSourceCount = (useKemiSource ? 1 : 0) + (useKheperSource ? 1 : 0)
+float readyCount = oldReadyCount + (kemiOk ? 1 : 0) + (kheperOk ? 1 : 0)
+float expectedCount = 7 + optionalSourceCount
+float issueCount = expectedCount - readyCount
+
+float upW = 0.0
+float dnW = 0.0
+float activeCount = 0.0
+float triggerScore = 0.0
+float baseScore = 0.0
+float failCount = 0.0
+float directionRaw = 0.0
+float riskBlockRaw = 0.0
+float macroConflictRaw = 0.0
+float liquidityPressureRaw = 0.0
+float neutralRaw = 0.0
+float trapRaw = 0.0
+float fakeoutRaw = 0.0
+float blockSourceMask = 0.0
+
+//==================================================
+// 엔진
+//==================================================
+if nubiaAct
+    float ws = nubiaScore * wNubia
+    bool nubiaDirectional = nubiaDir != 0 and math.abs(nubiaState) >= 2 and nubiaScore >= 45
+    bool nubiaNeutralWait = (not nubiaDirectional and nubiaScore >= 40 and math.abs(nubiaState) <= 1) or nubiaNeutralWaitDiag >= 45
+    bool nubiaMacroConflict = nubiaMacroConflictDiag >= 55 or nubiaScore < 35 or (math.abs(srcNubiaEvt) > 0 and nubiaScore < 45 and not nubiaDirectional) or (nubiaDir != 0 and math.abs(nubiaState) >= 3 and nubiaScore < 45)
+    activeCount += 1
+    upW += nubiaDirectional and nubiaDir > 0 ? ws : 0
+    dnW += nubiaDirectional and nubiaDir < 0 ? ws : 0
+    directionRaw += nubiaDirectional ? ws * 0.80 : 0
+    macroConflictRaw += nubiaMacroConflict ? math.max(ws * 0.95, nubiaMacroConflictDiag * wNubia * 0.55) : nubiaNeutralWait ? ws * 0.10 : ws * 0.18
+    riskBlockRaw += nubiaMacroConflict ? math.max(ws * 0.55, nubiaMacroConflictDiag * wNubia * 0.22) : 0
+    neutralRaw += nubiaDirectional ? 0 : nubiaNeutralWait ? math.max(ws * 0.55, nubiaNeutralWaitDiag * wNubia * 0.45) : ws * 0.35
+    blockSourceMask += nubiaMacroConflict ? 1.0 : 0.0
+    baseScore += nubiaDirectional ? ws * 0.14 : ws * 0.05
+    triggerScore += nubiaDirectional ? ws * 0.08 : 0
+    failCount += (math.abs(nubiaState) <= 1 and nubiaScore < 35) ? 1 : 0
+if beltAct
+    float ws = beltScore * wBelt
+    bool beltCompression = beltState < 0 or beltCompressionDiag >= 55 or srcBeltEvt == 10
+    bool beltSoftRelease = srcBeltEvt == 11 or beltReleaseDiag >= 40 or beltState > 0
+    bool beltReleaseConfirmed = beltDir != 0 and (srcBeltEvt == 31 or (beltState > 0 and beltScore >= 55 and beltReleaseDiag >= 45))
+    bool beltFakeRelease = beltFakeReleaseDiag >= 50 or beltTrapDiag >= 55 or beltExpansionFailDiag or srcBeltEvt == 21 or srcBeltEvt == 39
+    activeCount += 1
+    upW += beltReleaseConfirmed and beltDir > 0 ? ws : 0
+    dnW += beltReleaseConfirmed and beltDir < 0 ? ws : 0
+    directionRaw += beltReleaseConfirmed ? ws * 0.90 : 0
+    neutralRaw += beltReleaseConfirmed ? 0 : beltCompression ? ws * 0.70 : beltSoftRelease ? ws * 0.45 : ws * 0.25
+    liquidityPressureRaw += beltCompression ? math.max(ws * 0.35, beltCompressionDiag * wBelt * 0.40) : beltFakeRelease ? ws * 0.35 : 0
+    riskBlockRaw += beltFakeRelease ? ws * 0.62 : beltCompression and beltCompressionDiag >= 70 ? ws * 0.30 : 0
+    trapRaw += beltFakeRelease ? math.max(ws * 0.70, beltTrapDiag * wBelt * 0.65) : beltCompression ? ws * 0.18 : 0
+    fakeoutRaw += beltFakeRelease ? math.max(ws * 0.80, beltFakeReleaseDiag * wBelt * 0.75) : beltSoftRelease and not beltReleaseConfirmed ? ws * 0.30 : 0
+    blockSourceMask += beltFakeRelease or (beltCompression and beltCompressionDiag >= 70) ? 2.0 : 0.0
+    baseScore += beltReleaseConfirmed ? ws * 0.06 : ws * 0.02
+    triggerScore += beltReleaseConfirmed ? ws * 0.12 : 0
+    triggerScore += beltReleaseConfirmed and math.abs(srcBeltEvt) > 0 ? ws * 0.06 : 0
+    failCount += (math.abs(beltState) <= 1 and beltScore < 35) ? 1 : 0
+if braceletAct
+    float ws = braceletScore * wBracelet
+    bool braceletFailedOrTrap = braceletState == 4 or srcBraceletEvt == 31 or srcBraceletEvt == 32 or srcBraceletEvt == 50 or braceletFakeoutDiag >= 60 or braceletRejectionDiag >= 70
+    bool braceletConfluence = not braceletFailedOrTrap and braceletDir != 0 and math.abs(braceletState) >= 2 and braceletScore >= 45 and math.abs(srcBraceletEvt) > 0
+    bool braceletSoft = not braceletConfluence and not braceletFailedOrTrap
+    activeCount += 1
+    upW += braceletConfluence and braceletDir > 0 ? ws : 0
+    dnW += braceletConfluence and braceletDir < 0 ? ws : 0
+    directionRaw += braceletConfluence ? ws : 0
+    neutralRaw += braceletSoft ? ws * 0.65 : 0
+    riskBlockRaw += braceletFailedOrTrap ? ws * 0.25 : 0
+    trapRaw += braceletFailedOrTrap ? math.max(ws * 0.65, braceletRejectionDiag * wBracelet * 0.35) : braceletSoft and math.abs(srcBraceletEvt) > 0 ? ws * 0.18 : 0
+    trapRaw += braceletRejectionDiag >= 45 ? braceletRejectionDiag * wBracelet * 0.18 : 0
+    fakeoutRaw += braceletFailedOrTrap ? math.max(ws * 0.48, braceletFakeoutDiag * wBracelet * 0.42) : 0
+    fakeoutRaw += braceletFakeoutDiag >= 45 ? braceletFakeoutDiag * wBracelet * 0.22 : 0
+    baseScore += braceletConfluence ? ws * 0.06 : ws * 0.02
+    triggerScore += braceletConfluence ? ws * 0.12 : 0
+    triggerScore += braceletConfluence and math.abs(srcBraceletEvt) > 0 ? ws * 0.06 : 0
+    failCount += (math.abs(braceletState) <= 1 and braceletScore < 35) ? 1 : 0
+if ashaAct
+    float ws = ashaScore * wAsha
+    bool ashaLiquidityWeak = ashaLiquidityPrewarnDiag or ashaWeakDiag >= 35 or ashaScore < 45 or ashaState <= 1
+    bool ashaLiquidityExtreme = ashaExtremeWeakDiag or ashaThinDiag >= 65 or ashaScore < 25 or (ashaState <= 0 and math.abs(srcAshaEvt) > 0)
+    bool ashaDirectional = ashaDir != 0 and ashaState >= 2 and ashaScore >= 55 and math.abs(srcAshaEvt) > 0 and ashaMultiAgreeDiag >= 20 and not ashaSingleSpikeDiag and ashaRiskDiag < 2
+    activeCount += 1
+    upW += ashaDirectional and ashaDir > 0 ? ws : 0
+    dnW += ashaDirectional and ashaDir < 0 ? ws : 0
+    directionRaw += ashaDirectional ? ws * 0.75 : 0
+    liquidityPressureRaw += ashaLiquidityWeak ? math.max(ws * 0.65, ashaWeakDiag * wAsha * 0.75) : ws * 0.18
+    liquidityPressureRaw += ashaLiquidityPrewarnDiag ? ws * 0.18 : 0
+    liquidityPressureRaw += ashaChurnDiag >= 55 ? ashaChurnDiag * wAsha * 0.25 : 0
+    riskBlockRaw += ashaLiquidityExtreme ? math.max(ws * 0.62, ashaThinDiag * wAsha * 0.65) : ashaLiquidityWeak ? ws * 0.24 : 0
+    neutralRaw += ashaDirectional ? 0 : ws * 0.35
+    trapRaw += ashaSingleSpikeDiag ? ws * 0.30 : ashaChurnDiag >= 70 ? ws * 0.20 : 0
+    fakeoutRaw += ashaSingleSpikeDiag and ashaLiquidityWeak ? ws * 0.35 : 0
+    blockSourceMask += ashaLiquidityExtreme ? 4.0 : 0.0
+    triggerScore += ashaDirectional ? ws * 0.16 : 0
+    triggerScore += ashaDirectional and math.abs(srcAshaEvt) > 0 ? ws * 0.05 : 0
+    baseScore += ashaDirectional ? ws * 0.08 : ws * 0.02
+    failCount += (math.abs(ashaState) <= 1 and ashaScore < 35) ? 1 : 0
+if bauAct
+    float ws = bauScore * wBau
+    bool bauInvalidOrFailed = bauFailedBreakDiag or bauState == 4 or srcBauEvt < 0 or math.abs(srcBauEvt) >= 80
+    bool bauConfirmed = not bauInvalidOrFailed and bauDir != 0 and math.abs(bauState) >= 2 and (math.abs(srcBauEvt) > 0 or bauScore >= 55)
+    bool bauTraceOnly = not bauConfirmed
+    activeCount += 1
+    upW += bauConfirmed and bauDir > 0 ? ws : 0
+    dnW += bauConfirmed and bauDir < 0 ? ws : 0
+    directionRaw += bauConfirmed ? ws : 0
+    neutralRaw += bauTraceOnly ? ws * 0.60 : 0
+    riskBlockRaw += bauInvalidOrFailed ? ws * 0.45 : 0
+    trapRaw += bauInvalidOrFailed ? math.max(ws * 0.65, bauTrapDiag * wBau * 0.65) : bauTraceOnly and math.abs(srcBauEvt) > 0 ? ws * 0.25 : 0
+    trapRaw += bauTrapDiag >= 45 ? bauTrapDiag * wBau * 0.18 : 0
+    fakeoutRaw += bauInvalidOrFailed ? math.max(ws * 0.72, bauTrapDiag * wBau * 0.35) : 0
+    blockSourceMask += bauInvalidOrFailed ? 16.0 : 0.0
+    triggerScore += bauConfirmed ? ws * 0.16 : 0
+    triggerScore += bauConfirmed and math.abs(srcBauEvt) > 0 ? ws * 0.05 : 0
+    baseScore += bauConfirmed ? ws * 0.05 : ws * 0.02
+    failCount += (math.abs(bauState) <= 1 and bauScore < 35) ? 1 : 0
+if gerAct
+    float ws = gerScore * wGer
+    bool gerFailedOrConflict = gerConflictDiag >= 55 or gerFakeTransitionDiag >= 55 or gerState == 4 or srcGerEvt == 40 or srcGerEvt == 60 or srcGerEvt == 70
+    bool gerRangeOrChop = srcGerEvt == 30 or (gerDir == 0 and math.abs(gerState) <= 1)
+    bool gerDirectional = not gerFailedOrConflict and gerDir != 0 and math.abs(gerState) >= 3 and gerScore >= 45
+    bool gerSoftRisk = gerScore < 35 or gerRangeOrChop
+    activeCount += 1
+    upW += gerDirectional and gerDir > 0 ? ws * 0.70 : 0
+    dnW += gerDirectional and gerDir < 0 ? ws * 0.70 : 0
+    directionRaw += gerDirectional ? ws * 0.70 : 0
+    riskBlockRaw += gerFailedOrConflict ? math.max(ws * 0.55, gerConflictDiag * wGer * 0.42) : gerSoftRisk ? ws * 0.38 : 0
+    trapRaw += gerFailedOrConflict ? ws * 0.45 : 0
+    fakeoutRaw += srcGerEvt == 70 ? math.max(ws * 0.55, gerFakeTransitionDiag * wGer * 0.45) : gerFakeTransitionDiag >= 45 ? gerFakeTransitionDiag * wGer * 0.28 : 0
+    neutralRaw += gerDirectional ? 0 : ws * 0.35
+    baseScore += gerDirectional ? ws * 0.12 : ws * 0.03
+    triggerScore += gerDirectional and math.abs(srcGerEvt) > 0 ? ws * 0.05 : 0
+    failCount += (math.abs(gerState) <= 1 and gerScore < 35) ? 1 : 0
+if hetAct
+    float ws = hetScore * wHet
+    bool priceConfirmed = hetPriceConfirmedDiag or (hetDir != 0 and ((bauDir == hetDir and bauState >= 2) or (braceletDir == hetDir and braceletState >= 2) or (gerDir == hetDir and math.abs(gerState) >= 1)))
+    bool priceOpposed = hetPriceOpposedDiag or (hetDir != 0 and ((bauDir != 0 and bauDir != hetDir and bauState >= 2) or (braceletDir != 0 and braceletDir != hetDir and braceletState >= 2) or (gerDir != 0 and gerDir != hetDir and math.abs(gerState) >= 1)))
+    bool hetDirectional = hetDir != 0 and hetState >= 2 and hetScore >= 45 and priceConfirmed and not priceOpposed and hetOiConflictDiag < 35
+    bool hetUnconfirmedOi = hetUnconfirmedOiDiag >= 35 or (hetDir != 0 and hetState >= 2 and not priceConfirmed and not priceOpposed)
+    bool hetStrongEvent = hetOiConflictDiag >= 55 or math.abs(srcHetEvt) >= 80 or (math.abs(srcHetEvt) > 0 and hetScore < 40)
+    bool hetOiConflict = hetOiConflictDiag >= 40 or hetPriceOpposedDiagScore >= 40 or hetScore < 35 or priceOpposed or hetStrongEvent
+    activeCount += 1
+    upW += hetDirectional and hetDir > 0 ? ws * 0.65 : 0
+    dnW += hetDirectional and hetDir < 0 ? ws * 0.65 : 0
+    directionRaw += hetDirectional ? ws * 0.65 : 0
+    macroConflictRaw += hetOiConflict ? ws * 0.70 : 0
+    liquidityPressureRaw += hetUnconfirmedOi ? math.max(ws * 0.22, hetNeutralOiDiag * wHet * 0.22) : 0
+    riskBlockRaw += hetOiConflict ? ws * 0.52 : hetUnconfirmedOi and hetOiPressureDiag >= 60 ? ws * 0.20 : 0
+    neutralRaw += hetDirectional ? 0 : hetUnconfirmedOi ? math.max(ws * 0.60, hetNeutralOiDiag * wHet * 0.55) : ws * 0.40
+    trapRaw += hetUnconfirmedOi and priceOpposed ? ws * 0.42 : hetOiConflict ? ws * 0.22 : 0
+    fakeoutRaw += hetUnconfirmedOi and hetOiPressureDiag >= 60 ? ws * 0.28 : 0
+    blockSourceMask += hetOiConflict ? 8.0 : 0.0
+    triggerScore += hetDirectional ? ws * 0.10 : 0
+    triggerScore += hetDirectional and math.abs(srcHetEvt) > 0 ? ws * 0.05 : 0
+    baseScore += hetDirectional ? ws * 0.08 : ws * 0.02
+    failCount += (math.abs(hetState) <= 1 and hetScore < 35) ? 1 : 0
+if kemiOk
+    float ws = kemiScore * wKemi
+    float kemiWarningPeak = math.max(kemiAbsorptionScore, kemiDivergenceScore)
+    bool kemiWarningDominant = kemiWarningPeak >= 55 and kemiWarningPeak >= math.max(kemiDeltaProxyScore, kemiEffortResultScore)
+    bool kemiDirectional = kemiDir != 0 and kemiState >= 2 and kemiScore >= 55 and kemiConflictFlag == 0 and not kemiWarningDominant
+    bool kemiAbsorptionWarn = kemiAbsorptionScore >= 45
+    bool kemiDivergenceWarn = kemiDivergenceScore >= 45
+    bool kemiEffortWeak = kemiEffortResultScore >= 45
+    bool kemiConflict = kemiConflictFlag == 1
+    activeCount += kemiAct ? 0.25 : 0
+    upW += kemiDirectional and kemiDir > 0 ? ws * 0.35 : 0
+    dnW += kemiDirectional and kemiDir < 0 ? ws * 0.35 : 0
+    directionRaw += kemiDirectional ? ws * 0.16 : 0
+    liquidityPressureRaw += kemiAbsorptionWarn ? math.max(ws * 0.22, kemiAbsorptionScore * wKemi * 0.28) : 0
+    riskBlockRaw += kemiAbsorptionWarn ? kemiAbsorptionScore * wKemi * 0.12 : 0
+    riskBlockRaw += kemiEffortWeak ? math.max(ws * 0.16, kemiEffortResultScore * wKemi * 0.20) : 0
+    neutralRaw += kemiEffortWeak ? math.max(ws * 0.18, kemiEffortResultScore * wKemi * 0.22) : 0
+    fakeoutRaw += kemiDivergenceWarn ? math.max(ws * 0.20, kemiDivergenceScore * wKemi * 0.28) : 0
+    trapRaw += kemiDivergenceWarn ? math.max(ws * 0.16, kemiDivergenceScore * wKemi * 0.18) : 0
+    macroConflictRaw += kemiConflict ? math.max(ws * 0.35, kemiScore * wKemi * 0.32) : 0
+    riskBlockRaw += kemiConflict ? math.max(ws * 0.30, kemiWarningPeak * wKemi * 0.30) : 0
+    trapRaw += kemiConflict ? math.max(ws * 0.25, kemiWarningPeak * wKemi * 0.22) : 0
+    fakeoutRaw += kemiConflict ? math.max(ws * 0.25, kemiWarningPeak * wKemi * 0.24) : 0
+    blockSourceMask += (kemiConflict or kemiWarningDominant or kemiEffortWeak) ? 32.0 : 0.0
+    baseScore += kemiDirectional ? ws * 0.02 : 0
+    triggerScore += kemiDirectional ? ws * 0.02 : 0
+if kheperOk
+    float ws = kheperScore * wKheper
+    int kheperHandoffAbs = math.abs(kheperHandoff)
+    bool kheperBridgeOpen = kheperBridge == 1
+    bool kheperBridgeBlocked = kheperBridge == 2
+    bool kheperBridgeCongested = kheperBridge == 3
+    bool kheperBridgeClearing = kheperBridge == 4
+    bool kheperAccepted = kheperHandoffAbs == 2
+    bool kheperHandoffBlocked = kheperHandoffAbs == 3
+    bool kheperBridgeAllows = kheperAccepted or kheperBridgeClearing or kheperBridgeOpen
+    bool kheperDirectional = kheperDir != 0 and kheperState >= 2 and kheperScore >= 55 and kheperBridgeAllows
+    bool kheperVelocityStall = kheperVelocity == -2
+    activeCount += kheperAct ? 0.25 : 0
+    upW += kheperDirectional and kheperDir > 0 ? ws * 0.45 : 0
+    dnW += kheperDirectional and kheperDir < 0 ? ws * 0.45 : 0
+    directionRaw += kheperDirectional ? ws * 0.22 : 0
+    macroConflictRaw += kheperBridgeBlocked ? math.max(ws * 0.32, kheperScore * wKheper * 0.28) : kheperBridgeCongested ? ws * 0.18 : 0
+    riskBlockRaw += kheperBridgeBlocked ? math.max(ws * 0.30, kheperScore * wKheper * 0.24) : kheperBridgeCongested ? ws * 0.14 : 0
+    trapRaw += kheperHandoffBlocked ? math.max(ws * 0.22, kheperScore * wKheper * 0.16) : 0
+    neutralRaw += kheperHandoffBlocked ? ws * 0.14 : 0
+    neutralRaw += kheperVelocityStall ? math.max(ws * 0.18, kheperScore * wKheper * 0.16) : 0
+    macroConflictRaw += kheperVelocityStall and (kheperBridgeBlocked or kheperBridgeCongested) ? ws * 0.12 : 0
+    baseScore += kheperBridgeAllows and kheperState >= 2 ? ws * 0.03 : 0
+    triggerScore += kheperAccepted and kheperState >= 2 ? ws * 0.025 : 0
+    blockSourceMask += (kheperBridgeBlocked or kheperBridgeCongested or kheperHandoffBlocked or kheperVelocityStall) ? 64.0 : 0.0
+
+float directionDisagreementRaw = upW > 0 and dnW > 0 ? math.min(upW, dnW) : 0.0
+float directionScore = f_clamp(directionRaw * 0.16, 0, 100)
+float riskBlockScore = f_clamp(riskBlockRaw * 0.13 + failCount * 10.0, 0, 100)
+float macroConflictScore = f_clamp(macroConflictRaw * 0.13 + directionDisagreementRaw * 0.08 + issueCount * 8.0, 0, 100)
+float liquidityPressureScore = f_clamp(liquidityPressureRaw * 0.14, 0, 100)
+float neutralDiagnosticScore = f_clamp(neutralRaw * 0.15, 0, 100)
+float trapPressureScore = f_clamp(trapRaw * 0.12 + riskBlockScore * 0.35 + macroConflictScore * 0.25 + liquidityPressureScore * 0.25, 0, 100)
+float fakeoutPressureScore = f_clamp(fakeoutRaw * 0.13 + trapPressureScore * 0.18 + liquidityPressureScore * 0.12, 0, 100)
+float totalW = math.max(1.0, upW + dnW)
+float alignScore = 100.0 * math.max(upW, dnW) / totalW
+float netScore = 100.0 * math.abs(upW - dnW) / totalW
+float execBlend = f_clamp(triggerScore + baseScore + directionScore * 0.20 - neutralDiagnosticScore * 0.12 - riskBlockScore * 0.10, 0, 100)
+float totalScore = f_clamp(0.30 * alignScore + 0.20 * netScore + 0.28 * execBlend + 0.12 * directionScore - 0.07 * riskBlockScore - 0.05 * macroConflictScore - 0.04 * liquidityPressureScore - 0.03 * neutralDiagnosticScore, 0, 100)
+
+int genutDir = 0
+if upW > dnW and (upW - dnW) >= 8
+    genutDir := 1
+else if dnW > upW and (dnW - upW) >= 8
+    genutDir := -1
+
+int genutState = totalScore >= 72 and activeCount >= 4 ? 3 : totalScore >= 54 and activeCount >= 3 ? 2 : totalScore >= 34 and activeCount >= 2 ? 1 : 0
+if failCount >= 3
+    genutState := 4
+
+bool linkBad = issueCount > 0
+bool hardRiskConfluence = riskBlockScore >= 88 and (macroConflictScore >= 62 or liquidityPressureScore >= 62 or trapPressureScore >= 66 or fakeoutPressureScore >= 66)
+bool hardMacroConfluence = macroConflictScore >= 88 and riskBlockScore >= 64
+bool hardLiquidityConfluence = liquidityPressureScore >= 90 and (riskBlockScore >= 64 or macroConflictScore >= 64)
+bool hardTrapFakeoutConfluence = (trapPressureScore >= 90 or fakeoutPressureScore >= 90) and riskBlockScore >= 64 and alignScore < 54
+bool blockHard = linkBad or failCount >= 3 or hardRiskConfluence or hardMacroConfluence or hardLiquidityConfluence or hardTrapFakeoutConfluence
+bool blockSoft = not blockHard and (activeCount < 2 or alignScore < 52 or genutState < 2 or neutralDiagnosticScore >= 70 or riskBlockScore >= 56 or macroConflictScore >= 56 or liquidityPressureScore >= 56 or trapPressureScore >= 60 or fakeoutPressureScore >= 60)
+int genutRisk = blockHard ? 2 : totalScore >= 66 and activeCount >= 4 and riskBlockScore < 45 and macroConflictScore < 50 and liquidityPressureScore < 50 and trapPressureScore < 50 and fakeoutPressureScore < 50 ? 0 : 1
+bool blockFlag = blockHard
+bool waitFlag = genutDir == 0 or genutState < 2 or blockSoft or blockHard
+
+int blockReasonCode = failCount >= 3 ? 1 : activeCount < 2 ? 2 : alignScore < 52 ? 3 : genutRisk == 2 ? 4 : genutState < 2 ? 5 : linkBad ? 7 : waitFlag ? 6 : 0
+string blockReasonTxt = f_reasonCode(blockReasonCode)
+int barConfirmed = barstate.isconfirmed ? 1 : 0
+
+float flowDelta = nz(totalScore - totalScore[1])
+float flowSlope = ta.ema(flowDelta, histLen)
+int prevDir = int(nz(float(genutDir[1]), 0.0))
+int prevState = int(nz(float(genutState[1]), 0.0))
+float totalDrop = nz(totalScore[1], totalScore) - totalScore
+float riskJump = riskBlockScore - nz(riskBlockScore[1], riskBlockScore)
+float macroJump = macroConflictScore - nz(macroConflictScore[1], macroConflictScore)
+float liquidityJump = liquidityPressureScore - nz(liquidityPressureScore[1], liquidityPressureScore)
+bool riskRising = riskJump >= 6 or (riskBlockScore >= 52 and riskBlockScore > nz(riskBlockScore[1], riskBlockScore))
+bool macroRising = macroJump >= 6 or (macroConflictScore >= 52 and macroConflictScore > nz(macroConflictScore[1], macroConflictScore))
+bool liquidityRising = liquidityJump >= 6 or (liquidityPressureScore >= 52 and liquidityPressureScore > nz(liquidityPressureScore[1], liquidityPressureScore))
+float trapJump = trapPressureScore - nz(trapPressureScore[1], trapPressureScore)
+float fakeoutJump = fakeoutPressureScore - nz(fakeoutPressureScore[1], fakeoutPressureScore)
+bool trapRising = trapJump >= 6 or (trapPressureScore >= 52 and trapPressureScore > nz(trapPressureScore[1], trapPressureScore))
+bool fakeoutRising = fakeoutJump >= 6 or (fakeoutPressureScore >= 52 and fakeoutPressureScore > nz(fakeoutPressureScore[1], fakeoutPressureScore))
+bool blockPrewarn = not blockHard and (riskRising or macroRising or liquidityRising or trapRising or fakeoutRising or (riskBlockScore >= 56 and (macroConflictScore >= 44 or liquidityPressureScore >= 44)) or (liquidityPressureScore >= 64 and macroConflictScore >= 44))
+bool entrySuppress = blockPrewarn or blockSoft or blockHard
+bool dirChanged = genutDir != prevDir and (genutDir != 0 or prevDir != 0)
+bool scoreDeteriorated = totalDrop >= 4 or flowSlope <= -3
+bool riskBlockIncreased = riskJump >= 8 or macroJump >= 8 or liquidityJump >= 8 or trapJump >= 8 or fakeoutJump >= 8
+bool stateDowngraded = (prevState >= 2 and genutState <= 1) or genutState == 4
+int flowStrongEvidence = (dirChanged ? 1 : 0) + (scoreDeteriorated ? 1 : 0) + (riskBlockIncreased ? 1 : 0) + (stateDowngraded ? 1 : 0)
+bool flowReversalConfirmed = dirChanged and prevDir != 0 and genutDir != 0 and genutDir != prevDir
+bool flowRiskPressureHigh = riskBlockScore >= 64 or macroConflictScore >= 64 or liquidityPressureScore >= 64 or trapPressureScore >= 66 or fakeoutPressureScore >= 66
+bool flowScoreBreakdown = totalDrop >= 6 or flowSlope <= -4
+bool flowShiftStrong = flowStrongEvidence >= 3 and (flowReversalConfirmed or stateDowngraded) and flowScoreBreakdown and (riskBlockIncreased or flowRiskPressureHigh or blockHard)
+bool flowShiftWeak = not flowShiftStrong and (dirChanged or stateDowngraded or genutState != prevState or math.abs(flowDelta) >= 3)
+int flowShift = flowShiftStrong ? (dirChanged and genutDir != 0 ? genutDir : 2) : 0
+bool hardExitRiskConfluence = riskBlockScore >= 88 and (macroConflictScore >= 62 or liquidityPressureScore >= 62 or trapPressureScore >= 66 or fakeoutPressureScore >= 66)
+bool hardExitBreakdown = totalDrop >= 8 and riskBlockIncreased and flowSlope <= -3
+bool hardBlockConfirmed = blockHard and (genutState == 4 or flowShiftStrong or totalDrop >= 6 or riskBlockIncreased or flowRiskPressureHigh)
+bool exitStrong = (genutState == 4 and (failCount >= 3 or riskBlockScore >= 70 or macroConflictScore >= 70 or liquidityPressureScore >= 70)) or hardBlockConfirmed or hardExitRiskConfluence or hardExitBreakdown
+bool exitWeak = not exitStrong and (genutState == 0 or blockSoft or flowShiftWeak)
+bool hardExitOK = linkBad or failCount >= 3 or exitStrong
+blockFlag := hardExitOK
+waitFlag := genutDir == 0 or genutState < 2 or entrySuppress
+blockReasonCode := linkBad ? 7 : failCount >= 3 ? 1 : blockHard ? 4 : blockPrewarn ? 6 : activeCount < 2 ? 2 : alignScore < 52 ? 3 : genutState < 2 ? 5 : waitFlag ? 6 : 0
+blockReasonTxt := f_reasonCode(blockReasonCode)
+bool exitOK = hardExitOK
+bool longOK = genutDir > 0 and genutState >= 2 and genutRisk != 2 and triggerScore >= 12 and directionScore >= 18 and not entrySuppress and not linkBad
+bool shortOK = genutDir < 0 and genutState >= 2 and genutRisk != 2 and triggerScore >= 12 and directionScore >= 18 and not entrySuppress and not linkBad
+bool blockPressureMode = blockPrewarn or blockSoft or blockHard or riskBlockScore >= 52 or liquidityPressureScore >= 56
+bool conflictPressureMode = macroConflictScore >= 56 or (directionDisagreementRaw > 0 and alignScore < 58)
+bool trapPressureMode = trapPressureScore >= 56
+bool fakeoutPressureMode = fakeoutPressureScore >= 56
+int cautionKindCount = (blockPressureMode ? 1 : 0) + (conflictPressureMode ? 1 : 0) + (trapPressureMode ? 1 : 0) + (fakeoutPressureMode ? 1 : 0)
+bool cleanFlowMode = genutDir != 0 and genutState >= 2 and cautionKindCount == 0 and directionScore >= 22 and activeCount >= 3
+bool mixedCautionMode = cautionKindCount >= 2 or ((longOK or shortOK or genutDir != 0) and cautionKindCount >= 1)
+int briefingModeCode = hardExitOK ? 7 : mixedCautionMode ? 6 : fakeoutPressureMode ? 5 : trapPressureMode ? 4 : conflictPressureMode ? 3 : blockPressureMode ? 2 : cleanFlowMode ? 1 : 0
+
+//==================================================
+// GENUT B STRUCTURE LAYER BRIEFING SOURCE
+// 목적: 매매 신호가 아니라 구조의 시간축 이동 / 선행 압력 / 회복 실패를 GPT가 읽기 위한 내부 소스
+//==================================================
+int tfSeconds = timeframe.in_seconds(timeframe.period)
+int tfRoleCode = tfSeconds <= 1800 ? 1 : tfSeconds < 86400 ? 2 : 3
+int currentTfHintCode = f_tfHintCode(timeframe.period)
+int nextTfHintCode = f_nextTfHintCode(currentTfHintCode)
+float structurePressureScore = f_clamp(riskBlockScore * 0.24 + macroConflictScore * 0.22 + liquidityPressureScore * 0.24 + trapPressureScore * 0.16 + fakeoutPressureScore * 0.14, 0, 100)
+float structureScore = f_clamp(0.28 * alignScore + 0.20 * netScore + 0.18 * directionScore + 0.14 * execBlend + activeCount * 1.0 - structurePressureScore * 0.12 - neutralDiagnosticScore * 0.05, 0, 100)
+float structureScoreDelta = structureScore - nz(structureScore[1], structureScore)
+float structurePressureDelta = structurePressureScore - nz(structurePressureScore[1], structurePressureScore)
+bool structureScoreMoving = math.abs(structureScoreDelta) >= 3 or math.abs(flowDelta) >= 3
+bool structurePressureMoving = structurePressureDelta >= 4 or riskJump >= 6 or macroJump >= 6 or liquidityJump >= 6
+bool structureBlockOrMacroLiq = blockPrewarn or riskRising or macroRising or liquidityRising
+bool structureTrapFakeRisk = trapRising or fakeoutRising or riskBlockScore >= 58 or trapPressureScore >= 58 or fakeoutPressureScore >= 58
+bool structureLeadAlert = not blockHard and structureScoreMoving and structurePressureMoving and structureBlockOrMacroLiq and structureTrapFakeRisk
+bool nextTfPressureControlled = structurePressureScore <= 58 and macroConflictScore < 60 and liquidityPressureScore < 60 and trapPressureScore < 60 and fakeoutPressureScore < 60
+bool nextTfOpenAlert = genutDir != 0 and genutState >= 2 and structureScore >= 64 and activeCount >= 4 and flowSlope >= 2 and math.abs(flowDelta) >= 3 and not blockHard and not blockSoft and nextTfPressureControlled
+bool blockPrewarnAlert = blockPrewarn and not blockHard and not blockSoft and (structurePressureScore >= 48 or riskRising or macroRising or liquidityRising)
+bool recoveryAttempt = nz(structureScore[1], structureScore) >= 58 or nz(flowSlope[1], flowSlope) > 0 or prevState >= 2
+bool recoveryRenewedPressure = blockHard or blockSoft or blockPrewarn or trapRising or fakeoutRising or trapPressureScore >= 62 or fakeoutPressureScore >= 62
+bool recoveryDeteriorated = totalDrop >= 4 or flowSlope <= -2 or structureScoreDelta <= -4 or riskBlockIncreased
+bool recoveryFailAlert = recoveryAttempt and recoveryRenewedPressure and recoveryDeteriorated
+bool trapStructureAlert = (trapPressureScore >= 62 or trapRising) and (waitFlag or macroConflictScore >= 50 or liquidityPressureScore >= 50)
+bool fakeoutStructureAlert = (fakeoutPressureScore >= 62 or fakeoutRising) and (waitFlag or macroConflictScore >= 50 or liquidityPressureScore >= 50)
+bool waitConflictAlert = waitFlag and (macroConflictScore >= 52 or liquidityPressureScore >= 52 or alignScore < 55 or neutralDiagnosticScore >= 60) and (trapPressureScore >= 50 or fakeoutPressureScore >= 50 or macroConflictScore >= 58)
+int horusBEventCode = structureLeadAlert ? 210 : nextTfOpenAlert ? 220 : blockPrewarnAlert ? 230 : recoveryFailAlert ? 240 : trapStructureAlert ? 250 : fakeoutStructureAlert ? 260 : waitConflictAlert ? 270 : 200
+bool lowerTfB = f_isLowerTfHintCode(currentTfHintCode)
+bool anchorTfB = f_isAnchorTfHintCode(currentTfHintCode)
+bool coreTfB = f_isCoreTfHintCode(currentTfHintCode)
+bool structureClearB = alignScore >= 60 and netScore >= 55 and structurePressureScore < 58 and not blockHard and not blockSoft and not blockPrewarnAlert and not recoveryFailAlert
+bool lowerNoiseRoleB = lowerTfB and (trapPressureScore >= 58 or fakeoutPressureScore >= 58 or waitFlag) and structureScore < 55
+bool nextTfTestRoleB = anchorTfB and nextTfHintCode != 0 and (waitFlag or waitConflictAlert or structurePressureScore >= 45)
+bool anchorRoleB = anchorTfB and (structureScore >= 50 or structurePressureScore >= 45) and not recoveryFailAlert
+bool domCandidateRoleB = structureScore >= 68 and activeCount >= 4 and structureClearB
+bool transferRoleB = nextTfHintCode != 0 and (structureLeadAlert or nextTfOpenAlert or (coreTfB and structureScoreMoving and structurePressureScore >= 45 and not blockHard))
+bool supportRoleB = structureScore >= 50 and activeCount >= 2
+int horusBTfRoleCode = 0
+if lowerNoiseRoleB
+    horusBTfRoleCode := 1
+else if nextTfTestRoleB
+    horusBTfRoleCode := 5
+else if domCandidateRoleB
+    horusBTfRoleCode := 4
+else if transferRoleB
+    horusBTfRoleCode := 3
+else if anchorRoleB
+    horusBTfRoleCode := 6
+else if supportRoleB
+    horusBTfRoleCode := 2
+bool modeWaitB = waitConflictAlert or waitFlag or neutralDiagnosticScore >= 60
+bool modeConfirmB = structureScore >= 64 and not blockPrewarn and not blockSoft and not blockHard and not recoveryFailAlert
+bool modeFadeB = structureScoreDelta <= -4 or (structurePressureScore < nz(structurePressureScore[1], structurePressureScore) and structureScore < nz(structureScore[1], structureScore))
+bool modeBlockB = blockHard or blockSoft or (blockPrewarn and structurePressureScore >= 60)
+bool modeTrapB = trapStructureAlert or fakeoutStructureAlert or trapPressureScore >= 62 or fakeoutPressureScore >= 62
+bool modeConflictB = macroConflictScore >= 58 or liquidityPressureScore >= 58
+bool modePrewarnB = blockPrewarnAlert or (blockPrewarn and not blockHard)
+bool modeRecoveryFailB = recoveryFailAlert
+int modeKindCountB = (modeWaitB ? 1 : 0) + (modeConfirmB ? 1 : 0) + (modeFadeB ? 1 : 0) + (modeBlockB ? 1 : 0) + (modeTrapB ? 1 : 0) + (modeConflictB ? 1 : 0) + (modePrewarnB ? 1 : 0) + (modeRecoveryFailB ? 1 : 0)
+int horusBModeCode = 0
+if modeRecoveryFailB
+    horusBModeCode := 8
+else if modePrewarnB
+    horusBModeCode := 7
+else if modeBlockB
+    horusBModeCode := 4
+else if modeWaitB and anchorTfB
+    horusBModeCode := 1
+else if modeTrapB
+    horusBModeCode := 5
+else if modeConflictB
+    horusBModeCode := 6
+else if modeKindCountB >= 4
+    horusBModeCode := 9
+else if modeFadeB
+    horusBModeCode := 3
+else if modeConfirmB
+    horusBModeCode := 2
+else if modeWaitB
+    horusBModeCode := 1
+bool structureShiftPulse = barstate.isconfirmed and (structureLeadAlert or nextTfOpenAlert) and not (structureLeadAlert[1] or nextTfOpenAlert[1])
+bool blockPrewarnPulse = barstate.isconfirmed and blockPrewarnAlert and not blockPrewarnAlert[1]
+bool recoveryFailPulse = barstate.isconfirmed and recoveryFailAlert and not recoveryFailAlert[1]
+bool trapFakeoutWaitAlert = trapStructureAlert or fakeoutStructureAlert or waitConflictAlert
+bool trapFakeoutWaitPulse = barstate.isconfirmed and trapFakeoutWaitAlert and not trapFakeoutWaitAlert[1]
+var int flowUpStreak = 0
+var int flowDnStreak = 0
+flowUpStreak := totalScore > totalScore[1] ? nz(flowUpStreak[1]) + 1 : 0
+flowDnStreak := totalScore < totalScore[1] ? nz(flowDnStreak[1]) + 1 : 0
+string flowHist = f_flowChar(nz(totalScore[4] - totalScore[5])) + f_flowChar(nz(totalScore[3] - totalScore[4])) + f_flowChar(nz(totalScore[2] - totalScore[3])) + f_flowChar(nz(totalScore[1] - totalScore[2])) + f_flowChar(nz(totalScore - totalScore[1]))
+
+float gateScoreB = f_clamp(structureScore + alignScore * 0.18 + netScore * 0.10 - structurePressureScore * 0.26 - macroConflictScore * 0.10 - trapPressureScore * 0.08 - fakeoutPressureScore * 0.08, 0, 100)
+float pressureIndexB = f_clamp(structurePressureScore + (blockHard ? 10.0 : 0.0) + (blockPrewarn ? 5.0 : 0.0) + (recoveryFailAlert ? 8.0 : 0.0), 0, 100)
+bool prevBlockHardB = bar_index > 0 ? blockHard[1] : false
+bool prevBlockSoftB = bar_index > 0 ? blockSoft[1] : false
+bool prevBlockPrewarnB = bar_index > 0 ? blockPrewarn[1] : false
+float prevStructurePressureB = nz(structurePressureScore[1], structurePressureScore)
+bool gateBlockedAlertB = blockHard or (blockFlag and structurePressureScore >= 58) or (recoveryFailAlert and structurePressureScore >= 55)
+bool gateClearingAlertB = ((prevBlockHardB or prevBlockSoftB or prevBlockPrewarnB) and not blockHard and not blockSoft and not blockPrewarn) or (structurePressureScore < prevStructurePressureB and prevStructurePressureB >= 58 and structureScore >= nz(structureScore[1], structureScore))
+string gateStateB = "WAIT"
+if gateBlockedAlertB
+    gateStateB := "BLOCKED"
+else if blockSoft or blockPrewarnAlert or trapFakeoutWaitAlert or macroConflictScore >= 58 or liquidityPressureScore >= 58
+    gateStateB := "CONGESTED"
+else if gateClearingAlertB
+    gateStateB := "CLEARING"
+else if genutRisk == 2 or pressureIndexB >= 64
+    gateStateB := "RISK"
+else if nextTfOpenAlert or (gateScoreB >= 60 and structureScore >= 58 and pressureIndexB < 55 and not waitFlag)
+    gateStateB := "OPEN"
+int hetemBEventCode = recoveryFailAlert ? 240 : gateBlockedAlertB ? 225 : gateClearingAlertB ? 235 : (structureLeadAlert or nextTfOpenAlert) ? 210 : blockPrewarnAlert ? 230 : trapFakeoutWaitAlert ? 270 : 200
+string hetemBEventName = recoveryFailAlert ? "RECOVERY_FAIL" : gateBlockedAlertB ? "GATE_BLOCKED" : gateClearingAlertB ? "GATE_CLEARING" : (structureLeadAlert or nextTfOpenAlert) ? "STRUCTURE_SHIFT" : blockPrewarnAlert ? "BLOCK_PREWARN" : trapFakeoutWaitAlert ? "TRAP_FAKEOUT_WAIT" : "OBSERVE"
+string hetemBPressureBand = f_scoreBand(pressureIndexB)
+string hetemBGateBand = f_scoreBand(gateScoreB)
+string hetemBRiskBand = f_scoreBand(structurePressureScore)
+string hetemBSignatureBand = gateStateB + "/" + hetemBPressureBand + "/" + hetemBRiskBand
+float hetemBEventSeverity = f_clamp(math.max(math.max(structurePressureScore, riskBlockScore), math.max(macroConflictScore, math.max(trapPressureScore, fakeoutPressureScore))) + (blockHard ? 10.0 : blockSoft ? 6.0 : blockPrewarn ? 4.0 : 0.0) + (recoveryFailAlert ? 8.0 : 0.0), 0, 100)
+bool gawPolicyBlockB = gateBlockedAlertB or blockHard or (blockFlag and structurePressureScore >= 58)
+bool gawPolicyCheckB = gateClearingAlertB or structureLeadAlert or nextTfOpenAlert or blockPrewarnAlert or recoveryFailAlert
+bool gawPolicyWaitB = trapFakeoutWaitAlert or waitFlag or macroConflictScore >= 58 or liquidityPressureScore >= 58 or gateStateB == "CONGESTED"
+string gawPolicyB = gawPolicyBlockB ? "GP:BK" : gawPolicyCheckB ? "GP:CK" : gawPolicyWaitB ? "GP:WT" : "GP:ON"
+string gawSchemaVersionB = "GV3"
+
+//==================================================
+// 표
+//==================================================
+dirColor = genutDir > 0 ? colGood : genutDir < 0 ? colBad : colWarn
+stateColor = genutState == 4 ? colBad : genutState >= 2 ? colGood : genutState == 1 ? colWarn : colSoft
+riskColor = genutRisk == 0 ? colGood : genutRisk == 1 ? colWarn : colBad
+trgColor = triggerScore >= 18 ? colGood : triggerScore >= 12 ? colWarn : colBad
+baseColor = baseScore >= 14 ? colGood : baseScore >= 8 ? colWarn : colBad
+alignColor = alignScore >= 65 ? colGood : alignScore >= 52 ? colWarn : colBad
+netColor = netScore >= 35 ? colGood : netScore >= 18 ? colWarn : colBad
+scoreColor = totalScore >= 65 ? colGood : totalScore >= 35 ? colWarn : colBad
+activeColor = activeCount >= 4 ? colGood : activeCount >= 2 ? colWarn : colBad
+blockColor = blockFlag ? colBad : colGood
+flowColor = flowSlope > 0 ? colGood : flowSlope < 0 ? colBad : colSoft
+linkColor = issueCount == 0 ? colGood : colBad
+gateColorB = gateStateB == "OPEN" or gateStateB == "CLEARING" ? colGood : gateStateB == "WAIT" or gateStateB == "CONGESTED" ? colWarn : colBad
+pressureColorB = pressureIndexB >= 60 ? colBad : pressureIndexB >= 40 ? colWarn : colGood
+severityColorB = hetemBEventSeverity >= 75 ? colBad : hetemBEventSeverity >= 45 ? colWarn : colGood
+policyColorB = gawPolicyB == "GP:BK" ? colBad : gawPolicyB == "GP:WT" ? colWarn : gawPolicyB == "GP:CK" ? colAccent : colGood
+
+var table panel = na
+var string lastTableLayoutKey = ""
+int frameW = showTableBorder ? tableFrameWidth : 0
+int borderW = showTableBorder ? tableBorderWidth : 0
+color tableBgColor = color.new(colBg, tableBgTransp)
+string tableLayoutKey = str.tostring(tableScale) + "|" + tablePosOpt + "|" + (showTableBorder ? "1" : "0") + "|" + str.tostring(tableFrameWidth) + "|" + str.tostring(tableBorderWidth) + "|" + str.tostring(tableBgTransp)
+txtSize = f_textSizeFromScale(tableScale)
+bodySz = txtSize
+headSz = txtSize
+
+if barstate.islast
+    if showTable
+        if na(panel) or tableLayoutKey != lastTableLayoutKey
+            if not na(panel)
+                table.delete(panel)
+            panel := table.new(f_tablePos(tablePosOpt), 4, 16, bgcolor=tableBgColor, frame_color=tableFrameColor, frame_width=frameW, border_color=tableBorderColor, border_width=borderW)
+            lastTableLayoutKey := tableLayoutKey
+        table.clear(panel, 0, 0, 3, 15)
+        string gawGateB = f_gawGate(gateStateB)
+        string gawPressB = f_gawBand(hetemBPressureBand)
+        string gawStateB = f_gawState(f_stateCode(genutState))
+        string gawRiskB = f_gawRisk(f_riskCode(genutRisk))
+        string tableBlockB = blockHard ? "HARD_BLOCK" : blockSoft ? "SOFT_BLOCK" : blockPrewarn ? "PREWARN" : "CLEAR"
+        string tableFlowB = flowSlope > 0 ? "UP" : flowSlope < 0 ? "DOWN" : "FLAT"
+        string gawBlockB = f_gawBlock(tableBlockB)
+        string gawFlowB = f_gawFlow(tableFlowB)
+        string gawEventB = f_gawEvent(hetemBEventName)
+        string gawNextB = f_nextTfText(nextTfHintCode)
+
+        table.cell(panel, 0, 0, "HB", text_color=colHead, text_size=headSz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 0, "STR", text_color=colAccent, text_size=headSz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 0, "TF", text_color=colHead, text_size=headSz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 0, timeframe.period, text_color=colText, text_size=headSz, bgcolor=tableBgColor)
+
+        table.cell(panel, 0, 1, "GW", text_color=colHead, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 1, "EC:" + gawEventB, text_color=colAccent, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 1, "ES:" + f_numTxt(hetemBEventSeverity), text_color=severityColorB, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 1, gawPolicyB, text_color=policyColorB, text_size=bodySz, bgcolor=tableBgColor)
+
+        table.cell(panel, 0, 2, "G1", text_color=colHead, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 2, "HB-S", text_color=colAccent, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 2, "R:" + gawRiskB, text_color=riskColor, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 2, "B:" + gawBlockB, text_color=blockColor, text_size=bodySz, bgcolor=tableBgColor)
+
+        table.cell(panel, 0, 3, "G2", text_color=colHead, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 3, "G:" + gawGateB, text_color=gateColorB, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 3, "N:" + gawNextB, text_color=colText, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 3, "SO", text_color=colGood, text_size=bodySz, bgcolor=tableBgColor)
+
+        table.cell(panel, 0, 4, "ST", text_color=colText, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 4, gawStateB, text_color=stateColor, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 4, "SC", text_color=colSoft, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 4, str.tostring(genutState), text_color=stateColor, text_size=bodySz, bgcolor=tableBgColor)
+
+        table.cell(panel, 0, 5, "RK", text_color=colText, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 5, gawRiskB, text_color=riskColor, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 5, "RC", text_color=colSoft, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 5, str.tostring(genutRisk), text_color=riskColor, text_size=bodySz, bgcolor=tableBgColor)
+
+        table.cell(panel, 0, 6, "B", text_color=colText, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 6, gawBlockB, text_color=blockColor, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 6, "BR", text_color=colSoft, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 6, str.tostring(blockReasonCode), text_color=blockColor, text_size=bodySz, bgcolor=tableBgColor)
+
+        table.cell(panel, 0, 7, "S", text_color=colText, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 7, "S", text_color=colAccent, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 7, "EC", text_color=colSoft, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 7, gawEventB, text_color=colAccent, text_size=bodySz, bgcolor=tableBgColor)
+
+        table.cell(panel, 0, 8, "FL", text_color=colText, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 8, gawFlowB, text_color=flowColor, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 8, "DL", text_color=colSoft, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 8, f_numTxt(flowDelta), text_color=flowColor, text_size=bodySz, bgcolor=tableBgColor)
+
+        table.cell(panel, 0, 9, "SS", text_color=colText, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 9, f_numTxt(structureScore), text_color=scoreColor, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 9, "SP", text_color=colSoft, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 9, f_numTxt(structurePressureScore), text_color=pressureColorB, text_size=bodySz, bgcolor=tableBgColor)
+
+        table.cell(panel, 0, 10, "AL", text_color=colText, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 10, f_gawBand(f_scoreBand(alignScore)), text_color=alignColor, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 10, "NT", text_color=colSoft, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 10, f_gawBand(f_scoreBand(netScore)), text_color=netColor, text_size=bodySz, bgcolor=tableBgColor)
+
+        table.cell(panel, 0, 11, "TL", text_color=colText, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 11, f_gawBand(f_scoreBand(totalScore)), text_color=scoreColor, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 11, "AC", text_color=colSoft, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 11, f_numTxt(activeCount), text_color=activeColor, text_size=bodySz, bgcolor=tableBgColor)
+
+        table.cell(panel, 0, 12, "RN", text_color=colText, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 12, str.tostring(math.max(flowUpStreak, flowDnStreak)), text_color=flowColor, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 12, "SF", text_color=colSoft, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 12, str.tostring(flowShift), text_color=flowColor, text_size=bodySz, bgcolor=tableBgColor)
+
+        table.cell(panel, 0, 13, "MD", text_color=colText, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 13, f_modeAbbrev(horusBModeCode), text_color=colWarn, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 13, "RL", text_color=colSoft, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 13, f_tfRoleAbbrev(horusBTfRoleCode), text_color=colAccent, text_size=bodySz, bgcolor=tableBgColor)
+
+        string tableKemiB = kemiOk ? "KM" + f_numTxt(kemiScore) + " C" + str.tostring(kemiCode) : "KM:NA C0"
+        if not useKemiSource
+            tableKemiB := "KM:OFF C0"
+        string tableKheperB = kheperOk ? "KP" + f_numTxt(kheperScore) + " K" + str.tostring(kheperCode) : "KP:NA K0"
+        if not useKheperSource
+            tableKheperB := "KP:OFF K0"
+        string tableSensorMaskB = "SM" + str.tostring(sensorMaskCode)
+        color tableKemiColorB = not useKemiSource ? colSoft : kemiOk ? colAccent : colBad
+        color tableKheperColorB = not useKheperSource ? colSoft : kheperOk ? colAccent : colBad
+        color tableSensorMaskColorB = sensorMaskCode < 0 or sensorMaskCode >= 4 ? colWarn : sensorMaskCode == 0 ? colSoft : colGood
+        table.cell(panel, 0, 14, "KS", text_color=colText, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 14, tableKemiB, text_color=tableKemiColorB, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 14, tableKheperB, text_color=tableKheperColorB, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 14, tableSensorMaskB, text_color=tableSensorMaskColorB, text_size=bodySz, bgcolor=tableBgColor)
+
+        table.cell(panel, 0, 15, "END", text_color=colSoft, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 15, "GAW", text_color=colAccent, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 15, gawSchemaVersionB, text_color=colGood, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 15, "HTM", text_color=colAccent, text_size=bodySz, bgcolor=tableBgColor)
+    else
+        if not na(panel)
+            table.delete(panel)
+            panel := na
+            lastTableLayoutKey := ""
+
+
+var table tfRolePanel = na
+var string lastTfRoleLayoutKey = ""
+string tfRoleLayoutKey = tableLayoutKey + "|" + tfRolePanelPosOpt + "|" + tfRolePanelMode
+tfRolePanelTextSize = txtSize
+string tfPanelTfTextB = f_nextTfText(currentTfHintCode)
+string tfPanelNextTextB = f_nextTfText(nextTfHintCode)
+string tfPanelRoleTextB = tfRoleUseAbbrev ? f_tfRoleAbbrev(horusBTfRoleCode) : f_tfRoleText(horusBTfRoleCode)
+string tfPanelModeTextB = tfRoleUseAbbrev ? f_modeAbbrev(horusBModeCode) : f_modeText(horusBModeCode)
+string tfPanelLayerTextB = tfRoleUseAbbrev ? "S" : "STRUCTURE"
+string tfPanelHeadTextB = tfRoleUseAbbrev ? "B·S" : "GENUT B STRUCTURE"
+if barstate.islast
+    if showTfRolePanel
+        if na(tfRolePanel) or tfRoleLayoutKey != lastTfRoleLayoutKey
+            if not na(tfRolePanel)
+                table.delete(tfRolePanel)
+            tfRolePanel := table.new(f_tfRolePanelPos(tfRolePanelPosOpt), 3, 7, bgcolor=tableBgColor, frame_color=tableFrameColor, frame_width=frameW, border_color=tableBorderColor, border_width=borderW)
+            lastTfRoleLayoutKey := tfRoleLayoutKey
+        table.clear(tfRolePanel, 0, 0, 2, 6)
+        if tfRolePanelMode == "Detail"
+            table.cell(tfRolePanel, 0, 0, "GENUT B · STRUCTURE TF ROLE", text_color=colHead, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 1, 0, "STRUCTURE", text_color=colAccent, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 0, 1, "TF", text_color=colSoft, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 1, 1, tfPanelTfTextB, text_color=colText, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 0, 2, "SELF ROLE", text_color=colSoft, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 1, 2, f_tfRoleText(horusBTfRoleCode), text_color=colAccent, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 0, 3, "NEXT HINT", text_color=colSoft, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 1, 3, tfPanelNextTextB, text_color=colText, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 0, 4, "MODE", text_color=colSoft, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 1, 4, f_modeText(horusBModeCode), text_color=colWarn, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 0, 5, "EC", text_color=colSoft, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 1, 5, str.tostring(horusBEventCode), text_color=colText, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 0, 6, "LAYER", text_color=colSoft, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 1, 6, "STRUCTURE", text_color=colAccent, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+        else if tfRolePanelMode == "Compact"
+            table.cell(tfRolePanel, 0, 0, tfPanelHeadTextB, text_color=colHead, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 1, 0, "TF", text_color=colSoft, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 2, 0, tfPanelTfTextB, text_color=colText, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 0, 1, "SR", text_color=colSoft, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 1, 1, tfPanelRoleTextB, text_color=colAccent, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 0, 2, "NX", text_color=colSoft, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 1, 2, tfPanelNextTextB, text_color=colText, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 0, 3, "MD", text_color=colSoft, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 1, 3, tfPanelModeTextB, text_color=colWarn, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 0, 4, "EC", text_color=colSoft, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 1, 4, str.tostring(horusBEventCode), text_color=colText, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 0, 5, "LY", text_color=colSoft, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 1, 5, tfPanelLayerTextB, text_color=colAccent, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+        else
+            table.cell(tfRolePanel, 0, 0, tfPanelHeadTextB, text_color=colHead, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 1, 0, tfPanelTfTextB, text_color=colText, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 0, 1, "SR " + tfPanelRoleTextB, text_color=colAccent, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 1, 1, "NX " + tfPanelNextTextB, text_color=colText, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 0, 2, "MD " + tfPanelModeTextB, text_color=colWarn, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 1, 2, "EC " + str.tostring(horusBEventCode), text_color=colText, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+    else
+        if not na(tfRolePanel)
+            table.delete(tfRolePanel)
+            tfRolePanel := na
+            lastTfRoleLayoutKey := ""
+
+plot(float(genutDir),      title="GENUT_B_DIRECTION", display=display.none)
+plot(float(genutState),    title="GENUT_B_STATE", display=display.none)
+plot(float(genutRisk),     title="GENUT_B_RISK", display=display.none)
+plot(triggerScore,         title="GENUT_B_TRIGGER_SCORE", display=display.none)
+plot(baseScore,            title="GENUT_B_BASE_SCORE", display=display.none)
+plot(alignScore,           title="GENUT_B_ALIGN_SCORE", display=display.none)
+plot(netScore,             title="GENUT_B_NET_SCORE", display=display.none)
+plot(execBlend,            title="GENUT_B_EXEC_BLEND", display=display.none)
+plot(activeCount,          title="GENUT_B_ACTIVE_COUNT", display=display.none)
+plot(failCount,            title="GENUT_B_FAIL_COUNT", display=display.none)
+plot(totalScore,           title="GENUT_B_TOTAL_SCORE", display=display.none)
+plot(longOK ? 1.0 : 0.0,   title="GENUT_B_STRUCTURE_UP_STATE", display=display.none)
+plot(shortOK ? 1.0 : 0.0,  title="GENUT_B_STRUCTURE_DOWN_STATE", display=display.none)
+plot(waitFlag ? 1.0 : 0.0, title="GENUT_B_WAIT_FLAG", display=display.none)
+plot(exitOK ? 1.0 : 0.0,   title="GENUT_B_RECOVERY_BLOCK_STATE", display=display.none)
+plot(blockFlag ? 1.0 : 0.0,       title="GENUT_B_BLOCK_FLAG", display=display.none)
+plot(float(blockReasonCode),      title="GENUT_B_BLOCK_REASON_CODE", display=display.none)
+plot(float(barConfirmed),         title="GENUT_B_BAR_CONFIRMED", display=display.none)
+plot(flowDelta,                   title="GENUT_B_FLOW_DELTA", display=display.none)
+plot(flowSlope,                   title="GENUT_B_FLOW_SLOPE", display=display.none)
+plot(float(flowUpStreak),         title="GENUT_B_FLOW_UP_STREAK", display=display.none)
+plot(float(flowDnStreak),         title="GENUT_B_FLOW_DN_STREAK", display=display.none)
+plot(float(flowShift),            title="GENUT_B_FLOW_SHIFT", display=display.none)
+plot(readyCount,                  title="GENUT_B_LINK_READY_COUNT", display=display.none)
+plot(issueCount,                  title="GENUT_B_LINK_ISSUE_COUNT", display=display.none)
+plot(directionScore,              title="GENUT_B_DIRECTION_SCORE", display=display.none)
+plot(riskBlockScore,              title="GENUT_B_RISK_BLOCK_SCORE", display=display.none)
+plot(macroConflictScore,          title="GENUT_B_MACRO_CONFLICT_SCORE", display=display.none)
+plot(liquidityPressureScore,      title="GENUT_B_LIQUIDITY_PRESSURE_SCORE", display=display.none)
+plot(neutralDiagnosticScore,      title="GENUT_B_NEUTRAL_DIAGNOSTIC_SCORE", display=display.none)
+plot(trapPressureScore,           title="GENUT_B_TRAP_PRESSURE_SCORE", display=display.none)
+plot(fakeoutPressureScore,        title="GENUT_B_FAKEOUT_PRESSURE_SCORE", display=display.none)
+plot(float(briefingModeCode),     title="GENUT_B_BRIEFING_MODE_CODE", display=display.none)
+plot(flowShiftStrong ? 1.0 : 0.0, title="GENUT_B_FLOW_SHIFT_STRONG", display=display.none)
+plot(flowShiftWeak ? 1.0 : 0.0,   title="GENUT_B_FLOW_SHIFT_WEAK", display=display.none)
+plot(blockHard ? 1.0 : 0.0,       title="GENUT_B_BLOCK_HARD", display=display.none)
+plot(blockSoft ? 1.0 : 0.0,       title="GENUT_B_BLOCK_SOFT", display=display.none)
+plot(exitStrong ? 1.0 : 0.0,      title="GENUT_B_STRUCTURE_FADE_STRONG", display=display.none)
+plot(exitWeak ? 1.0 : 0.0,        title="GENUT_B_STRUCTURE_FADE_WEAK", display=display.none)
+plot(blockSourceMask,             title="GENUT_B_BLOCK_SOURCE_MASK", display=display.none)
+plot(blockPrewarn ? 1.0 : 0.0,    title="GENUT_B_BLOCK_PREWARN", display=display.none)
+plot(riskRising ? 1.0 : 0.0,      title="GENUT_B_RISK_RISING", display=display.none)
+plot(macroRising ? 1.0 : 0.0,     title="GENUT_B_MACRO_RISING", display=display.none)
+plot(liquidityRising ? 1.0 : 0.0, title="GENUT_B_LIQUIDITY_RISING", display=display.none)
+plot(trapRising ? 1.0 : 0.0,      title="GENUT_B_TRAP_RISING", display=display.none)
+plot(fakeoutRising ? 1.0 : 0.0,   title="GENUT_B_FAKEOUT_RISING", display=display.none)
+plot(entrySuppress ? 1.0 : 0.0,   title="GENUT_B_GATE_SUPPRESS", display=display.none)
+plot(hardExitOK ? 1.0 : 0.0,      title="GENUT_B_HARD_BLOCK_STATE", display=display.none)
+plot(structureScore,                  title="GENUT_B_STRUCTURE_SCORE", display=display.none)
+plot(structurePressureScore,          title="GENUT_B_STRUCTURE_PRESSURE_SCORE", display=display.none)
+plot(gateScoreB,                      title="GENUT_B_HETEM_GATE_SCORE", display=display.none)
+plot(pressureIndexB,                  title="GENUT_B_HETEM_PRESSURE_INDEX", display=display.none)
+plot(gateStateB == "OPEN" ? 1.0 : gateStateB == "BLOCKED" ? 2.0 : gateStateB == "CONGESTED" ? 3.0 : gateStateB == "CLEARING" ? 4.0 : gateStateB == "RISK" ? 5.0 : 0.0, title="GENUT_B_HETEM_GATE_STATE_CODE", display=display.none)
+plot(float(hetemBEventCode),          title="GENUT_B_HETEM_EVENT_CODE", display=display.none)
+plot(float(horusBTfRoleCode),         title="GENUT_B_TF_ROLE_CODE", display=display.none)
+plot(float(nextTfHintCode),           title="GENUT_B_NEXT_TF_HINT_CODE", display=display.none)
+plot(float(horusBModeCode),           title="GENUT_B_MODE_CODE", display=display.none)
+plot(float(horusBEventCode),          title="GENUT_B_EVENT_CODE", display=display.none)
+plot(kemiOk ? kemiScore : 0.0,        title="GENUT_B_KEMI_SCORE", display=display.none)
+plot(float(kemiCode),                 title="GENUT_B_KEMI_CODE", display=display.none)
+plot(kheperOk ? kheperScore : 0.0,    title="GENUT_B_KHEPER_SCORE", display=display.none)
+plot(float(kheperCode),               title="GENUT_B_KHEPER_CODE", display=display.none)
+plot(float(sensorMaskCode),           title="GENUT_B_SENSOR_MASK_CODE", display=display.none)
+
+//==================================================
+// HETEM Gate Alert Bus | Unified alert() JSON
+//==================================================
+string alertBusSeasonB = "AL HETEM"
+string alertBusSeasonCodeB = "HETEM"
+string alertBusGroupB = "B"
+string alertBusLayerB = "STRUCTURE"
+string alertBusDirB = f_dirCode(genutDir)
+string alertBusStateB = f_stateCode(genutState)
+string alertBusRiskB = f_riskCode(genutRisk)
+string alertBusRiskBandB = hetemBRiskBand
+string alertBusTotalB = f_numTxt(totalScore)
+string alertBusBlockB = blockHard ? "HARD_BLOCK" : blockSoft ? "SOFT_BLOCK" : blockPrewarn ? "PREWARN" : "CLEAR"
+string alertBusFlowB = flowSlope > 0 ? "UP" : flowSlope < 0 ? "DOWN" : "FLAT"
+string alertBusNextTfB = f_nextTfText(nextTfHintCode)
+string alertBusModeCodeB = str.tostring(horusBModeCode)
+string alertBusEventCodeB = str.tostring(hetemBEventCode)
+string alertBusEventSeverityB = f_numTxt(hetemBEventSeverity)
+string alertBusGawPolicyB = gawPolicyB
+string alertBusSchemaVersionB = gawSchemaVersionB
+string alertBusGateStateB = gateStateB
+string alertBusGateScoreB = f_numTxt(gateScoreB)
+string alertBusPressureIndexB = f_numTxt(pressureIndexB)
+string alertBusPressureBandB = hetemBPressureBand
+string alertBusKemiOkB = kemiOk ? "1" : "0"
+string alertBusKemiScoreB = f_numTxt(kemiScore)
+string alertBusKemiEventB = str.tostring(kemiEvent)
+string alertBusKemiConflictB = str.tostring(kemiConflictFlag)
+string alertBusKemiAbsorptionB = f_numTxt(kemiAbsorptionScore)
+string alertBusKemiDivergenceB = f_numTxt(kemiDivergenceScore)
+string alertBusKemiEffortResultB = f_numTxt(kemiEffortResultScore)
+string alertBusKheperOkB = kheperOk ? "1" : "0"
+string alertBusKheperScoreB = f_numTxt(kheperScore)
+string alertBusKheperEventB = str.tostring(kheperEvent)
+string alertBusKheperHandoffB = str.tostring(kheperHandoff)
+string alertBusKheperBridgeB = str.tostring(kheperBridge)
+string alertBusKheperVelocityB = str.tostring(kheperVelocity)
+string alertBusKheperCauseTfB = str.tostring(kheperCauseTf)
+string alertBusSensorMaskB = "CORE7"
+if useKemiSource
+    alertBusSensorMaskB += kemiOk ? "+KM" : "+MISS_KM"
+if useKheperSource
+    alertBusSensorMaskB += kheperOk ? "+KP" : "+MISS_KP"
+string alertBusStateSignatureB = timeframe.period + "|" + alertBusLayerB + "|" + alertBusDirB + "_" + alertBusStateB + "|" + alertBusRiskBandB + "|" + alertBusBlockB + "|" + alertBusGateStateB + "|" + alertBusPressureBandB + "|" + alertBusEventCodeB
+var string lastEventSignature = ""
+var string lastSnapshotKey = ""
+
+string snapshotKeyB = syminfo.tickerid + "|" + alertBusGroupB + "|" + alertBusLayerB + "|" + timeframe.period + "|" + str.tostring(time)
+string snapshotEventSignatureB = syminfo.tickerid + "|" + timeframe.period + "|" + alertBusLayerB + "|TF_SNAPSHOT|" + alertBusGateStateB + "|" + alertBusPressureBandB + "|" + alertBusBlockB + "|CLOSED"
+string snapshotDedupKeyB = f_keySafe(syminfo.tickerid + "_" + alertBusGroupB + "_" + alertBusLayerB + "_" + timeframe.period + "_TF_SNAPSHOT")
+string snapshotJsonB = f_makeAlertBusJson("SNAPSHOT", "TF_SNAPSHOT", "BAR_CLOSE", "CLOSED", alertBusSeasonB, alertBusSeasonCodeB, alertBusGroupB, alertBusLayerB, alertBusDirB, alertBusStateB, alertBusRiskB, alertBusTotalB, alertBusBlockB, alertBusFlowB, alertBusNextTfB, alertBusModeCodeB, alertBusEventCodeB, alertBusEventSeverityB, alertBusGawPolicyB, alertBusSchemaVersionB, alertBusGateStateB, alertBusGateScoreB, alertBusPressureIndexB, alertBusKemiOkB, alertBusKemiScoreB, alertBusKemiEventB, alertBusKemiConflictB, alertBusKemiAbsorptionB, alertBusKemiDivergenceB, alertBusKemiEffortResultB, alertBusKheperOkB, alertBusKheperScoreB, alertBusKheperEventB, alertBusKheperHandoffB, alertBusKheperBridgeB, alertBusKheperVelocityB, alertBusKheperCauseTfB, alertBusSensorMaskB, alertBusStateSignatureB, snapshotEventSignatureB, snapshotDedupKeyB, briefPolicy, gptAllowed, voiceAllowed, alertVersion)
+if enableAlertBus and sendSnapshots and barstate.isconfirmed and barstate.isrealtime and snapshotKeyB != lastSnapshotKey
+    alert(snapshotJsonB, alert.freq_once_per_bar_close)
+    lastSnapshotKey := snapshotKeyB
+
+bool evStructureShift = structureLeadAlert or nextTfOpenAlert
+bool evGateBlocked = gateBlockedAlertB
+bool evGateClearing = gateClearingAlertB
+bool evBlockPrewarn = blockPrewarnAlert
+bool evRecoveryFail = recoveryFailAlert
+bool evTrapFakeoutWait = trapFakeoutWaitAlert
+bool evStructureShiftEdge = evStructureShift and not evStructureShift[1]
+bool evGateBlockedEdge = evGateBlocked and not evGateBlocked[1]
+bool evGateClearingEdge = evGateClearing and not evGateClearing[1]
+bool evBlockPrewarnEdge = evBlockPrewarn and not evBlockPrewarn[1]
+bool evRecoveryFailEdge = evRecoveryFail and not evRecoveryFail[1]
+bool evTrapFakeoutWaitEdge = evTrapFakeoutWait and not evTrapFakeoutWait[1]
+bool alertBusTriggerAllowedB = allowLiveTriggers and barstate.isrealtime
+
+string structureShiftEventSignatureB = syminfo.tickerid + "|" + timeframe.period + "|" + alertBusLayerB + "|STRUCTURE_SHIFT|" + alertBusGateStateB + "|" + alertBusPressureBandB + "|" + alertBusBlockB + "|RT"
+string structureShiftDedupKeyB = f_keySafe(syminfo.tickerid + "_" + alertBusGroupB + "_" + alertBusLayerB + "_" + timeframe.period + "_STRUCTURE_SHIFT")
+string structureShiftJsonB = f_makeAlertBusJson("TRIGGER", "STRUCTURE_SHIFT", "EDGE_CHANGED", "RT", alertBusSeasonB, alertBusSeasonCodeB, alertBusGroupB, alertBusLayerB, alertBusDirB, alertBusStateB, alertBusRiskB, alertBusTotalB, alertBusBlockB, alertBusFlowB, alertBusNextTfB, alertBusModeCodeB, alertBusEventCodeB, alertBusEventSeverityB, alertBusGawPolicyB, alertBusSchemaVersionB, alertBusGateStateB, alertBusGateScoreB, alertBusPressureIndexB, alertBusKemiOkB, alertBusKemiScoreB, alertBusKemiEventB, alertBusKemiConflictB, alertBusKemiAbsorptionB, alertBusKemiDivergenceB, alertBusKemiEffortResultB, alertBusKheperOkB, alertBusKheperScoreB, alertBusKheperEventB, alertBusKheperHandoffB, alertBusKheperBridgeB, alertBusKheperVelocityB, alertBusKheperCauseTfB, alertBusSensorMaskB, alertBusStateSignatureB, structureShiftEventSignatureB, structureShiftDedupKeyB, briefPolicy, gptAllowed, voiceAllowed, alertVersion)
+if enableAlertBus and sendTriggers and alertBusTriggerAllowedB and evStructureShiftEdge and structureShiftEventSignatureB != lastEventSignature
+    alert(structureShiftJsonB, alert.freq_once_per_bar)
+    lastEventSignature := structureShiftEventSignatureB
+
+string gateBlockedEventSignatureB = syminfo.tickerid + "|" + timeframe.period + "|" + alertBusLayerB + "|GATE_BLOCKED|" + alertBusGateStateB + "|" + alertBusPressureBandB + "|" + alertBusBlockB + "|RT"
+string gateBlockedDedupKeyB = f_keySafe(syminfo.tickerid + "_" + alertBusGroupB + "_" + alertBusLayerB + "_" + timeframe.period + "_GATE_BLOCKED")
+string gateBlockedJsonB = f_makeAlertBusJson("TRIGGER", "GATE_BLOCKED", "EDGE_CHANGED", "RT", alertBusSeasonB, alertBusSeasonCodeB, alertBusGroupB, alertBusLayerB, alertBusDirB, alertBusStateB, alertBusRiskB, alertBusTotalB, alertBusBlockB, alertBusFlowB, alertBusNextTfB, alertBusModeCodeB, alertBusEventCodeB, alertBusEventSeverityB, alertBusGawPolicyB, alertBusSchemaVersionB, alertBusGateStateB, alertBusGateScoreB, alertBusPressureIndexB, alertBusKemiOkB, alertBusKemiScoreB, alertBusKemiEventB, alertBusKemiConflictB, alertBusKemiAbsorptionB, alertBusKemiDivergenceB, alertBusKemiEffortResultB, alertBusKheperOkB, alertBusKheperScoreB, alertBusKheperEventB, alertBusKheperHandoffB, alertBusKheperBridgeB, alertBusKheperVelocityB, alertBusKheperCauseTfB, alertBusSensorMaskB, alertBusStateSignatureB, gateBlockedEventSignatureB, gateBlockedDedupKeyB, briefPolicy, gptAllowed, voiceAllowed, alertVersion)
+if enableAlertBus and sendTriggers and alertBusTriggerAllowedB and evGateBlockedEdge and gateBlockedEventSignatureB != lastEventSignature
+    alert(gateBlockedJsonB, alert.freq_once_per_bar)
+    lastEventSignature := gateBlockedEventSignatureB
+
+string gateClearingEventSignatureB = syminfo.tickerid + "|" + timeframe.period + "|" + alertBusLayerB + "|GATE_CLEARING|" + alertBusGateStateB + "|" + alertBusPressureBandB + "|" + alertBusBlockB + "|RT"
+string gateClearingDedupKeyB = f_keySafe(syminfo.tickerid + "_" + alertBusGroupB + "_" + alertBusLayerB + "_" + timeframe.period + "_GATE_CLEARING")
+string gateClearingJsonB = f_makeAlertBusJson("TRIGGER", "GATE_CLEARING", "EDGE_CHANGED", "RT", alertBusSeasonB, alertBusSeasonCodeB, alertBusGroupB, alertBusLayerB, alertBusDirB, alertBusStateB, alertBusRiskB, alertBusTotalB, alertBusBlockB, alertBusFlowB, alertBusNextTfB, alertBusModeCodeB, alertBusEventCodeB, alertBusEventSeverityB, alertBusGawPolicyB, alertBusSchemaVersionB, alertBusGateStateB, alertBusGateScoreB, alertBusPressureIndexB, alertBusKemiOkB, alertBusKemiScoreB, alertBusKemiEventB, alertBusKemiConflictB, alertBusKemiAbsorptionB, alertBusKemiDivergenceB, alertBusKemiEffortResultB, alertBusKheperOkB, alertBusKheperScoreB, alertBusKheperEventB, alertBusKheperHandoffB, alertBusKheperBridgeB, alertBusKheperVelocityB, alertBusKheperCauseTfB, alertBusSensorMaskB, alertBusStateSignatureB, gateClearingEventSignatureB, gateClearingDedupKeyB, briefPolicy, gptAllowed, voiceAllowed, alertVersion)
+if enableAlertBus and sendTriggers and alertBusTriggerAllowedB and evGateClearingEdge and gateClearingEventSignatureB != lastEventSignature
+    alert(gateClearingJsonB, alert.freq_once_per_bar)
+    lastEventSignature := gateClearingEventSignatureB
+
+string blockPrewarnEventSignatureB = syminfo.tickerid + "|" + timeframe.period + "|" + alertBusLayerB + "|BLOCK_PREWARN|" + alertBusGateStateB + "|" + alertBusPressureBandB + "|" + alertBusBlockB + "|RT"
+string blockPrewarnDedupKeyB = f_keySafe(syminfo.tickerid + "_" + alertBusGroupB + "_" + alertBusLayerB + "_" + timeframe.period + "_BLOCK_PREWARN")
+string blockPrewarnJsonB = f_makeAlertBusJson("TRIGGER", "BLOCK_PREWARN", "EDGE_CHANGED", "RT", alertBusSeasonB, alertBusSeasonCodeB, alertBusGroupB, alertBusLayerB, alertBusDirB, alertBusStateB, alertBusRiskB, alertBusTotalB, alertBusBlockB, alertBusFlowB, alertBusNextTfB, alertBusModeCodeB, alertBusEventCodeB, alertBusEventSeverityB, alertBusGawPolicyB, alertBusSchemaVersionB, alertBusGateStateB, alertBusGateScoreB, alertBusPressureIndexB, alertBusKemiOkB, alertBusKemiScoreB, alertBusKemiEventB, alertBusKemiConflictB, alertBusKemiAbsorptionB, alertBusKemiDivergenceB, alertBusKemiEffortResultB, alertBusKheperOkB, alertBusKheperScoreB, alertBusKheperEventB, alertBusKheperHandoffB, alertBusKheperBridgeB, alertBusKheperVelocityB, alertBusKheperCauseTfB, alertBusSensorMaskB, alertBusStateSignatureB, blockPrewarnEventSignatureB, blockPrewarnDedupKeyB, briefPolicy, gptAllowed, voiceAllowed, alertVersion)
+if enableAlertBus and sendTriggers and alertBusTriggerAllowedB and evBlockPrewarnEdge and blockPrewarnEventSignatureB != lastEventSignature
+    alert(blockPrewarnJsonB, alert.freq_once_per_bar)
+    lastEventSignature := blockPrewarnEventSignatureB
+
+string recoveryFailEventSignatureB = syminfo.tickerid + "|" + timeframe.period + "|" + alertBusLayerB + "|RECOVERY_FAIL|" + alertBusGateStateB + "|" + alertBusPressureBandB + "|" + alertBusBlockB + "|RT"
+string recoveryFailDedupKeyB = f_keySafe(syminfo.tickerid + "_" + alertBusGroupB + "_" + alertBusLayerB + "_" + timeframe.period + "_RECOVERY_FAIL")
+string recoveryFailJsonB = f_makeAlertBusJson("TRIGGER", "RECOVERY_FAIL", "EDGE_CHANGED", "RT", alertBusSeasonB, alertBusSeasonCodeB, alertBusGroupB, alertBusLayerB, alertBusDirB, alertBusStateB, alertBusRiskB, alertBusTotalB, alertBusBlockB, alertBusFlowB, alertBusNextTfB, alertBusModeCodeB, alertBusEventCodeB, alertBusEventSeverityB, alertBusGawPolicyB, alertBusSchemaVersionB, alertBusGateStateB, alertBusGateScoreB, alertBusPressureIndexB, alertBusKemiOkB, alertBusKemiScoreB, alertBusKemiEventB, alertBusKemiConflictB, alertBusKemiAbsorptionB, alertBusKemiDivergenceB, alertBusKemiEffortResultB, alertBusKheperOkB, alertBusKheperScoreB, alertBusKheperEventB, alertBusKheperHandoffB, alertBusKheperBridgeB, alertBusKheperVelocityB, alertBusKheperCauseTfB, alertBusSensorMaskB, alertBusStateSignatureB, recoveryFailEventSignatureB, recoveryFailDedupKeyB, briefPolicy, gptAllowed, voiceAllowed, alertVersion)
+if enableAlertBus and sendTriggers and alertBusTriggerAllowedB and evRecoveryFailEdge and recoveryFailEventSignatureB != lastEventSignature
+    alert(recoveryFailJsonB, alert.freq_once_per_bar)
+    lastEventSignature := recoveryFailEventSignatureB
+
+string trapFakeoutWaitEventSignatureB = syminfo.tickerid + "|" + timeframe.period + "|" + alertBusLayerB + "|TRAP_FAKEOUT_WAIT|" + alertBusGateStateB + "|" + alertBusPressureBandB + "|" + alertBusBlockB + "|RT"
+string trapFakeoutWaitDedupKeyB = f_keySafe(syminfo.tickerid + "_" + alertBusGroupB + "_" + alertBusLayerB + "_" + timeframe.period + "_TRAP_FAKEOUT_WAIT")
+string trapFakeoutWaitJsonB = f_makeAlertBusJson("TRIGGER", "TRAP_FAKEOUT_WAIT", "EDGE_CHANGED", "RT", alertBusSeasonB, alertBusSeasonCodeB, alertBusGroupB, alertBusLayerB, alertBusDirB, alertBusStateB, alertBusRiskB, alertBusTotalB, alertBusBlockB, alertBusFlowB, alertBusNextTfB, alertBusModeCodeB, alertBusEventCodeB, alertBusEventSeverityB, alertBusGawPolicyB, alertBusSchemaVersionB, alertBusGateStateB, alertBusGateScoreB, alertBusPressureIndexB, alertBusKemiOkB, alertBusKemiScoreB, alertBusKemiEventB, alertBusKemiConflictB, alertBusKemiAbsorptionB, alertBusKemiDivergenceB, alertBusKemiEffortResultB, alertBusKheperOkB, alertBusKheperScoreB, alertBusKheperEventB, alertBusKheperHandoffB, alertBusKheperBridgeB, alertBusKheperVelocityB, alertBusKheperCauseTfB, alertBusSensorMaskB, alertBusStateSignatureB, trapFakeoutWaitEventSignatureB, trapFakeoutWaitDedupKeyB, briefPolicy, gptAllowed, voiceAllowed, alertVersion)
+if enableAlertBus and sendTriggers and alertBusTriggerAllowedB and evTrapFakeoutWaitEdge and trapFakeoutWaitEventSignatureB != lastEventSignature
+    alert(trapFakeoutWaitJsonB, alert.freq_once_per_bar)
+    lastEventSignature := trapFakeoutWaitEventSignatureB
+
+// Legacy alertcondition() outputs removed for slim relay plot budget.

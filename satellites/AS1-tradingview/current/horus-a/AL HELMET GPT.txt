@@ -1,0 +1,394 @@
+//@version=6
+indicator("AL HELMET GPT", overlay=true, max_bars_back=3000, max_labels_count=0)
+
+//==================================================
+// [0] GPT 표
+//==================================================
+string GROUP_PANEL = "헬멧 G | 표"
+
+bool   showTable      = input.bool(false, "GPT 표 표시", group=GROUP_PANEL, display=display.none)
+string tablePosOpt    = input.string("TR", "표 위치", options=["TL","TC","TR","ML","MC","MR","BL","BC","BR"], group=GROUP_PANEL, display=display.none)
+string tableSizeOpt   = input.string("SMALL", "표 크기", options=["TINY","SMALL","NORMAL","LARGE"], group=GROUP_PANEL, display=display.none)
+color  headerBg       = input.color(color.new(color.black, 0), "헤더 배경", group=GROUP_PANEL, display=display.none)
+color  cellBg         = input.color(color.new(color.black, 8), "셀 배경", group=GROUP_PANEL, display=display.none)
+color  headerText     = input.color(color.white, "헤더 글자색", group=GROUP_PANEL, display=display.none)
+color  keyTextColor   = input.color(color.silver, "KEY 글자색", group=GROUP_PANEL, display=display.none)
+color  codeTextColor  = input.color(color.white, "CODE 글자색", group=GROUP_PANEL, display=display.none)
+color  numTextColor   = input.color(color.aqua, "NUM 글자색", group=GROUP_PANEL, display=display.none)
+color  noteTextColor  = input.color(color.orange, "NOTE 글자색", group=GROUP_PANEL, display=display.none)
+
+//==================================================
+// [1] 핵심
+//==================================================
+string GROUP_CORE   = "헬멧 G | 핵심"
+string GROUP_FILTER = "헬멧 G | 필터"
+string GROUP_OUTPUT = "헬멧 G | 출력"
+string GROUP_ALERT  = "헬멧 G | 얼러트"
+
+int   sweepLookback = input.int(24, "스윕 탐색 길이", minval=5, maxval=300, group=GROUP_CORE, display=display.none)
+int   atrLen        = input.int(14, "ATR 길이", minval=5, maxval=100, group=GROUP_CORE, display=display.none)
+float wickATRMult   = input.float(1.25, "윅 강도 (ATR x)", step=0.05, group=GROUP_CORE, display=display.none)
+int   recentBars    = input.int(6, "최근 스윕 유지 구간", minval=1, maxval=200, group=GROUP_CORE, display=display.none)
+
+bool  requireRejection = input.bool(true, "리젝션 종가 필수", group=GROUP_FILTER, display=display.none)
+float minBodyATRMult   = input.float(0.05, "최소 몸통 (ATR x)", step=0.01, group=GROUP_FILTER, display=display.none)
+
+int kMid    = input.int(45, "K 중간", minval=10, maxval=99, group=GROUP_OUTPUT, display=display.none)
+int kStrong = input.int(75, "K 강함", minval=20, maxval=100, group=GROUP_OUTPUT, display=display.none)
+
+bool useAlerts = input.bool(true, "GPT 얼러트 사용", group=GROUP_ALERT, display=display.none)
+
+//==================================================
+// [2] 헬퍼
+//==================================================
+f_clampInt(_v, _min, _max) =>
+    math.max(_min, math.min(_max, _v))
+
+f_clamp01(_v) =>
+    math.max(0.0, math.min(1.0, _v))
+
+f_tablePos(_opt) =>
+    pos = position.top_right
+    if _opt == "TL"
+        pos := position.top_left
+    else if _opt == "TC"
+        pos := position.top_center
+    else if _opt == "TR"
+        pos := position.top_right
+    else if _opt == "ML"
+        pos := position.middle_left
+    else if _opt == "MC"
+        pos := position.middle_center
+    else if _opt == "MR"
+        pos := position.middle_right
+    else if _opt == "BL"
+        pos := position.bottom_left
+    else if _opt == "BC"
+        pos := position.bottom_center
+    else
+        pos := position.bottom_right
+    pos
+
+f_textSize(_opt) =>
+    sz = size.small
+    if _opt == "TINY"
+        sz := size.tiny
+    else if _opt == "SMALL"
+        sz := size.small
+    else if _opt == "NORMAL"
+        sz := size.normal
+    else
+        sz := size.large
+    sz
+
+f_dirCode(_dir) =>
+    string out = "FLAT"
+    if _dir > 0
+        out := "UP"
+    else if _dir < 0
+        out := "DOWN"
+    else
+        out := "FLAT"
+    out
+
+f_stateCode(_state) =>
+    string out = "IDLE"
+    if _state == 2
+        out := "TRIG"
+    else if _state == 1
+        out := "SET"
+    else if _state == 3
+        out := "HOLD"
+    else if _state == 4
+        out := "FAIL"
+    else
+        out := "IDLE"
+    out
+
+f_scoreCode(_k) =>
+    string out = "LOW"
+    if _k >= 80
+        out := "STR"
+    else if _k >= 55
+        out := "MID"
+    else
+        out := "LOW"
+    out
+
+f_evtCode(_evt) =>
+    string out = "NONE"
+    if _evt == 20
+        out := "UPPER_SWEEP"
+    else if _evt == 21
+        out := "LOWER_SWEEP"
+    else if _evt == 22
+        out := "UPPER_REJECT"
+    else if _evt == 23
+        out := "LOWER_RECOVER"
+    else if _evt == 24
+        out := "SWEEP_FAIL"
+    else if _evt == 25
+        out := "SWEEP_ACCEPT"
+    else if _evt == 26
+        out := "RARE_WARN"
+    else if _evt == 30
+        out := "RECENT_UPPER"
+    else if _evt == 31
+        out := "RECENT_LOWER"
+    else
+        out := "NONE"
+    out
+
+f_note(_state, _evt, _res) =>
+    string out = "WAIT"
+    if _evt == 26
+        out := "RARE SWEEP WARNING"
+    else if _evt == 24
+        out := "SWEEP INVALIDATED"
+    else if _evt == 25
+        out := "SWEEP ACCEPT"
+    else if _evt == 22
+        out := "UPPER SWEEP REJECT"
+    else if _evt == 23
+        out := "LOWER SWEEP RECOVER"
+    else if _evt == 30 or _evt == 31
+        out := "RECENT SWEEP EFFECT"
+    else if _state == 3
+        out := "POST SWEEP PRESSURE"
+    else if _state == 1
+        out := "SWEEP WATCH"
+    else if _res >= 4
+        out := "STRONG RES"
+    else
+        out := "NEUTRAL"
+    out
+
+//==================================================
+// [3] 기본 계산
+//==================================================
+float atrV = ta.atr(atrLen)
+bool enough = bar_index > (sweepLookback + atrLen + 10)
+
+float wickUp = high - math.max(open, close)
+float wickDn = math.min(open, close) - low
+float body   = math.abs(close - open)
+float candleRange = math.max(high - low, syminfo.mintick)
+float closePos = f_clamp01((close - low) / candleRange)
+
+float hiPrev = ta.highest(high[1], sweepLookback)
+float loPrev = ta.lowest(low[1],  sweepLookback)
+
+bool hiOk = not na(hiPrev)
+bool loOk = not na(loPrev)
+
+bool bodyOK = atrV > 0 ? (body >= atrV * minBodyATRMult) : true
+
+bool rawUpperSweep = enough and hiOk and high > hiPrev and wickUp >= atrV * wickATRMult and bodyOK
+bool rawLowerSweep = enough and loOk and low < loPrev and wickDn >= atrV * wickATRMult and bodyOK
+
+bool upperSweepReject = rawUpperSweep and (close < hiPrev or (not requireRejection and closePos <= 0.45))
+bool lowerSweepRecover = rawLowerSweep and (close > loPrev or (not requireRejection and closePos >= 0.55))
+bool upperSweepAccept = rawUpperSweep and not upperSweepReject and close >= hiPrev
+bool lowerSweepAccept = rawLowerSweep and not lowerSweepRecover and close <= loPrev
+
+var float lastUpperRejectLevel = na
+var float lastLowerRecoverLevel = na
+var int lastUpperRejectBar = na
+var int lastLowerRecoverBar = na
+
+bool upperSweepFail = not upperSweepReject and not upperSweepAccept and not na(lastUpperRejectLevel) and not na(lastUpperRejectBar) and bar_index > lastUpperRejectBar and (bar_index - lastUpperRejectBar <= recentBars) and close > lastUpperRejectLevel
+bool lowerSweepFail = not lowerSweepRecover and not lowerSweepAccept and not na(lastLowerRecoverLevel) and not na(lastLowerRecoverBar) and bar_index > lastLowerRecoverBar and (bar_index - lastLowerRecoverBar <= recentBars) and close < lastLowerRecoverLevel
+
+if upperSweepReject
+    lastUpperRejectLevel := hiPrev
+    lastUpperRejectBar := bar_index
+
+if lowerSweepRecover
+    lastLowerRecoverLevel := loPrev
+    lastLowerRecoverBar := bar_index
+
+int barsSinceUpperReject = ta.barssince(upperSweepReject)
+int barsSinceLowerRecover = ta.barssince(lowerSweepRecover)
+bool recentUpperEffect = barsSinceUpperReject >= 0 and barsSinceUpperReject <= recentBars and not upperSweepFail
+bool recentLowerEffect = barsSinceLowerRecover >= 0 and barsSinceLowerRecover <= recentBars and not lowerSweepFail
+
+float upperWickPart = atrV > 0 ? f_clamp01(wickUp / math.max(atrV * wickATRMult * 1.60, syminfo.mintick)) : 0.0
+float lowerWickPart = atrV > 0 ? f_clamp01(wickDn / math.max(atrV * wickATRMult * 1.60, syminfo.mintick)) : 0.0
+float bodyPart = atrV > 0 ? f_clamp01(body / math.max(atrV * 0.85, syminfo.mintick)) : 0.0
+float upperRejectClosePart = f_clamp01((1.0 - closePos) * 1.35)
+float lowerRecoverClosePart = f_clamp01(closePos * 1.35)
+float upperAcceptClosePart = f_clamp01(closePos * 1.20)
+float lowerAcceptClosePart = f_clamp01((1.0 - closePos) * 1.20)
+
+float upperSweepRejectScore = upperSweepReject ? 100.0 * f_clamp01(0.42 * upperWickPart + 0.32 * upperRejectClosePart + 0.16 * bodyPart + 0.10 * f_clamp01((high - hiPrev) / math.max(atrV, syminfo.mintick))) : 0.0
+float lowerSweepRecoverScore = lowerSweepRecover ? 100.0 * f_clamp01(0.42 * lowerWickPart + 0.32 * lowerRecoverClosePart + 0.16 * bodyPart + 0.10 * f_clamp01((loPrev - low) / math.max(atrV, syminfo.mintick))) : 0.0
+float sweepAcceptScore = 0.0
+sweepAcceptScore := upperSweepAccept ? math.max(sweepAcceptScore, 100.0 * f_clamp01(0.44 * upperWickPart + 0.34 * upperAcceptClosePart + 0.14 * bodyPart + 0.08 * f_clamp01((close - hiPrev) / math.max(atrV, syminfo.mintick)))) : sweepAcceptScore
+sweepAcceptScore := lowerSweepAccept ? math.max(sweepAcceptScore, 100.0 * f_clamp01(0.44 * lowerWickPart + 0.34 * lowerAcceptClosePart + 0.14 * bodyPart + 0.08 * f_clamp01((loPrev - close) / math.max(atrV, syminfo.mintick)))) : sweepAcceptScore
+
+float upperRejectBase = nz(ta.valuewhen(upperSweepReject, upperSweepRejectScore, 0), 0.0)
+float lowerRecoverBase = nz(ta.valuewhen(lowerSweepRecover, lowerSweepRecoverScore, 0), 0.0)
+float upperRecentFade = recentUpperEffect ? 1.0 - f_clamp01(float(barsSinceUpperReject) / math.max(1.0, float(recentBars))) * 0.70 : 0.0
+float lowerRecentFade = recentLowerEffect ? 1.0 - f_clamp01(float(barsSinceLowerRecover) / math.max(1.0, float(recentBars))) * 0.70 : 0.0
+float recentSweepEffect = math.max(upperRejectBase * upperRecentFade, lowerRecoverBase * lowerRecentFade)
+
+float sweepFailScore = (upperSweepFail or lowerSweepFail) ? 100.0 * f_clamp01(0.56 * recentSweepEffect / 100.0 + 0.28 * bodyPart + 0.16 * (upperSweepFail ? closePos : 1.0 - closePos)) : 0.0
+float rareWarningScore = 0.0
+rareWarningScore := upperSweepReject and upperSweepRejectScore >= kStrong and upperWickPart >= 0.82 and closePos <= 0.36 ? math.max(rareWarningScore, upperSweepRejectScore) : rareWarningScore
+rareWarningScore := lowerSweepRecover and lowerSweepRecoverScore >= kStrong and lowerWickPart >= 0.82 and closePos >= 0.64 ? math.max(rareWarningScore, lowerSweepRecoverScore) : rareWarningScore
+float sweepTrapPressure = math.max(upperSweepRejectScore, lowerSweepRecoverScore) * 0.62 + recentSweepEffect * 0.28 + sweepFailScore * 0.10
+sweepTrapPressure := math.min(100.0, sweepTrapPressure)
+
+int helmetDir = 0
+if upperSweepReject and upperSweepRejectScore >= kMid
+    helmetDir := -1
+else if lowerSweepRecover and lowerSweepRecoverScore >= kMid
+    helmetDir := 1
+else
+    helmetDir := 0
+
+bool sweepWatch = rawUpperSweep or rawLowerSweep
+bool confirmedSweepRisk = upperSweepReject or lowerSweepRecover or upperSweepAccept or lowerSweepAccept
+
+int helmetState = 0
+if upperSweepFail or lowerSweepFail
+    helmetState := 4
+else if confirmedSweepRisk or rareWarningScore > 0.0
+    helmetState := 2
+else if recentUpperEffect or recentLowerEffect
+    helmetState := 3
+else if sweepWatch
+    helmetState := 1
+else
+    helmetState := 0
+
+float helmetScoreF = math.max(math.max(upperSweepRejectScore, lowerSweepRecoverScore), math.max(sweepAcceptScore, math.max(sweepFailScore, math.max(recentSweepEffect, math.max(rareWarningScore, sweepTrapPressure)))))
+int helmetK = int(math.round(helmetScoreF))
+helmetK := f_clampInt(helmetK, 0, 100)
+
+int helmetRes = 0
+if rareWarningScore >= 75.0
+    helmetRes := 5
+else if math.max(upperSweepRejectScore, lowerSweepRecoverScore) >= kStrong
+    helmetRes := 4
+else if sweepFailScore >= 65.0 or sweepAcceptScore >= 65.0 or sweepTrapPressure >= 70.0
+    helmetRes := 3
+else if recentSweepEffect >= kMid
+    helmetRes := 2
+else if sweepWatch or helmetK >= 35
+    helmetRes := 1
+else
+    helmetRes := 0
+
+helmetRes := f_clampInt(helmetRes, 0, 5)
+
+int helmetEvt = 0
+if rareWarningScore > 0.0
+    helmetEvt := 26
+else if upperSweepFail or lowerSweepFail
+    helmetEvt := 24
+else if upperSweepReject
+    helmetEvt := 22
+else if lowerSweepRecover
+    helmetEvt := 23
+else if upperSweepAccept or lowerSweepAccept
+    helmetEvt := 25
+else if rawUpperSweep
+    helmetEvt := 20
+else if rawLowerSweep
+    helmetEvt := 21
+else if recentUpperEffect
+    helmetEvt := 30
+else if recentLowerEffect
+    helmetEvt := 31
+else
+    helmetEvt := 0
+
+int helmetActiveFlag = (helmetState != 0 or helmetK >= 35 or helmetEvt != 0) ? 1 : 0
+
+//==================================================
+// [4] GPT 표
+//==================================================
+var table helmetTable = na
+
+if barstate.islast and showTable
+    if na(helmetTable)
+        helmetTable := table.new(f_tablePos(tablePosOpt), 4, 7, border_width=1)
+    table.cell(helmetTable, 0, 0, "KEY",  text_color=headerText, bgcolor=headerBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(helmetTable, 1, 0, "CODE", text_color=headerText, bgcolor=headerBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(helmetTable, 2, 0, "NUM",  text_color=headerText, bgcolor=headerBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(helmetTable, 3, 0, "NOTE", text_color=headerText, bgcolor=headerBg, text_size=f_textSize(tableSizeOpt))
+
+    table.cell(helmetTable, 0, 1, "DIR", text_color=keyTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(helmetTable, 1, 1, f_dirCode(helmetDir), text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(helmetTable, 2, 1, str.tostring(helmetDir), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(helmetTable, 3, 1, helmetDir == 0 ? "flat" : "sweep dir", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+
+    table.cell(helmetTable, 0, 2, "STATE", text_color=keyTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(helmetTable, 1, 2, f_stateCode(helmetState), text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(helmetTable, 2, 2, str.tostring(helmetState), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(helmetTable, 3, 2, f_note(helmetState, helmetEvt, helmetRes), text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+
+    table.cell(helmetTable, 0, 3, "SCORE", text_color=keyTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(helmetTable, 1, 3, f_scoreCode(helmetK), text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(helmetTable, 2, 3, str.tostring(helmetK), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(helmetTable, 3, 3, "0-100", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+
+    table.cell(helmetTable, 0, 4, "RES", text_color=keyTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(helmetTable, 1, 4, helmetRes >= 4 ? "STRONG" : helmetRes >= 2 ? "MID" : "LOW", text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(helmetTable, 2, 4, str.tostring(helmetRes), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(helmetTable, 3, 4, "0-5", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+
+    table.cell(helmetTable, 0, 5, "EVENT", text_color=keyTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(helmetTable, 1, 5, f_evtCode(helmetEvt), text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(helmetTable, 2, 5, str.tostring(helmetEvt), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(helmetTable, 3, 5, "sweep/recent", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+
+    table.cell(helmetTable, 0, 6, "ACTIVE", text_color=keyTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(helmetTable, 1, 6, helmetActiveFlag == 1 ? "ON" : "OFF", text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(helmetTable, 2, 6, str.tostring(helmetActiveFlag), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(helmetTable, 3, 6, "sensor", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+if barstate.islast and not showTable
+    if not na(helmetTable)
+        table.delete(helmetTable)
+        helmetTable := na
+
+//==================================================
+// [5] GPT 얼러트
+//==================================================
+int prevHelmetState = bar_index > 0 ? helmetState[1] : 0
+int prevHelmetEvt   = bar_index > 0 ? helmetEvt[1] : 0
+float prevHelmetRes = bar_index > 0 ? helmetRes[1] : 0.0
+int prevActiveFlag  = bar_index > 0 ? helmetActiveFlag[1] : 0
+
+bool helmetSweepUpStart     = (helmetEvt == 20 or helmetEvt == 22) and prevHelmetEvt != helmetEvt
+bool helmetSweepDnStart     = (helmetEvt == 21 or helmetEvt == 23) and prevHelmetEvt != helmetEvt
+bool helmetRecentBearStart  = helmetEvt == 30 and prevHelmetEvt != 30
+bool helmetRecentBullStart  = helmetEvt == 31 and prevHelmetEvt != 31
+bool helmetBullStrongStart  = helmetDir > 0 and helmetState == 2 and prevHelmetState != 2
+bool helmetBearStrongStart  = helmetDir < 0 and helmetState == 2 and prevHelmetState != 2
+bool helmetSweepFailStart   = helmetEvt == 24 and prevHelmetEvt != 24
+bool helmetRareWarnStart    = helmetEvt == 26 and prevHelmetEvt != 26
+bool helmetStrongResStart   = helmetRes >= 4 and prevHelmetRes < 4
+bool helmetActiveOn         = helmetActiveFlag == 1 and prevActiveFlag == 0
+
+alertcondition(useAlerts and helmetSweepUpStart,    title="AL HELMET G | SWEEP UP",     message="AL_HELMET_G,SWEEP_UP")
+alertcondition(useAlerts and helmetSweepDnStart,    title="AL HELMET G | SWEEP DOWN",   message="AL_HELMET_G,SWEEP_DOWN")
+alertcondition(useAlerts and helmetRecentBearStart, title="AL HELMET G | RECENT BEAR",  message="AL_HELMET_G,RECENT_BEAR")
+alertcondition(useAlerts and helmetRecentBullStart, title="AL HELMET G | RECENT BULL",  message="AL_HELMET_G,RECENT_BULL")
+alertcondition(useAlerts and helmetBullStrongStart, title="AL HELMET G | STRONG BULL",  message="AL_HELMET_G,STRONG_BULL")
+alertcondition(useAlerts and helmetBearStrongStart, title="AL HELMET G | STRONG BEAR",  message="AL_HELMET_G,STRONG_BEAR")
+alertcondition(useAlerts and helmetSweepFailStart,  title="AL HELMET G | SWEEP FAIL",   message="AL_HELMET_G,SWEEP_FAIL")
+alertcondition(useAlerts and helmetRareWarnStart,   title="AL HELMET G | RARE WARN",    message="AL_HELMET_G,RARE_WARN")
+alertcondition(useAlerts and helmetStrongResStart,  title="AL HELMET G | STRONG RES",   message="AL_HELMET_G,STRONG_RES")
+alertcondition(useAlerts and helmetActiveOn,        title="AL HELMET G | ACTIVE",       message="AL_HELMET_G,ACTIVE")
+
+//==================================================
+// [6] LINK6 숨김 출력
+//==================================================
+plot(float(helmetDir),        title="AL_HELMET_DIRECTION",   display=display.none)
+plot(float(helmetState),      title="AL_HELMET_STATE",       display=display.none)
+plot(float(helmetK),          title="AL_HELMET_SCORE",       display=display.none)
+plot(float(helmetRes),        title="AL_HELMET_RESISTANCE",  display=display.none)
+plot(float(helmetEvt),        title="AL_HELMET_EVENT",       display=display.none)
+plot(float(helmetActiveFlag), title="AL_HELMET_ACTIVE_FLAG", display=display.none)

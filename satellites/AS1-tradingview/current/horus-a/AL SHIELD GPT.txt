@@ -1,0 +1,420 @@
+//@version=6
+indicator("AL SHIELD GPT", overlay=true, max_labels_count=0, max_lines_count=20, max_bars_back=3000)
+
+//==================================================
+// [0] 표
+//==================================================
+string GROUP_PANEL = "방패 G | 표"
+
+bool   showTable      = input.bool(true, "GPT 표 표시", group=GROUP_PANEL, display=display.none)
+string tablePosOpt    = input.string("TR", "표 위치", options=["TL","TC","TR","ML","MC","MR","BL","BC","BR"], group=GROUP_PANEL, display=display.none)
+string tableSizeOpt   = input.string("SMALL", "표 크기", options=["TINY","SMALL","NORMAL","LARGE"], group=GROUP_PANEL, display=display.none)
+color  headerBg       = input.color(color.new(color.black, 0), "헤더 배경", group=GROUP_PANEL, display=display.none)
+color  cellBg         = input.color(color.new(color.black, 8), "셀 배경", group=GROUP_PANEL, display=display.none)
+color  borderColor    = input.color(color.new(color.gray, 40), "테두리 색상", group=GROUP_PANEL, display=display.none)
+color  headerText     = input.color(color.white, "헤더 글자색", group=GROUP_PANEL, display=display.none)
+color  keyTextColor   = input.color(color.silver, "KEY 글자색", group=GROUP_PANEL, display=display.none)
+color  codeTextColor  = input.color(color.white, "CODE 글자색", group=GROUP_PANEL, display=display.none)
+color  numTextColor   = input.color(color.aqua, "NUM 글자색", group=GROUP_PANEL, display=display.none)
+color  noteTextColor  = input.color(color.orange, "NOTE 글자색", group=GROUP_PANEL, display=display.none)
+
+//==================================================
+// [1] 핵심
+//==================================================
+string GROUP_CORE = "방패 G | 핵심"
+
+int emaFastLen = input.int(50,  "빠른 EMA 길이", group=GROUP_CORE, display=display.none)
+int emaSlowLen = input.int(200, "느린 EMA 길이", group=GROUP_CORE, display=display.none)
+int rsiLen     = input.int(14,  "RSI 길이", group=GROUP_CORE, display=display.none)
+int rsiBull    = input.int(52,  "RSI 상승 기준", minval=1, maxval=99, group=GROUP_CORE, display=display.none)
+int rsiBear    = input.int(48,  "RSI 하락 기준", minval=1, maxval=99, group=GROUP_CORE, display=display.none)
+
+//==================================================
+// [2] 필터
+//==================================================
+string GROUP_FILTER = "방패 G | 필터"
+
+bool  useATRFilter = input.bool(true,  "ATR 필터 사용", group=GROUP_FILTER, display=display.none)
+int   atrLen       = input.int(14,     "ATR 길이", minval=2, maxval=100, group=GROUP_FILTER, display=display.none)
+float atrMinPct    = input.float(0.25, "ATR 최소 비율(%)", step=0.05, group=GROUP_FILTER, display=display.none)
+
+bool  useADXFilter = input.bool(true, "ADX 필터 사용", group=GROUP_FILTER, display=display.none)
+int   adxLen       = input.int(14, "ADX 길이", minval=1, maxval=50, group=GROUP_FILTER, display=display.none)
+int   adxSmooth    = input.int(14, "ADX 스무딩", minval=1, maxval=50, group=GROUP_FILTER, display=display.none)
+int   adxMin       = input.int(20, "ADX 최소값", minval=1, maxval=60, group=GROUP_FILTER, display=display.none)
+
+//==================================================
+// [3] 내부 소스 슬롯
+//==================================================
+string GROUP_SOURCE = "방패 G | 내부 소스"
+
+string slot01Input = input.string("OFF", "슬롯 1", options=["OFF","UP","DOWN"], group=GROUP_SOURCE, display=display.none)
+string slot02Input = input.string("OFF", "슬롯 2", options=["OFF","UP","DOWN"], group=GROUP_SOURCE, display=display.none)
+string slot03Input = input.string("OFF", "슬롯 3", options=["OFF","UP","DOWN"], group=GROUP_SOURCE, display=display.none)
+string slot04Input = input.string("OFF", "슬롯 4", options=["OFF","UP","DOWN"], group=GROUP_SOURCE, display=display.none)
+string slot05Input = input.string("OFF", "슬롯 5", options=["OFF","UP","DOWN"], group=GROUP_SOURCE, display=display.none)
+
+//==================================================
+// [4] 헬퍼
+//==================================================
+f_slotToDir(_slot) =>
+    int dir = 0
+    if _slot == "UP"
+        dir := 1
+    else if _slot == "DOWN"
+        dir := -1
+    else
+        dir := 0
+    dir
+
+f_clampInt(_v, _min, _max) =>
+    math.max(_min, math.min(_max, _v))
+
+f_tablePos(_opt) =>
+    pos = position.top_right
+    if _opt == "TL"
+        pos := position.top_left
+    else if _opt == "TC"
+        pos := position.top_center
+    else if _opt == "TR"
+        pos := position.top_right
+    else if _opt == "ML"
+        pos := position.middle_left
+    else if _opt == "MC"
+        pos := position.middle_center
+    else if _opt == "MR"
+        pos := position.middle_right
+    else if _opt == "BL"
+        pos := position.bottom_left
+    else if _opt == "BC"
+        pos := position.bottom_center
+    else
+        pos := position.bottom_right
+    pos
+
+f_textSize(_opt) =>
+    sz = size.small
+    if _opt == "TINY"
+        sz := size.tiny
+    else if _opt == "SMALL"
+        sz := size.small
+    else if _opt == "NORMAL"
+        sz := size.normal
+    else
+        sz := size.large
+    sz
+
+f_dirCode(_dir) =>
+    string out = "FLAT"
+    if _dir > 0
+        out := "UP"
+    else if _dir < 0
+        out := "DOWN"
+    else
+        out := "FLAT"
+    out
+
+f_stateCode(_state) =>
+    string out = "IDLE"
+    if _state == 2
+        out := "UP_STR"
+    else if _state == 1
+        out := "UP"
+    else if _state == -1
+        out := "DN"
+    else if _state == -2
+        out := "DN_STR"
+    else
+        out := "IDLE"
+    out
+
+f_evtCode(_evt) =>
+    string out = "NONE"
+    if _evt == 11
+        out := "UP_STRONG"
+    else if _evt == 10
+        out := "UP"
+    else if _evt == 21
+        out := "DOWN_STRONG"
+    else if _evt == 20
+        out := "DOWN"
+    else if _evt == 90
+        out := "FILTER_OFF"
+    else
+        out := "NONE"
+    out
+
+f_note(_dir, _state, _filterOK) =>
+    string out = "WAIT"
+    if not _filterOK
+        out := "FILTER"
+    else if _state == 2 and _dir > 0
+        out := "HARD GATE OPEN"
+    else if _state == 1 and _dir > 0
+        out := "SOFT GATE OPEN"
+    else if _state == -2 and _dir < 0
+        out := "HARD GATE DOWN"
+    else if _state == -1 and _dir < 0
+        out := "SOFT GATE DOWN"
+    else
+        out := "NEUTRAL"
+    out
+
+//==================================================
+// [5] 핵심 시계열
+//==================================================
+float emaFast = ta.ema(close, emaFastLen)
+float emaSlow = ta.ema(close, emaSlowLen)
+float rsiValue = ta.rsi(close, rsiLen)
+
+float atrValue = ta.atr(atrLen)
+float atrPctValue = (atrValue / math.max(close, 1e-6)) * 100.0
+
+[plusDI, minusDI, adxValue] = ta.dmi(adxLen, adxSmooth)
+
+//==================================================
+// [6] 투표 로직
+//==================================================
+int slot01 = f_slotToDir(slot01Input)
+int slot02 = f_slotToDir(slot02Input)
+int slot03 = f_slotToDir(slot03Input)
+int slot04 = f_slotToDir(slot04Input)
+int slot05 = f_slotToDir(slot05Input)
+
+int trendDir = 0
+if emaFast > emaSlow
+    trendDir := 1
+else if emaFast < emaSlow
+    trendDir := -1
+else
+    trendDir := 0
+
+int momentumDir = 0
+if rsiValue >= rsiBull
+    momentumDir := 1
+else if rsiValue <= rsiBear
+    momentumDir := -1
+else
+    momentumDir := 0
+
+int candleDir = 0
+if close > open
+    candleDir := 1
+else if close < open
+    candleDir := -1
+else
+    candleDir := 0
+
+bool atrFilterOK = (not useATRFilter) or (atrPctValue >= atrMinPct)
+bool adxFilterOK = (not useADXFilter) or (adxValue >= adxMin)
+bool filterOK = atrFilterOK and adxFilterOK
+
+int bullVotes = 0
+int bearVotes = 0
+
+bullVotes += trendDir == 1 ? 1 : 0
+bearVotes += trendDir == -1 ? 1 : 0
+
+bullVotes += momentumDir == 1 ? 1 : 0
+bearVotes += momentumDir == -1 ? 1 : 0
+
+bullVotes += candleDir == 1 ? 1 : 0
+bearVotes += candleDir == -1 ? 1 : 0
+
+int baseDir = 0
+if bullVotes > bearVotes
+    baseDir := 1
+else if bearVotes > bullVotes
+    baseDir := -1
+else
+    baseDir := 0
+
+if atrFilterOK and baseDir != 0
+    bullVotes += baseDir == 1 ? 1 : 0
+    bearVotes += baseDir == -1 ? 1 : 0
+
+if adxFilterOK and baseDir != 0
+    bullVotes += baseDir == 1 ? 1 : 0
+    bearVotes += baseDir == -1 ? 1 : 0
+
+bullVotes += slot01 == 1 ? 1 : 0
+bearVotes += slot01 == -1 ? 1 : 0
+
+bullVotes += slot02 == 1 ? 1 : 0
+bearVotes += slot02 == -1 ? 1 : 0
+
+bullVotes += slot03 == 1 ? 1 : 0
+bearVotes += slot03 == -1 ? 1 : 0
+
+bullVotes += slot04 == 1 ? 1 : 0
+bearVotes += slot04 == -1 ? 1 : 0
+
+bullVotes += slot05 == 1 ? 1 : 0
+bearVotes += slot05 == -1 ? 1 : 0
+
+int shieldDirRaw = 0
+if bullVotes > bearVotes
+    shieldDirRaw := 1
+else if bearVotes > bullVotes
+    shieldDirRaw := -1
+else
+    shieldDirRaw := 0
+
+//==================================================
+// [7] 표준 출력값
+//==================================================
+int voteMargin = math.abs(bullVotes - bearVotes)
+int winVotes   = math.max(bullVotes, bearVotes)
+
+int resFromWin = int(math.round((float(winVotes) / 10.0) * 5.0))
+int resFromGap = int(math.round((float(voteMargin) / 10.0) * 5.0))
+
+int shieldResRaw = int(math.round(float(resFromWin) * 0.70 + float(resFromGap) * 0.30))
+shieldResRaw := f_clampInt(shieldResRaw, 0, 5)
+
+int shieldDir = filterOK ? shieldDirRaw : 0
+int shieldRes = filterOK ? shieldResRaw : 0
+
+int shieldState = 0
+if shieldDir == 1
+    if shieldRes >= 4
+        shieldState := 2
+    else if shieldRes >= 2
+        shieldState := 1
+    else
+        shieldState := 0
+else if shieldDir == -1
+    if shieldRes >= 4
+        shieldState := -2
+    else if shieldRes >= 2
+        shieldState := -1
+    else
+        shieldState := 0
+else
+    shieldState := 0
+
+int shieldScore = int(math.round((float(shieldRes) / 5.0) * 100.0))
+shieldScore := f_clampInt(shieldScore, 0, 100)
+
+bool stateUpWeak     = shieldState == 1  and nz(shieldState[1]) != 1
+bool stateUpStrong   = shieldState == 2  and nz(shieldState[1]) != 2
+bool stateDownWeak   = shieldState == -1 and nz(shieldState[1]) != -1
+bool stateDownStrong = shieldState == -2 and nz(shieldState[1]) != -2
+
+int shieldEvt = 0
+if not filterOK
+    shieldEvt := 90
+else if stateUpStrong
+    shieldEvt := 11
+else if stateUpWeak
+    shieldEvt := 10
+else if stateDownStrong
+    shieldEvt := 21
+else if stateDownWeak
+    shieldEvt := 20
+else
+    shieldEvt := 0
+
+int shieldSigDir = 0
+if shieldDir > 0
+    shieldSigDir := 1
+else if shieldDir < 0
+    shieldSigDir := -1
+else
+    shieldSigDir := 0
+
+int shieldSigRes = f_clampInt(shieldRes, 0, 5)
+int shieldSig = shieldSigDir == 0 ? 0 : (shieldSigDir * 100 + shieldSigRes)
+
+int shieldActiveFlag = (shieldState != 0 or shieldScore >= 35 or shieldEvt != 0) ? 1 : 0
+int shieldRisk = shieldScore >= 70 ? 0 : shieldScore >= 35 ? 1 : 2
+
+//==================================================
+// [8] GPT 전용 표
+//==================================================
+var table shieldTable = na
+
+if barstate.islast and showTable
+    if na(shieldTable)
+        shieldTable := table.new(f_tablePos(tablePosOpt), 4, 8, border_width=1)
+    table.cell(shieldTable, 0, 0, "KEY",  text_color=headerText, bgcolor=headerBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(shieldTable, 1, 0, "CODE", text_color=headerText, bgcolor=headerBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(shieldTable, 2, 0, "NUM",  text_color=headerText, bgcolor=headerBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(shieldTable, 3, 0, "NOTE", text_color=headerText, bgcolor=headerBg, text_size=f_textSize(tableSizeOpt))
+
+    table.cell(shieldTable, 0, 1, "DIR",    text_color=keyTextColor,  bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(shieldTable, 1, 1, f_dirCode(shieldDir), text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(shieldTable, 2, 1, str.tostring(shieldDir), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(shieldTable, 3, 1, shieldDir == 0 ? "flat" : "gate dir", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+
+    table.cell(shieldTable, 0, 2, "STATE",  text_color=keyTextColor,  bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(shieldTable, 1, 2, f_stateCode(shieldState), text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(shieldTable, 2, 2, str.tostring(shieldState), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(shieldTable, 3, 2, f_note(shieldDir, shieldState, filterOK), text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+
+    table.cell(shieldTable, 0, 3, "SCORE",  text_color=keyTextColor,  bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(shieldTable, 1, 3, shieldScore >= 70 ? "STR" : shieldScore >= 35 ? "MID" : "LOW", text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(shieldTable, 2, 3, str.tostring(shieldScore), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(shieldTable, 3, 3, "0-100", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+
+    table.cell(shieldTable, 0, 4, "RES",    text_color=keyTextColor,  bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(shieldTable, 1, 4, shieldRes >= 4 ? "HARD" : shieldRes >= 2 ? "SOFT" : "NONE", text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(shieldTable, 2, 4, str.tostring(shieldRes), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(shieldTable, 3, 4, "0-5", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+
+    table.cell(shieldTable, 0, 5, "FILTER", text_color=keyTextColor,  bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(shieldTable, 1, 5, filterOK ? "OPEN" : "BLOCK", text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(shieldTable, 2, 5, filterOK ? "1" : "0", text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(shieldTable, 3, 5, "atr+adx", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+
+    table.cell(shieldTable, 0, 6, "SIGNAL", text_color=keyTextColor,  bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(shieldTable, 1, 6, shieldSig == 0 ? "NONE" : shieldSig > 0 ? "UP_PRS" : "DN_PRS", text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(shieldTable, 2, 6, str.tostring(shieldSig), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(shieldTable, 3, 6, "dir*100+res", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+
+    table.cell(shieldTable, 0, 7, "EVENT",  text_color=keyTextColor,  bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(shieldTable, 1, 7, f_evtCode(shieldEvt), text_color=codeTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(shieldTable, 2, 7, str.tostring(shieldEvt), text_color=numTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+    table.cell(shieldTable, 3, 7, "transition", text_color=noteTextColor, bgcolor=cellBg, text_size=f_textSize(tableSizeOpt))
+
+if barstate.islast and not showTable
+    if not na(shieldTable)
+        table.delete(shieldTable)
+        shieldTable := na
+
+
+//==================================================
+// [9] GPT 얼러트
+//==================================================
+string GROUP_ALERT = "방패 G | 얼러트"
+bool useAlerts = input.bool(true, "GPT 얼러트 사용", group=GROUP_ALERT, display=display.none)
+
+bool prevFilterOK         = bar_index > 0 ? filterOK[1] : false
+int  prevShieldState      = bar_index > 0 ? shieldState[1] : 0
+float prevShieldRes       = bar_index > 0 ? shieldRes[1] : 0.0
+
+bool shieldFilterOffStart  = useAlerts and (not filterOK) and prevFilterOK
+bool shieldFilterOpenStart = useAlerts and filterOK and (not prevFilterOK)
+bool shieldHardGateOpen    = useAlerts and shieldState == 2  and prevShieldState != 2
+bool shieldSoftGateOpen    = useAlerts and shieldState == 1  and prevShieldState != 1
+bool shieldHardGateDown    = useAlerts and shieldState == -2 and prevShieldState != -2
+bool shieldSoftGateDown    = useAlerts and shieldState == -1 and prevShieldState != -1
+bool shieldStrongResStart  = useAlerts and shieldRes >= 4 and prevShieldRes < 4
+
+alertcondition(shieldFilterOffStart,  title="AL SHIELD G | FILTER OFF",      message="AL_SHIELD_G,FILTER_OFF")
+alertcondition(shieldFilterOpenStart, title="AL SHIELD G | FILTER OPEN",     message="AL_SHIELD_G,FILTER_OPEN")
+alertcondition(shieldHardGateOpen,    title="AL SHIELD G | HARD GATE OPEN",  message="AL_SHIELD_G,HARD_GATE_OPEN")
+alertcondition(shieldSoftGateOpen,    title="AL SHIELD G | SOFT GATE OPEN",  message="AL_SHIELD_G,SOFT_GATE_OPEN")
+alertcondition(shieldHardGateDown,    title="AL SHIELD G | HARD GATE DOWN",  message="AL_SHIELD_G,HARD_GATE_DOWN")
+alertcondition(shieldSoftGateDown,    title="AL SHIELD G | SOFT GATE DOWN",  message="AL_SHIELD_G,SOFT_GATE_DOWN")
+alertcondition(shieldStrongResStart,  title="AL SHIELD G | STRONG RES",      message="AL_SHIELD_G,STRONG_RES")
+
+//==================================================
+// [10] 숨김 출력 (A 링크 경량)
+//==================================================
+plot(float(shieldDir),        title="AL_SHIELD_DIRECTION",   display=display.none)
+plot(float(shieldState),      title="AL_SHIELD_STATE",       display=display.none)
+plot(float(shieldScore),      title="AL_SHIELD_SCORE",       display=display.none)
+plot(float(shieldRes),        title="AL_SHIELD_RESISTANCE",  display=display.none)
+plot(float(shieldEvt),        title="AL_SHIELD_EVENT",       display=display.none)
+plot(float(shieldActiveFlag), title="AL_SHIELD_ACTIVE_FLAG", display=display.none)

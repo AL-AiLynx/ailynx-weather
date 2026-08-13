@@ -1,0 +1,428 @@
+//@version=6
+indicator("AL MAAT2 Protagonist Time Engine V1", shorttitle="M2TIMEV1", overlay=false, max_labels_count=50, max_lines_count=10)
+
+// Current-chart-timeframe verification engine. It does not infer direction.
+
+const int PHASE_QUIET = 0
+const int PHASE_WATCH = 1
+const int PHASE_STRUCTURE_MEMORY = 2
+const int PHASE_STRUCTURE_TOUCH = 3
+const int PHASE_VOL_BUILD = 4
+const int PHASE_VOL_TRIGGER_WAIT = 5
+const int PHASE_WINDOW_OPEN = 6
+const int PHASE_FORCE_EVENT = 7
+const int PHASE_ABSORB_CANDIDATE = 8
+const int PHASE_CLIMAX_RISK = 9
+const int PHASE_NOISE_ONLY = 10
+const int PHASE_RESET_REQUIRED = 11
+
+const int HUB_RESULT_WATCH = 0
+
+const int TIME_STATE_INVALID = 0
+const int TIME_STATE_QUIET = 1
+const int TIME_STATE_BUILD = 2
+const int TIME_STATE_PRE_WINDOW = 3
+const int TIME_STATE_PROTAGONIST_CANDIDATE = 4
+const int TIME_STATE_WINDOW_OPEN = 5
+const int TIME_STATE_FORCE_EXPRESSION = 6
+const int TIME_STATE_FALSE_RELEASE = 7
+const int TIME_STATE_NOISE_ONLY = 8
+const int TIME_STATE_RESET_REQUIRED = 9
+
+const int TIME_ROLE_NONE = 0
+const int TIME_ROLE_PARENT_CONTEXT = 1
+const int TIME_ROLE_EARLY_CANDIDATE = 2
+const int TIME_ROLE_PROTAGONIST_CANDIDATE = 3
+const int TIME_ROLE_PROTAGONIST_ACTIVE = 4
+const int TIME_ROLE_MICRO_CONFIRM = 5  // Reserved for the multi-TF Reporter.
+const int TIME_ROLE_FALSE_RELEASE = 6
+const int TIME_ROLE_NOISE = 7
+const int TIME_ROLE_RESET = 8
+const int TIME_ROLE_INVALID = 9
+
+const int TIME_RESULT_WATCH = 0
+const int TIME_RESULT_PRE_WINDOW = 1
+const int TIME_RESULT_WINDOW_CANDIDATE = 2
+const int TIME_RESULT_WINDOW_OPEN = 3
+const int TIME_RESULT_FORCE_EXPRESSION_CANDIDATE = 4
+const int TIME_RESULT_NOISE_ONLY = 5
+const int TIME_RESULT_FALSE_RELEASE = 6
+const int TIME_RESULT_RESET_REQUIRED = 7
+
+const int WHY_NONE = 0
+const int WHY_STRUCT_ONLY = 10
+const int WHY_FORCE_BUILD = 20
+const int WHY_WINDOW_BUILD = 30
+const int WHY_STRUCT_FORCE_SYNC = 40
+const int WHY_FORCE_WINDOW_SYNC = 41
+const int WHY_STRUCT_WINDOW_SYNC = 42
+const int WHY_FULL_SYNC = 50
+const int WHY_FORCE_WEAK = 61
+const int WHY_RISK_BLOCK = 70
+const int WHY_PARENT_MISMATCH = 80
+const int WHY_PARTIAL_SOURCE = 81
+const int WHY_INVALID_SOURCE = 82
+const int WHY_NOISE = 90
+const int WHY_FALSE_RELEASE = 91
+const int WHY_RESET = 92
+
+const int BRIDGE_MAGIC = 42
+const int BRIDGE_MAGIC_MULT = 1000000000000
+const int PHASE_MULT = 1000000000
+const int RESULT_MULT = 100000000
+const int RISK_BAND_MULT = 10000000
+const int GUARD_MASK_MULT = 100000
+const int ALERT_MASK_MULT = 1000
+const int CORE_STATE_MULT = 100
+const int PERIPH_STATE_MULT = 10
+const int METRIC_STRUCTURE_MULT = 2097152
+const int METRIC_FORCE_MULT = 16384
+const int METRIC_WINDOW_MULT = 128
+
+string G_BRIDGE = "01. TIME BRIDGE"
+float statePackInput = input.source(close, "AL_MAAT2_TIME_BRIDGE_STATE_PACK", group=G_BRIDGE)
+float metricsPackInput = input.source(close, "AL_MAAT2_TIME_BRIDGE_METRICS_PACK", group=G_BRIDGE)
+
+string G_PARENT = "02. PARENT TIMEFRAME"
+string parentMode = input.string("MANUAL", "Parent mode", options=["MANUAL", "AUTO"], group=G_PARENT)
+int manualParentMinutes = input.int(360, "Manual parent minutes", minval=2, maxval=10080, group=G_PARENT)
+
+string G_ENGINE = "03. ENGINE"
+int falseReleaseBars = input.int(3, "False release observation bars", minval=1, maxval=10, group=G_ENGINE)
+int stateLookback = input.int(20, "State change lookback", minval=5, maxval=200, group=G_ENGINE)
+
+string G_TABLE = "04. TABLE"
+bool showTable = input.bool(true, "Show Time Engine table", group=G_TABLE)
+string tablePosition = input.string("top_right", "Table position", options=["top_right", "top_left", "bottom_right", "bottom_left"], group=G_TABLE)
+string tableSize = input.string("small", "Table size", options=["tiny", "small", "normal"], group=G_TABLE)
+
+f_clamp(float value, float low, float high) =>
+    math.max(low, math.min(high, value))
+
+f_hasBit(int mask, int bitValue) =>
+    int(math.floor(float(mask) / float(bitValue))) % 2 == 1
+
+f_autoParent(int minutes) =>
+    minutes < 60 ? 60 : minutes < 120 ? 120 : minutes < 180 ? 180 : minutes < 240 ? 240 : minutes < 360 ? 360 : minutes < 480 ? 480 : minutes < 720 ? 720 : minutes < 1440 ? 1440 : minutes < 2880 ? 2880 : minutes < 5760 ? 5760 : 10080
+
+f_position(string value) =>
+    value == "top_left" ? position.top_left : value == "bottom_right" ? position.bottom_right : value == "bottom_left" ? position.bottom_left : position.top_right
+
+f_size(string value) =>
+    value == "tiny" ? size.tiny : value == "normal" ? size.normal : size.small
+
+f_stateText(int code) =>
+    code == TIME_STATE_INVALID ? "INVALID" : code == TIME_STATE_QUIET ? "QUIET" : code == TIME_STATE_BUILD ? "BUILD" : code == TIME_STATE_PRE_WINDOW ? "PRE_WINDOW" : code == TIME_STATE_PROTAGONIST_CANDIDATE ? "PROTAGONIST_CANDIDATE" : code == TIME_STATE_WINDOW_OPEN ? "WINDOW_OPEN" : code == TIME_STATE_FORCE_EXPRESSION ? "FORCE_EXPRESSION" : code == TIME_STATE_FALSE_RELEASE ? "FALSE_RELEASE" : code == TIME_STATE_NOISE_ONLY ? "NOISE_ONLY" : "RESET_REQUIRED"
+
+f_roleText(int code) =>
+    code == TIME_ROLE_PARENT_CONTEXT ? "PARENT_CONTEXT" : code == TIME_ROLE_EARLY_CANDIDATE ? "EARLY_CANDIDATE" : code == TIME_ROLE_PROTAGONIST_CANDIDATE ? "PROTAGONIST_CANDIDATE" : code == TIME_ROLE_PROTAGONIST_ACTIVE ? "PROTAGONIST_ACTIVE" : code == TIME_ROLE_MICRO_CONFIRM ? "MICRO_CONFIRM" : code == TIME_ROLE_FALSE_RELEASE ? "FALSE_RELEASE" : code == TIME_ROLE_NOISE ? "NOISE" : code == TIME_ROLE_RESET ? "RESET" : code == TIME_ROLE_INVALID ? "INVALID" : "NONE"
+
+f_resultText(int code) =>
+    code == TIME_RESULT_PRE_WINDOW ? "PRE_WINDOW" : code == TIME_RESULT_WINDOW_CANDIDATE ? "WINDOW_CANDIDATE" : code == TIME_RESULT_WINDOW_OPEN ? "WINDOW_OPEN" : code == TIME_RESULT_FORCE_EXPRESSION_CANDIDATE ? "FORCE_EXPRESSION_CANDIDATE" : code == TIME_RESULT_NOISE_ONLY ? "NOISE_ONLY" : code == TIME_RESULT_FALSE_RELEASE ? "FALSE_RELEASE" : code == TIME_RESULT_RESET_REQUIRED ? "RESET_REQUIRED" : "WATCH"
+
+f_whyText(int code) =>
+    code == WHY_STRUCT_ONLY ? "STRUCT_ONLY" : code == WHY_FORCE_BUILD ? "FORCE_BUILD" : code == WHY_WINDOW_BUILD ? "WINDOW_BUILD" : code == WHY_STRUCT_FORCE_SYNC ? "STRUCT_FORCE_SYNC" : code == WHY_FORCE_WINDOW_SYNC ? "FORCE_WINDOW_SYNC" : code == WHY_STRUCT_WINDOW_SYNC ? "STRUCT_WINDOW_SYNC" : code == WHY_FULL_SYNC ? "FULL_SYNC" : code == WHY_FORCE_WEAK ? "FORCE_WEAK" : code == WHY_RISK_BLOCK ? "RISK_BLOCK" : code == WHY_PARENT_MISMATCH ? "PARENT_MISMATCH" : code == WHY_PARTIAL_SOURCE ? "PARTIAL_SOURCE" : code == WHY_INVALID_SOURCE ? "INVALID_SOURCE" : code == WHY_NOISE ? "NOISE" : code == WHY_FALSE_RELEASE ? "FALSE_RELEASE" : code == WHY_RESET ? "RESET" : "NONE"
+
+bool stateInputAvailable = not na(statePackInput)
+int stateRaw = stateInputAvailable ? int(math.round(statePackInput)) : 0
+int parsedMagic = int(math.floor(float(stateRaw) / float(BRIDGE_MAGIC_MULT)))
+int parsedPhase = int(math.floor(float(stateRaw) / float(PHASE_MULT))) % 100
+int parsedHubResult = int(math.floor(float(stateRaw) / float(RESULT_MULT))) % 10
+int parsedRiskBand = int(math.floor(float(stateRaw) / float(RISK_BAND_MULT))) % 10
+int parsedGuardMask = int(math.floor(float(stateRaw) / float(GUARD_MASK_MULT))) % 100
+int parsedAlertMask = int(math.floor(float(stateRaw) / float(ALERT_MASK_MULT))) % 100
+int parsedCoreState = int(math.floor(float(stateRaw) / float(CORE_STATE_MULT))) % 10
+int parsedPeripheralState = int(math.floor(float(stateRaw) / float(PERIPH_STATE_MULT))) % 10
+int parsedBridgeValid = stateRaw % 10
+
+bool stateRangeOk = parsedPhase >= 0 and parsedPhase <= 11 and parsedHubResult >= 0 and parsedHubResult <= 9 and parsedRiskBand >= 0 and parsedRiskBand <= 5 and parsedGuardMask >= 0 and parsedGuardMask <= 15 and parsedAlertMask >= 0 and parsedAlertMask <= 15 and parsedCoreState >= 0 and parsedCoreState <= 3 and parsedPeripheralState >= 0 and parsedPeripheralState <= 3 and parsedBridgeValid >= 0 and parsedBridgeValid <= 1
+int repackedState = parsedMagic * BRIDGE_MAGIC_MULT + parsedPhase * PHASE_MULT + parsedHubResult * RESULT_MULT + parsedRiskBand * RISK_BAND_MULT + parsedGuardMask * GUARD_MASK_MULT + parsedAlertMask * ALERT_MASK_MULT + parsedCoreState * CORE_STATE_MULT + parsedPeripheralState * PERIPH_STATE_MULT + parsedBridgeValid
+bool stateRoundTripOk = stateInputAvailable and stateRangeOk and repackedState == stateRaw
+
+bool metricsInputAvailable = not na(metricsPackInput)
+int metricsRaw = metricsInputAvailable ? int(math.round(metricsPackInput)) : 0
+int parsedStructure = int(math.floor(float(metricsRaw) / float(METRIC_STRUCTURE_MULT))) % 128
+int parsedForce = int(math.floor(float(metricsRaw) / float(METRIC_FORCE_MULT))) % 128
+int parsedWindow = int(math.floor(float(metricsRaw) / float(METRIC_WINDOW_MULT))) % 128
+int parsedRisk = metricsRaw % 128
+bool metricsRangeOk = parsedStructure >= 0 and parsedStructure <= 100 and parsedForce >= 0 and parsedForce <= 100 and parsedWindow >= 0 and parsedWindow <= 100 and parsedRisk >= 0 and parsedRisk <= 100
+int repackedMetrics = parsedStructure * METRIC_STRUCTURE_MULT + parsedForce * METRIC_FORCE_MULT + parsedWindow * METRIC_WINDOW_MULT + parsedRisk
+bool metricsRoundTripOk = metricsInputAvailable and metricsRangeOk and repackedMetrics == metricsRaw
+
+bool engineBridgeValid = stateInputAvailable and metricsInputAvailable and parsedMagic == BRIDGE_MAGIC and stateRoundTripOk and metricsRoundTripOk and parsedBridgeValid == 1
+bool systemPartial = parsedCoreState == 2 or parsedPeripheralState == 2
+bool systemInvalid = parsedCoreState == 3 or parsedPeripheralState == 3
+
+bool guardWindow = f_hasBit(parsedGuardMask, 1)
+bool guardForce = f_hasBit(parsedGuardMask, 2)
+bool guardNoise = f_hasBit(parsedGuardMask, 4)
+bool guardReset = f_hasBit(parsedGuardMask, 8)
+bool alertWindow = f_hasBit(parsedAlertMask, 1)
+bool alertForce = f_hasBit(parsedAlertMask, 2)
+bool alertNoise = f_hasBit(parsedAlertMask, 4)
+bool alertReset = f_hasBit(parsedAlertMask, 8)
+
+float chartTfSeconds = timeframe.in_seconds(timeframe.period)
+int chartTfMinutes = not na(chartTfSeconds) ? int(math.round(chartTfSeconds / 60.0)) : 0
+int parentTfMinutes = parentMode == "MANUAL" ? manualParentMinutes : f_autoParent(chartTfMinutes)
+int parentDistanceMinutes = math.abs(parentTfMinutes - chartTfMinutes)
+bool parentMismatch = chartTfMinutes <= 0 or parentTfMinutes <= chartTfMinutes
+
+float structurePart = float(parsedStructure) * 0.25
+float forcePart = float(parsedForce) * 0.30
+float windowPart = float(parsedWindow) * 0.30
+float statePart = 0.0
+if alertWindow or alertForce
+    statePart := 15.0
+else if (parsedPhase == PHASE_WINDOW_OPEN and guardWindow) or ((parsedPhase == PHASE_FORCE_EVENT or parsedPhase == PHASE_ABSORB_CANDIDATE) and guardForce)
+    statePart := 10.0
+else if parsedPhase == PHASE_VOL_BUILD or parsedPhase == PHASE_VOL_TRIGGER_WAIT
+    statePart := 6.0
+else if engineBridgeValid and parsedHubResult == HUB_RESULT_WATCH
+    statePart := 3.0
+
+float riskPenalty = math.min(30.0, float(parsedRisk) * 0.30)
+float noisePenalty = (guardNoise ? 12.0 : 0.0) + (alertNoise ? 8.0 : 0.0) + (guardReset ? 15.0 : 0.0) + (alertReset ? 10.0 : 0.0)
+noisePenalty := math.min(30.0, noisePenalty)
+float rawTimeScore = f_clamp(structurePart + forcePart + windowPart + statePart - riskPenalty - noisePenalty, 0.0, 100.0)
+float cappedTimeScore = engineBridgeValid ? rawTimeScore : 0.0
+if systemInvalid
+    cappedTimeScore := math.min(cappedTimeScore, 35.0)
+if systemPartial
+    cappedTimeScore := math.min(cappedTimeScore, 55.0)
+if parsedForce < 20
+    cappedTimeScore := math.min(cappedTimeScore, 50.0)
+if parsedRisk >= 75
+    cappedTimeScore := math.min(cappedTimeScore, 40.0)
+if guardReset
+    cappedTimeScore := math.min(cappedTimeScore, 35.0)
+int timeScore = int(math.round(f_clamp(cappedTimeScore, 0.0, 100.0)))
+
+float rawNoiseScore = float(parsedRisk) * 0.65 + (guardNoise ? 15.0 : 0.0) + (alertNoise ? 10.0 : 0.0) + (guardReset ? 15.0 : 0.0) + (systemPartial ? 10.0 : 0.0) + (systemInvalid ? 20.0 : 0.0)
+int timeNoiseScore = int(math.round(f_clamp(rawNoiseScore, 0.0, 100.0)))
+
+var bool activeArmed = false
+var int activeBarIndex = na
+bool falseReleaseNow = engineBridgeValid and activeArmed and not na(activeBarIndex) and not alertWindow and not alertForce and bar_index - activeBarIndex <= falseReleaseBars and (alertNoise or alertReset or guardReset or parsedRisk >= 75)
+if falseReleaseNow
+    activeArmed := false
+    activeBarIndex := na
+else if engineBridgeValid and (alertWindow or alertForce) and not activeArmed
+    activeArmed := true
+    activeBarIndex := bar_index
+else if activeArmed and not na(activeBarIndex) and bar_index - activeBarIndex > falseReleaseBars
+    activeArmed := false
+    activeBarIndex := na
+
+bool forceExpressionAllowed = alertForce and parsedHubResult != HUB_RESULT_WATCH
+bool protagonistCandidate = timeScore >= 60 and parsedForce >= 20 and parsedWindow >= 50 and not systemPartial and not systemInvalid
+
+int timeStateCode = TIME_STATE_QUIET
+if not engineBridgeValid
+    timeStateCode := TIME_STATE_INVALID
+else if alertReset or parsedPhase == PHASE_RESET_REQUIRED
+    timeStateCode := TIME_STATE_RESET_REQUIRED
+else if falseReleaseNow
+    timeStateCode := TIME_STATE_FALSE_RELEASE
+else if alertNoise or parsedPhase == PHASE_NOISE_ONLY
+    timeStateCode := TIME_STATE_NOISE_ONLY
+else if forceExpressionAllowed
+    timeStateCode := TIME_STATE_FORCE_EXPRESSION
+else if alertWindow
+    timeStateCode := TIME_STATE_WINDOW_OPEN
+else if protagonistCandidate
+    timeStateCode := TIME_STATE_PROTAGONIST_CANDIDATE
+else if guardWindow or parsedPhase == PHASE_VOL_TRIGGER_WAIT
+    timeStateCode := TIME_STATE_PRE_WINDOW
+else if parsedPhase == PHASE_VOL_BUILD or parsedPhase == PHASE_STRUCTURE_TOUCH or parsedPhase == PHASE_STRUCTURE_MEMORY
+    timeStateCode := TIME_STATE_BUILD
+
+int timeResultCode = TIME_RESULT_WATCH
+if timeStateCode == TIME_STATE_RESET_REQUIRED
+    timeResultCode := TIME_RESULT_RESET_REQUIRED
+else if timeStateCode == TIME_STATE_FALSE_RELEASE
+    timeResultCode := TIME_RESULT_FALSE_RELEASE
+else if timeStateCode == TIME_STATE_NOISE_ONLY
+    timeResultCode := TIME_RESULT_NOISE_ONLY
+else if forceExpressionAllowed
+    timeResultCode := TIME_RESULT_FORCE_EXPRESSION_CANDIDATE
+else if alertWindow
+    timeResultCode := TIME_RESULT_WINDOW_OPEN
+else if protagonistCandidate and parsedWindow >= 50
+    timeResultCode := TIME_RESULT_WINDOW_CANDIDATE
+else if timeStateCode == TIME_STATE_PRE_WINDOW or timeStateCode == TIME_STATE_BUILD
+    timeResultCode := TIME_RESULT_PRE_WINDOW
+
+int timeRoleCode = TIME_ROLE_NONE
+if not engineBridgeValid
+    timeRoleCode := TIME_ROLE_INVALID
+else if timeStateCode == TIME_STATE_RESET_REQUIRED
+    timeRoleCode := TIME_ROLE_RESET
+else if timeStateCode == TIME_STATE_FALSE_RELEASE
+    timeRoleCode := TIME_ROLE_FALSE_RELEASE
+else if timeStateCode == TIME_STATE_NOISE_ONLY
+    timeRoleCode := TIME_ROLE_NOISE
+else if chartTfMinutes == parentTfMinutes
+    timeRoleCode := TIME_ROLE_PARENT_CONTEXT
+else if alertWindow or forceExpressionAllowed
+    timeRoleCode := TIME_ROLE_PROTAGONIST_ACTIVE
+else if protagonistCandidate
+    timeRoleCode := TIME_ROLE_PROTAGONIST_CANDIDATE
+else if timeScore >= 40
+    timeRoleCode := TIME_ROLE_EARLY_CANDIDATE
+
+int timeWhyCode = WHY_NONE
+if timeStateCode == TIME_STATE_RESET_REQUIRED
+    timeWhyCode := WHY_RESET
+else if not engineBridgeValid or systemInvalid
+    timeWhyCode := WHY_INVALID_SOURCE
+else if systemPartial
+    timeWhyCode := WHY_PARTIAL_SOURCE
+else if timeStateCode == TIME_STATE_FALSE_RELEASE
+    timeWhyCode := WHY_FALSE_RELEASE
+else if parentMismatch
+    timeWhyCode := WHY_PARENT_MISMATCH
+else if parsedRisk >= 75 or guardReset
+    timeWhyCode := WHY_RISK_BLOCK
+else if timeStateCode == TIME_STATE_NOISE_ONLY or guardNoise
+    timeWhyCode := WHY_NOISE
+else if parsedForce < 20
+    timeWhyCode := WHY_FORCE_WEAK
+else if parsedStructure >= 60 and parsedForce >= 40 and parsedWindow >= 60
+    timeWhyCode := WHY_FULL_SYNC
+else if parsedStructure >= 60 and parsedForce >= 40
+    timeWhyCode := WHY_STRUCT_FORCE_SYNC
+else if parsedForce >= 40 and parsedWindow >= 60
+    timeWhyCode := WHY_FORCE_WINDOW_SYNC
+else if parsedStructure >= 60 and parsedWindow >= 60
+    timeWhyCode := WHY_STRUCT_WINDOW_SYNC
+else if parsedWindow >= 60
+    timeWhyCode := WHY_WINDOW_BUILD
+else if parsedForce >= 40
+    timeWhyCode := WHY_FORCE_BUILD
+else if parsedStructure >= 60
+    timeWhyCode := WHY_STRUCT_ONLY
+
+int timePackCode = 10000 + parsedRiskBand * 1000 + timeResultCode * 10 + (engineBridgeValid ? 1 : 0)
+
+bool stateChanged = timeStateCode != nz(timeStateCode[1], timeStateCode)
+var int barsInState = 0
+if stateChanged
+    barsInState := 1
+else
+    barsInState += 1
+float stateChangeCount = math.sum(stateChanged ? 1.0 : 0.0, stateLookback)
+
+int diagCode = 0
+if not stateInputAvailable
+    diagCode := 1
+else if not metricsInputAvailable
+    diagCode := 2
+else if parsedMagic != BRIDGE_MAGIC
+    diagCode := 3
+else if not stateRangeOk
+    diagCode := 4
+else if not stateRoundTripOk
+    diagCode := 5
+else if not metricsRangeOk
+    diagCode := 6
+else if not metricsRoundTripOk
+    diagCode := 7
+else if parsedBridgeValid != 1
+    diagCode := 8
+
+string noteText = "QUIET / WATCH"
+if diagCode != 0
+    noteText := diagCode == 1 ? "STATE SOURCE NA" : diagCode == 2 ? "METRICS SOURCE NA" : diagCode == 3 ? "MAGIC FAIL" : diagCode == 4 ? "STATE RANGE FAIL" : diagCode == 5 ? "STATE ROUNDTRIP FAIL" : diagCode == 6 ? "METRIC RANGE FAIL" : diagCode == 7 ? "METRIC ROUNDTRIP FAIL" : "BRIDGE VALID ZERO"
+else if systemInvalid
+    noteText := "SYSTEM INVALID"
+else if systemPartial
+    noteText := "SYSTEM PARTIAL"
+else if parsedForce < 20
+    noteText := "FORCE WEAK"
+else if timeStateCode == TIME_STATE_RESET_REQUIRED
+    noteText := "RESET / REBUILD"
+else if timeStateCode == TIME_STATE_FALSE_RELEASE
+    noteText := "FALSE RELEASE / RECORD"
+else if timeStateCode == TIME_STATE_NOISE_ONLY
+    noteText := "NOISE / WATCH"
+else if timeStateCode == TIME_STATE_FORCE_EXPRESSION
+    noteText := "FORCE EXPRESSION / VERIFY"
+else if timeStateCode == TIME_STATE_WINDOW_OPEN
+    noteText := "WINDOW OPEN / VERIFY"
+else if timeStateCode == TIME_STATE_PROTAGONIST_CANDIDATE
+    noteText := "PROTAGONIST CANDIDATE"
+else if timeStateCode == TIME_STATE_PRE_WINDOW or timeStateCode == TIME_STATE_BUILD
+    noteText := "WINDOW BUILD"
+
+color quietBg = color.new(color.gray, 84)
+color buildBg = color.new(color.blue, 78)
+color candidateBg = color.new(color.teal, 76)
+color activeBg = color.new(color.green, 76)
+color warnBg = color.new(color.orange, 76)
+color invalidBg = color.new(color.red, 78)
+color stateBg = timeStateCode == TIME_STATE_INVALID or timeStateCode == TIME_STATE_RESET_REQUIRED ? invalidBg : timeStateCode == TIME_STATE_NOISE_ONLY or timeStateCode == TIME_STATE_FALSE_RELEASE ? warnBg : timeStateCode == TIME_STATE_WINDOW_OPEN or timeStateCode == TIME_STATE_FORCE_EXPRESSION ? activeBg : timeStateCode == TIME_STATE_PROTAGONIST_CANDIDATE ? candidateBg : timeStateCode == TIME_STATE_BUILD or timeStateCode == TIME_STATE_PRE_WINDOW ? buildBg : quietBg
+
+var table timeTable = table.new(f_position(tablePosition), 2, 19, frame_color=color.new(color.white, 80), frame_width=1, border_color=color.new(color.white, 88), border_width=1)
+if barstate.islast
+    table.set_position(timeTable, f_position(tablePosition))
+    table.clear(timeTable, 0, 0, 1, 18)
+    if showTable
+        ts = f_size(tableSize)
+        table.cell(timeTable, 0, 0, "MAAT2 TIME", text_color=color.silver, bgcolor=stateBg, text_size=ts)
+        table.cell(timeTable, 1, 0, "V1", text_color=color.white, bgcolor=stateBg, text_size=ts)
+        table.cell(timeTable, 0, 1, "BRIDGE", text_color=color.silver, bgcolor=stateBg, text_size=ts)
+        table.cell(timeTable, 1, 1, engineBridgeValid ? "VALID" : "INVALID", text_color=color.white, bgcolor=stateBg, text_size=ts)
+        table.cell(timeTable, 0, 2, "TF", text_color=color.silver, bgcolor=quietBg, text_size=ts)
+        table.cell(timeTable, 1, 2, str.tostring(chartTfMinutes) + "M", text_color=color.white, bgcolor=quietBg, text_size=ts)
+        table.cell(timeTable, 0, 3, "PARENT", text_color=color.silver, bgcolor=quietBg, text_size=ts)
+        table.cell(timeTable, 1, 3, str.tostring(parentTfMinutes) + "M", text_color=color.white, bgcolor=quietBg, text_size=ts)
+        table.cell(timeTable, 0, 4, "SCORE", text_color=color.silver, bgcolor=stateBg, text_size=ts)
+        table.cell(timeTable, 1, 4, str.tostring(timeScore), text_color=color.white, bgcolor=stateBg, text_size=ts)
+        table.cell(timeTable, 0, 5, "STATE", text_color=color.silver, bgcolor=stateBg, text_size=ts)
+        table.cell(timeTable, 1, 5, f_stateText(timeStateCode), text_color=color.white, bgcolor=stateBg, text_size=ts)
+        table.cell(timeTable, 0, 6, "ROLE", text_color=color.silver, bgcolor=stateBg, text_size=ts)
+        table.cell(timeTable, 1, 6, f_roleText(timeRoleCode), text_color=color.white, bgcolor=stateBg, text_size=ts)
+        table.cell(timeTable, 0, 7, "RESULT", text_color=color.silver, bgcolor=stateBg, text_size=ts)
+        table.cell(timeTable, 1, 7, f_resultText(timeResultCode), text_color=color.white, bgcolor=stateBg, text_size=ts)
+        table.cell(timeTable, 0, 8, "WHY", text_color=color.silver, bgcolor=quietBg, text_size=ts)
+        table.cell(timeTable, 1, 8, f_whyText(timeWhyCode), text_color=color.white, bgcolor=quietBg, text_size=ts)
+        table.cell(timeTable, 0, 9, "STRUCT", text_color=color.silver, bgcolor=quietBg, text_size=ts)
+        table.cell(timeTable, 1, 9, str.tostring(parsedStructure), text_color=color.white, bgcolor=quietBg, text_size=ts)
+        table.cell(timeTable, 0, 10, "FORCE", text_color=color.silver, bgcolor=quietBg, text_size=ts)
+        table.cell(timeTable, 1, 10, str.tostring(parsedForce), text_color=color.white, bgcolor=quietBg, text_size=ts)
+        table.cell(timeTable, 0, 11, "WINDOW", text_color=color.silver, bgcolor=quietBg, text_size=ts)
+        table.cell(timeTable, 1, 11, str.tostring(parsedWindow), text_color=color.white, bgcolor=quietBg, text_size=ts)
+        table.cell(timeTable, 0, 12, "RISK", text_color=color.silver, bgcolor=quietBg, text_size=ts)
+        table.cell(timeTable, 1, 12, str.tostring(parsedRisk), text_color=color.white, bgcolor=quietBg, text_size=ts)
+        table.cell(timeTable, 0, 13, "GUARD MASK", text_color=color.silver, bgcolor=quietBg, text_size=ts)
+        table.cell(timeTable, 1, 13, str.tostring(parsedGuardMask), text_color=color.white, bgcolor=quietBg, text_size=ts)
+        table.cell(timeTable, 0, 14, "ALERT MASK", text_color=color.silver, bgcolor=quietBg, text_size=ts)
+        table.cell(timeTable, 1, 14, str.tostring(parsedAlertMask), text_color=color.white, bgcolor=quietBg, text_size=ts)
+        table.cell(timeTable, 0, 15, "NOISE", text_color=color.silver, bgcolor=quietBg, text_size=ts)
+        table.cell(timeTable, 1, 15, str.tostring(timeNoiseScore), text_color=color.white, bgcolor=quietBg, text_size=ts)
+        table.cell(timeTable, 0, 16, "BARS", text_color=color.silver, bgcolor=quietBg, text_size=ts)
+        table.cell(timeTable, 1, 16, str.tostring(barsInState), text_color=color.white, bgcolor=quietBg, text_size=ts)
+        table.cell(timeTable, 0, 17, "CHANGES", text_color=color.silver, bgcolor=quietBg, text_size=ts)
+        table.cell(timeTable, 1, 17, str.tostring(math.round(stateChangeCount)), text_color=color.white, bgcolor=quietBg, text_size=ts)
+        table.cell(timeTable, 0, 18, "NOTE", text_color=color.silver, bgcolor=stateBg, text_size=ts)
+        table.cell(timeTable, 1, 18, noteText, text_color=color.white, bgcolor=stateBg, text_size=ts)
+
+plot(float(timePackCode), title="AL_MAAT2_TIME_PACK_CODE", display=display.none)
+plot(float(timeScore), title="AL_MAAT2_TIME_SCORE", display=display.none)
+plot(float(timeRoleCode), title="AL_MAAT2_TIME_ROLE_CODE", display=display.none)
+plot(float(timeResultCode), title="AL_MAAT2_TIME_RESULT_CODE", display=display.none)
+plot(float(timeWhyCode), title="AL_MAAT2_TIME_WHY_CODE", display=display.none)
+plot(float(timeNoiseScore), title="AL_MAAT2_TIME_NOISE_SCORE", display=display.none)
+plot(alertWindow ? 1.0 : 0.0, title="AL_MAAT2_TIME_WINDOW_FLAG", display=display.none)
+plot((alertReset or guardReset) ? 1.0 : 0.0, title="AL_MAAT2_TIME_RESET_FLAG", display=display.none)
+plot(engineBridgeValid ? 1.0 : 0.0, title="AL_MAAT2_TIME_VALID", display=display.none)
+plot(float(timeStateCode), title="AL_MAAT2_TIME_STATE_CODE", display=display.none)
+plot(float(chartTfMinutes), title="AL_MAAT2_TIME_CANDIDATE_MIN", display=display.none)
+plot(float(parentTfMinutes), title="AL_MAAT2_TIME_PARENT_MIN", display=display.none)
+plot(float(parentDistanceMinutes), title="AL_MAAT2_TIME_PARENT_DISTANCE_MIN", display=display.none)
+plot(float(parsedGuardMask), title="AL_MAAT2_TIME_GUARD_MASK", display=display.none)
+plot(float(parsedAlertMask), title="AL_MAAT2_TIME_ALERT_MASK", display=display.none)
+plot(float(barsInState), title="AL_MAAT2_TIME_BARS_IN_STATE", display=display.none)
+plot(stateChangeCount, title="AL_MAAT2_TIME_STATE_CHANGE_COUNT", display=display.none)
+plot(float(diagCode), title="AL_MAAT2_TIME_DIAG_CODE", display=display.none)

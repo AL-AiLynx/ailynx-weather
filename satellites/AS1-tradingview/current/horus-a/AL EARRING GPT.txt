@@ -1,0 +1,247 @@
+//@version=6
+indicator("AL EARRING GPT", overlay=true, max_labels_count=0, max_bars_back=3000)
+
+//==================================================
+// [0] Core
+//==================================================
+string GROUP_CORE = "EARRING G | Core"
+
+bool  useAutoTFScale = input.bool(true,  "Use auto TF scaling", group=GROUP_CORE, display=display.none)
+bool  enforceTFRule  = input.bool(false, "Use TF cap rule", group=GROUP_CORE, display=display.none)
+int   tfMaxMin       = input.int(30, "Max minutes", minval=1, maxval=240, group=GROUP_CORE, display=display.none)
+bool  useCloseBasis  = input.bool(true, "Use close basis", group=GROUP_CORE, display=display.none)
+int   fadeBars       = input.int(24, "Fade bars", minval=5, maxval=300, group=GROUP_CORE, display=display.none)
+int   cooldownBars   = input.int(18, "Cooldown bars", minval=0, maxval=300, group=GROUP_CORE, display=display.none)
+int   minKToFire     = input.int(55, "Minimum K to fire", minval=0, maxval=100, group=GROUP_CORE, display=display.none)
+
+//==================================================
+// [1] Volume / red bar
+//==================================================
+string GROUP_RED = "EARRING G | Red Bar"
+
+int   redLookback = input.int(40, "Red lookback", minval=10, maxval=300, group=GROUP_RED, display=display.none)
+int   volBaseLen  = input.int(50, "Volume SMA len", minval=5, maxval=300, group=GROUP_RED, display=display.none)
+float volMultMin  = input.float(1.80, "Minimum vol ratio", minval=1.05, step=0.05, group=GROUP_RED, display=display.none)
+int   redWeight   = input.int(45, "Red bar weight", minval=0, maxval=70, group=GROUP_RED, display=display.none)
+
+//==================================================
+// [2] Filters
+//==================================================
+string GROUP_FILTER = "EARRING G | Filter"
+
+int   emaFastLen       = input.int(21, "Fast EMA", minval=2, maxval=200, group=GROUP_FILTER, display=display.none)
+int   emaSlowLen       = input.int(55, "Slow EMA", minval=2, maxval=400, group=GROUP_FILTER, display=display.none)
+bool  requireBelowFast = input.bool(true, "Require close below fast EMA", group=GROUP_FILTER, display=display.none)
+bool  requireTrendDown = input.bool(false, "Require fast EMA < slow EMA", group=GROUP_FILTER, display=display.none)
+float bodyATRMin       = input.float(0.10, "Minimum body (ATR x)", minval=0.0, step=0.02, group=GROUP_FILTER, display=display.none)
+
+//==================================================
+// [3] Confirmation
+//==================================================
+string GROUP_CONFIRM = "EARRING G | Confirm"
+
+bool useBearEngulf      = input.bool(true,  "Use bearish engulfing", group=GROUP_CONFIRM, display=display.none)
+bool useRsiDiv          = input.bool(false, "Use RSI bearish divergence", group=GROUP_CONFIRM, display=display.none)
+bool useStochDiv        = input.bool(false, "Use Stoch RSI bearish divergence", group=GROUP_CONFIRM, display=display.none)
+bool requireConfirmIfOn = input.bool(true,  "Require >=1 confirm if enabled", group=GROUP_CONFIRM, display=display.none)
+
+//==================================================
+// [4] Alerts
+//==================================================
+string GROUP_ALERT = "EARRING G | Alert"
+
+bool enableAlerts = input.bool(true, "Enable alerts", group=GROUP_ALERT, display=display.none)
+
+//==================================================
+// [5] Helpers
+//==================================================
+f_clampInt(_v, _min, _max) =>
+    math.max(_min, math.min(_max, _v))
+
+f_tfScale() =>
+    float out = 1.0
+    if timeframe.isdaily or timeframe.isweekly or timeframe.ismonthly
+        out := 1.20
+    else if timeframe.isminutes
+        out := timeframe.multiplier >= 240 ? 1.15 : timeframe.multiplier >= 60 ? 1.08 : timeframe.multiplier >= 15 ? 1.03 : 1.0
+    else
+        out := 1.05
+    out
+
+//==================================================
+// [6] Base calc
+//==================================================
+bool tfOK = true
+if enforceTFRule
+    tfOK := timeframe.isminutes and timeframe.multiplier <= tfMaxMin
+
+float basis = useCloseBasis ? close : hlc3
+float emaFast = ta.ema(close, emaFastLen)
+float emaSlow = ta.ema(close, emaSlowLen)
+float atrValue = ta.atr(14)
+
+bool trendDown = emaFast < emaSlow
+float candleBody = math.abs(close - open)
+bool bodyOK = atrValue > 0 ? (candleBody >= atrValue * bodyATRMin) : true
+bool bearBody = close < open
+
+float volBase = ta.sma(volume, volBaseLen)
+float volBaseSafe = math.max(nz(volBase, volume), 1.0)
+float volRatio = volume / volBaseSafe
+float volumeHighestPrev = ta.highest(volume[1], redLookback)
+bool redByHigh = tfOK and (not na(volumeHighestPrev)) and (volume > volumeHighestPrev)
+bool redByRatio = tfOK and (volRatio >= volMultMin)
+bool redBar = redByHigh and redByRatio and bearBody
+
+bool bearEngulf = useBearEngulf and tfOK and close < open and close[1] > open[1] and close < open[1] and open > close[1]
+
+int rsiLen = 14
+float rsiValue = ta.rsi(basis, rsiLen)
+int pivotLen = 5
+
+float rsiPivotHigh = ta.pivothigh(rsiValue, pivotLen, pivotLen)
+float pxPivotHigh  = ta.pivothigh(basis, pivotLen, pivotLen)
+
+var float lastPriceHighRsi = na
+var float lastRsiHigh = na
+bool rsiBearDiv = false
+if useRsiDiv and tfOK and not na(pxPivotHigh) and not na(rsiPivotHigh)
+    float currentPriceHigh = pxPivotHigh
+    float currentRsiHigh = rsiPivotHigh
+    if not na(lastPriceHighRsi) and not na(lastRsiHigh)
+        rsiBearDiv := (currentPriceHigh > lastPriceHighRsi) and (currentRsiHigh < lastRsiHigh)
+    lastPriceHighRsi := currentPriceHigh
+    lastRsiHigh := currentRsiHigh
+
+float rsiBase = ta.rsi(basis, rsiLen)
+int stochLen = 14
+float stochRsi = ta.stoch(rsiBase, rsiBase, rsiBase, stochLen) * 100.0
+float stochPivotHigh = ta.pivothigh(stochRsi, pivotLen, pivotLen)
+float pxPivotHigh2 = ta.pivothigh(basis, pivotLen, pivotLen)
+
+var float lastPriceHighStoch = na
+var float lastStochHigh = na
+bool stochBearDiv = false
+if useStochDiv and tfOK and not na(pxPivotHigh2) and not na(stochPivotHigh)
+    float currentPriceHigh2 = pxPivotHigh2
+    float currentStochHigh = stochPivotHigh
+    if not na(lastPriceHighStoch) and not na(lastStochHigh)
+        stochBearDiv := (currentPriceHigh2 > lastPriceHighStoch) and (currentStochHigh < lastStochHigh)
+    lastPriceHighStoch := currentPriceHigh2
+    lastStochHigh := currentStochHigh
+
+bool anyConfirmEnabled = useBearEngulf or useRsiDiv or useStochDiv
+bool confirmHit = bearEngulf or rsiBearDiv or stochBearDiv
+bool confirmOK = true
+if anyConfirmEnabled and requireConfirmIfOn
+    confirmOK := confirmHit
+
+bool gateOK = tfOK and bodyOK and bearBody
+if requireBelowFast
+    gateOK := gateOK and (close <= emaFast)
+if requireTrendDown
+    gateOK := gateOK and trendDown
+
+bool earFilterOK = gateOK and confirmOK
+bool earTriggerRaw = redBar and earFilterOK
+bool earFailRaw = redBar and not earFilterOK
+
+//==================================================
+// [7] Fade / score / state
+//==================================================
+var int lastTriggerBar = na
+bool triggerNow = earTriggerRaw
+if triggerNow
+    lastTriggerBar := bar_index
+
+int barsSinceTrigger = na(lastTriggerBar) ? 999999 : (bar_index - lastTriggerBar)
+bool inFade = (barsSinceTrigger >= 0) and (barsSinceTrigger <= fadeBars)
+
+float tfScale = useAutoTFScale ? f_tfScale() : 1.0
+int minKAdj = f_clampInt(int(math.round(minKToFire * tfScale)), 0, 100)
+
+int earKRaw = 0
+if inFade
+    earKRaw += redBar ? redWeight : 0
+    earKRaw += bearEngulf ? 20 : 0
+    earKRaw += rsiBearDiv ? 15 : 0
+    earKRaw += stochBearDiv ? 15 : 0
+    int volumeBonus = int(math.round(math.min(10.0, (volRatio - volMultMin) * 10.0)))
+    if volumeBonus > 0
+        earKRaw += volumeBonus
+
+int earScore = f_clampInt(earKRaw, 0, 100)
+
+int earState = 0
+if triggerNow
+    earState := -2
+else if inFade
+    earState := -1
+else
+    earState := 0
+
+//==================================================
+// [8] Event / dir / res
+//==================================================
+var int lastEventBar = na
+bool cooldownOK = cooldownBars <= 0 ? true : (na(lastEventBar) or (bar_index - lastEventBar >= cooldownBars))
+bool kEnough = earScore >= minKAdj
+bool earEventFire = triggerNow and cooldownOK and kEnough
+
+int earEvent = 0
+if earEventFire
+    earEvent := 1
+else if earFailRaw
+    earEvent := 2
+else
+    earEvent := 0
+
+int earDirection = earState < 0 ? -1 : 0
+
+int earResistance = 0
+if earState == -2
+    earResistance += 3
+else if earState == -1
+    earResistance += 2
+
+if earScore >= 90
+    earResistance += 2
+else if earScore >= 75
+    earResistance += 1
+
+earResistance := f_clampInt(earResistance, 0, 5)
+
+if earEventFire
+    lastEventBar := bar_index
+
+int earActiveFlag = (earState != 0 or earScore >= 35 or earEvent != 0) ? 1 : 0
+
+//==================================================
+// [9] Alerts
+//==================================================
+int prevEarState = bar_index > 0 ? earState[1] : 0
+int prevEarEvent = bar_index > 0 ? earEvent[1] : 0
+float prevEarResistance = bar_index > 0 ? earResistance[1] : 0.0
+bool prevEarFilterOK = bar_index > 0 ? earFilterOK[1] : false
+
+bool earTriggerStart = triggerNow and prevEarState != -2
+bool earEventStart = earEvent == 1 and prevEarEvent != 1
+bool earFadeStart = earState == -1 and prevEarState == 0
+bool earStrongRes = earResistance >= 4 and prevEarResistance < 4
+bool earFailStart = earFailRaw and not prevEarFilterOK
+
+alertcondition(enableAlerts and earTriggerStart, title="AL EARRING | TRIGGER",    message="AL_EARRING,TRIGGER")
+alertcondition(enableAlerts and earEventStart,   title="AL EARRING | EVENT FIRE", message="AL_EARRING,EVENT_FIRE")
+alertcondition(enableAlerts and earFadeStart,    title="AL EARRING | FADE",       message="AL_EARRING,FADE")
+alertcondition(enableAlerts and earStrongRes,    title="AL EARRING | STRONG RES", message="AL_EARRING,STRONG_RES")
+alertcondition(enableAlerts and earFailStart,    title="AL EARRING | FAIL",       message="AL_EARRING,FAIL")
+
+//==================================================
+// [10] LINK6 outputs only
+//==================================================
+plot(float(earDirection),  title="AL_EARRING_DIRECTION",   display=display.none)
+plot(float(earState),      title="AL_EARRING_STATE",       display=display.none)
+plot(float(earScore),      title="AL_EARRING_SCORE",       display=display.none)
+plot(float(earResistance), title="AL_EARRING_RESISTANCE",  display=display.none)
+plot(float(earEvent),      title="AL_EARRING_EVENT",       display=display.none)
+plot(float(earActiveFlag), title="AL_EARRING_ACTIVE_FLAG", display=display.none)

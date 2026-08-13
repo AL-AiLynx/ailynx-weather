@@ -1,0 +1,12 @@
+{
+  "mapping_version":"as1-horus-a-map.v1.3","schema_version":"as1.v1.3","layout_id":"HORUS_A","status":"DESIGN_ONLY",
+  "fields":{
+    "schema_version":"constant:as1.v1.3","satellite_id":"constant:AS1","platform":"constant:TRADINGVIEW","layout_id":"constant:HORUS_A",
+    "source_profile_code":"runtime registry selection","instrument":"Pine instrument evidence; preserve verbatim","session_hint":"Pine session hint; preserve verbatim",
+    "timing.timeframe":"timeframe.period","timing.bar_open_time":"time","timing.bar_close_time":"time_close","timing.sent_at":"server-compatible client send time",
+    "bar":"OHLCV at confirmed bar close","quality":"Pine sensor evaluation","payload":"HORUS A observer fields"
+  },
+  "server_generated":["canonical_regime_id","canonical_instrument","series_segment_id","registry_snapshot_version","session_context","server_evaluation","dedup_key"],
+  "fixture_reference":"../tests/fixtures/v1.3/AS1_V13_NORMAL_001.json#/raw_events/0",
+  "not_implemented":["Pine Exporter patch","TradingView Alert","Webhook delivery","Supabase persistence"]
+}

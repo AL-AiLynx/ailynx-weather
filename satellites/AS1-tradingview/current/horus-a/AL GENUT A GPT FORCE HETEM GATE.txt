@@ -1,0 +1,1574 @@
+//@version=6
+indicator("AL GENUT A GPT FORCE HETEM GATE", overlay=true, max_bars_back=3000, max_labels_count=0)
+
+//==================================================
+// 헬퍼
+//==================================================
+f_clamp(float x, float lo, float hi) =>
+    math.max(lo, math.min(hi, x))
+
+f_pos(string opt) =>
+    p = position.top_right
+    if opt == "TL"
+        p := position.top_left
+    else if opt == "TC"
+        p := position.top_center
+    else if opt == "TR"
+        p := position.top_right
+    else if opt == "ML"
+        p := position.middle_left
+    else if opt == "MC"
+        p := position.middle_center
+    else if opt == "MR"
+        p := position.middle_right
+    else if opt == "BL"
+        p := position.bottom_left
+    else if opt == "BC"
+        p := position.bottom_center
+    else
+        p := position.bottom_right
+    p
+
+f_tsize(string opt) =>
+    sz = size.small
+    if opt == "XS"
+        sz := size.tiny
+    else if opt == "S"
+        sz := size.small
+    else if opt == "M"
+        sz := size.normal
+    else if opt == "L"
+        sz := size.large
+    else
+        sz := size.huge
+    sz
+
+f_tablePos(string opt) =>
+    p = position.bottom_right
+    if opt == "좌상"
+        p := position.top_left
+    else if opt == "상중"
+        p := position.top_center
+    else if opt == "우상"
+        p := position.top_right
+    else if opt == "좌중"
+        p := position.middle_left
+    else if opt == "정중"
+        p := position.middle_center
+    else if opt == "우중"
+        p := position.middle_right
+    else if opt == "좌하"
+        p := position.bottom_left
+    else if opt == "하중"
+        p := position.bottom_center
+    else
+        p := position.bottom_right
+    p
+
+f_textSizeFromScale(int sc) =>
+    sz = size.normal
+    if sc <= 2
+        sz := size.tiny
+    else if sc <= 4
+        sz := size.small
+    else if sc <= 6
+        sz := size.normal
+    else if sc <= 8
+        sz := size.large
+    else
+        sz := size.huge
+    sz
+
+f_dirCode(int d) =>
+    d > 0 ? "UP" : d < 0 ? "DOWN" : "FLAT"
+
+f_stateCode(int s) =>
+    s == 4 ? "FAIL" : s == 3 ? "HOLD" : s == 2 ? "TRIG" : s == 1 ? "SET" : "IDLE"
+
+f_riskCode(int r) =>
+    r == 0 ? "SAFE" : r == 1 ? "MID" : "RISK"
+
+f_scoreBand(float v) =>
+    v >= 80 ? "EXTREME" : v >= 60 ? "HIGH" : v >= 40 ? "MID" : v >= 20 ? "LOW" : "NONE"
+
+f_reasonCode(int rc) =>
+    rc == 1 ? "FAIL" : rc == 2 ? "THIN" : rc == 3 ? "ALIGN" : rc == 4 ? "RISK" : rc == 5 ? "TRIG" : rc == 6 ? "WAIT" : "NONE"
+
+f_numTxt(float v) =>
+    str.tostring(int(math.round(v)))
+
+f_flowChar(float x) =>
+    x >= 3 ? "+" : x <= -3 ? "-" : "."
+
+f_jsonSafe(string s) =>
+    str.replace_all(str.replace_all(str.replace_all(str.tostring(s), "\\", "\\\\"), "\"", "'"), "\n", " ")
+
+f_boolStr(bool b) =>
+    b ? "true" : "false"
+
+f_kv(string k, string v) =>
+    "\"" + k + "\":\"" + f_jsonSafe(v) + "\""
+
+f_kvNum(string k, string v) =>
+    "\"" + k + "\":" + v
+
+f_kvBool(string k, bool b) =>
+    "\"" + k + "\":" + f_boolStr(b)
+
+f_keySafe(string s) =>
+    string out = f_jsonSafe(s)
+    out := str.replace_all(out, ":", "_")
+    out := str.replace_all(out, "/", "_")
+    out := str.replace_all(out, "\\", "_")
+    out := str.replace_all(out, "|", "_")
+    out := str.replace_all(out, " ", "_")
+    out := str.replace_all(out, ",", "_")
+    out
+
+
+//==================================================
+// GAW compact helpers (GPT_CODE table / alert digest)
+//==================================================
+f_gawLayer(string s) =>
+    string out = "L"
+    if s == "FORCE"
+        out := "F"
+    else if s == "STRUCTURE"
+        out := "S"
+    out
+
+f_gawGate(string s) =>
+    string out = "WT"
+    if s == "OPEN"
+        out := "GO"
+    else if s == "BLOCKED"
+        out := "GB"
+    else if s == "CONGESTED"
+        out := "GC"
+    else if s == "CLEARING"
+        out := "CL"
+    else if s == "RISK"
+        out := "RK"
+    out
+
+f_gawBand(string s) =>
+    string out = s
+    if s == "NONE"
+        out := "N"
+    else if s == "LOW"
+        out := "L"
+    else if s == "MID"
+        out := "M"
+    else if s == "HIGH"
+        out := "H"
+    else if s == "EXTREME"
+        out := "X"
+    else if s == "SAFE"
+        out := "N"
+    else if s == "RISK"
+        out := "RK"
+    out
+
+f_gawState(string s) =>
+    string out = s
+    if s == "IDLE"
+        out := "ID"
+    else if s == "SET"
+        out := "ST"
+    else if s == "TRIG"
+        out := "TR"
+    else if s == "HOLD"
+        out := "HD"
+    else if s == "FAIL"
+        out := "FL"
+    out
+
+f_gawRisk(string s) =>
+    string out = s
+    if s == "NONE" or s == "SAFE"
+        out := "N"
+    else if s == "LOW"
+        out := "L"
+    else if s == "MID"
+        out := "M"
+    else if s == "HIGH"
+        out := "H"
+    else if s == "EXTREME"
+        out := "X"
+    else if s == "RISK" or s == "RK"
+        out := "RK"
+    out
+
+f_gawBlock(string s) =>
+    string out = "C"
+    if s == "BLOCK"
+        out := "B"
+    else if s == "HARD_BLOCK"
+        out := "HB"
+    else if s == "SOFT_BLOCK"
+        out := "B"
+    else if s == "PREWARN"
+        out := "PW"
+    else if s == "CLEAR"
+        out := "C"
+    out
+
+f_gawFlow(string s) =>
+    string out = "FL"
+    if s == "UP"
+        out := "UP"
+    else if s == "DOWN"
+        out := "DN"
+    else if s == "DN"
+        out := "DN"
+    else if s == "FLAT"
+        out := "FL"
+    else if s == "SHIFT"
+        out := "SH"
+    else if s == "MIXED"
+        out := "MX"
+    out
+
+f_gawEvent(string s) =>
+    string out = s
+    if s == "TF_SNAPSHOT"
+        out := "TFS"
+    else if s == "FORCE_SHIFT"
+        out := "FS"
+    else if s == "FORCE_CONFIRM"
+        out := "FC"
+    else if s == "FORCE_FADE_BLOCK"
+        out := "FFB"
+    else if s == "PRESSURE_RISING"
+        out := "PR"
+    else if s == "TRAP_WAIT"
+        out := "TW"
+    else if s == "STRUCTURE_SHIFT"
+        out := "SS"
+    else if s == "GATE_BLOCKED"
+        out := "GB"
+    else if s == "GATE_CLEARING"
+        out := "GCL"
+    else if s == "BLOCK_PREWARN"
+        out := "BPW"
+    else if s == "RECOVERY_FAIL"
+        out := "RF"
+    else if s == "TRAP_FAKEOUT_WAIT"
+        out := "TFW"
+    else if s == "OBSERVE"
+        out := "OBS"
+    out
+
+f_gawPressureCode(string s) =>
+    float v = str.tonumber(s)
+    string bandCode = f_gawBand(f_scoreBand(v))
+    bandCode + s
+
+f_gawPressureLine(string s) =>
+    float v = str.tonumber(s)
+    string bandText = f_scoreBand(v)
+    bandText + "_" + s
+
+f_makeAlertBusJson(string alertKind, string eventName, string triggerName, string barStatus, string seasonTxt, string seasonCodeTxt, string busGroup, string busLayer, string dirTxt, string stateTxt, string riskTxt, string totalTxt, string blockTxt, string flowTxt, string nextTfTxt, string modeCodeTxt, string eventCodeTxt, string eventSeverityTxt, string gawPolicyTxt, string schemaVersionTxt, string gateStateTxt, string gateScoreTxt, string pressureIndexTxt, string stateSig, string eventSig, string dedupKey, string policy, bool gptOk, bool voiceOk, string versionTxt) =>
+    string gawGateCode = f_gawGate(gateStateTxt)
+    string gawRiskCode = f_gawRisk(riskTxt)
+    string gawBlockCode = f_gawBlock(blockTxt)
+    string gawEventCode = f_gawEvent(eventName)
+    string gawPressureCode = f_gawPressureCode(pressureIndexTxt)
+    string gawPressureLine = f_gawPressureLine(pressureIndexTxt)
+    string gawCode = schemaVersionTxt + "|TF:" + timeframe.period + "|EC:" + gawEventCode + "|ES:" + eventSeverityTxt + "|" + gawPolicyTxt + "|G:" + gawGateCode + "|P:" + gawPressureCode + "|R:" + gawRiskCode + "|B:" + gawBlockCode + "|N:" + nextTfTxt
+    string gawLine = "GAW_V3; TF=" + timeframe.period + "; EC=" + gawEventCode + "; ES=" + eventSeverityTxt + "; " + gawPolicyTxt + "; GATE=" + gateStateTxt + "; PRESSURE=" + gawPressureLine + "; RISK=" + riskTxt + "; BLOCK=" + blockTxt + "; NEXT=" + nextTfTxt
+    string json = "{"
+    json := json + f_kv("source", "TradingView") + ","
+    json := json + f_kv("system", "AiLynx") + ","
+    json := json + f_kv("engine", "GENUT") + ","
+    json := json + f_kv("observer", "HORUS") + ","
+    json := json + f_kv("season", seasonTxt) + ","
+    json := json + f_kv("season_code", seasonCodeTxt) + ","
+    json := json + f_kv("group", busGroup) + ","
+    json := json + f_kv("layer", busLayer) + ","
+    json := json + f_kv("alert_kind", alertKind) + ","
+    json := json + f_kv("event", eventName) + ","
+    json := json + f_kv("trigger", triggerName) + ","
+    json := json + f_kv("bar_status", barStatus) + ","
+    json := json + f_kv("gv", schemaVersionTxt) + ","
+    json := json + f_kv("ec", gawEventCode) + ","
+    json := json + f_kvNum("es", eventSeverityTxt) + ","
+    json := json + f_kv("gp", gawPolicyTxt) + ","
+    json := json + f_kv("symbol", syminfo.tickerid) + ","
+    json := json + f_kv("tf", timeframe.period) + ","
+    json := json + f_kv("time", str.tostring(time)) + ","
+    json := json + f_kv("open", str.tostring(open)) + ","
+    json := json + f_kv("high", str.tostring(high)) + ","
+    json := json + f_kv("low", str.tostring(low)) + ","
+    json := json + f_kv("close", str.tostring(close)) + ","
+    json := json + f_kv("volume", str.tostring(volume)) + ","
+    json := json + f_kv("dir", dirTxt) + ","
+    json := json + f_kv("state", stateTxt) + ","
+    json := json + f_kv("risk", riskTxt) + ","
+    json := json + f_kv("total", totalTxt) + ","
+    json := json + f_kv("block", blockTxt) + ","
+    json := json + f_kv("flow", flowTxt) + ","
+    json := json + f_kv("next_tf", nextTfTxt) + ","
+    json := json + f_kv("mode_code", modeCodeTxt) + ","
+    json := json + f_kv("event_code", eventCodeTxt) + ","
+    json := json + f_kv("gate_state", gateStateTxt) + ","
+    json := json + f_kv("gate_score", gateScoreTxt) + ","
+    json := json + f_kv("pressure_index", pressureIndexTxt) + ","
+    json := json + f_kv("state_signature", stateSig) + ","
+    json := json + f_kv("event_signature", eventSig) + ","
+    json := json + f_kv("dedup_key", dedupKey) + ","
+    json := json + f_kv("brief_policy", policy) + ","
+    json := json + f_kvBool("gpt_allowed", gptOk) + ","
+    json := json + f_kvBool("voice_allowed", voiceOk) + ","
+    json := json + f_kv("gaw_code", gawCode) + ","
+    json := json + f_kv("gaw_line", gawLine) + ","
+    json := json + f_kv("version", versionTxt)
+    json := json + "}"
+    json
+
+f_tfHintCode(string tf) =>
+    int code = 0
+    if tf == "1"
+        code := 1
+    else if tf == "3"
+        code := 16
+    else if tf == "5"
+        code := 2
+    else if tf == "15"
+        code := 3
+    else if tf == "30"
+        code := 4
+    else if tf == "45"
+        code := 17
+    else if tf == "60"
+        code := 5
+    else if tf == "120"
+        code := 6
+    else if tf == "180"
+        code := 18
+    else if tf == "240"
+        code := 7
+    else if tf == "360"
+        code := 8
+    else if tf == "480"
+        code := 9
+    else if tf == "600"
+        code := 19
+    else if tf == "720"
+        code := 10
+    else if tf == "840"
+        code := 20
+    else if tf == "960"
+        code := 11
+    else if tf == "1080"
+        code := 21
+    else if tf == "1200"
+        code := 12
+    else if tf == "1320"
+        code := 13
+    else if tf == "D" or tf == "1D"
+        code := 14
+    else if tf == "2D"
+        code := 22
+    else if tf == "3D"
+        code := 23
+    else if tf == "W" or tf == "1W"
+        code := 15
+    else if tf == "M" or tf == "1M"
+        code := 24
+    code
+
+f_nextTfHintCode(int code) =>
+    int nextCode = 0
+    if code == 1
+        nextCode := 16
+    else if code == 16
+        nextCode := 2
+    else if code == 2
+        nextCode := 3
+    else if code == 3
+        nextCode := 4
+    else if code == 4
+        nextCode := 17
+    else if code == 17
+        nextCode := 5
+    else if code == 5
+        nextCode := 6
+    else if code == 6
+        nextCode := 18
+    else if code == 18
+        nextCode := 7
+    else if code == 7
+        nextCode := 8
+    else if code == 8
+        nextCode := 9
+    else if code == 9
+        nextCode := 10
+    else if code == 19
+        nextCode := 10
+    else if code == 10
+        nextCode := 11
+    else if code == 20
+        nextCode := 11
+    else if code == 11
+        nextCode := 12
+    else if code == 21
+        nextCode := 12
+    else if code == 12
+        nextCode := 13
+    else if code == 13
+        nextCode := 14
+    else if code == 14
+        nextCode := 15
+    else if code == 22
+        nextCode := 23
+    else if code == 23
+        nextCode := 15
+    else if code == 15
+        nextCode := 24
+    nextCode
+
+f_tfRoleText(int code) =>
+    string txt = "UNK"
+    if code == 0
+        txt := "NONE"
+    else if code == 1
+        txt := "LOWER_NOISE"
+    else if code == 2
+        txt := "SUPPORT"
+    else if code == 3
+        txt := "TRANSFER"
+    else if code == 4
+        txt := "DOM_CAND"
+    else if code == 5
+        txt := "NEXT_TEST"
+    else if code == 6
+        txt := "ANCHOR"
+    txt
+
+f_tfRoleAbbrev(int code) =>
+    string txt = "UN"
+    if code == 0
+        txt := "NO"
+    else if code == 1
+        txt := "LNZ"
+    else if code == 2
+        txt := "SUP"
+    else if code == 3
+        txt := "TRF"
+    else if code == 4
+        txt := "DMC"
+    else if code == 5
+        txt := "NXT"
+    else if code == 6
+        txt := "ANC"
+    txt
+
+f_nextTfText(int code) =>
+    string txt = "UNK"
+    if code == 0
+        txt := "NONE"
+    else if code == 1
+        txt := "1M"
+    else if code == 16
+        txt := "3M"
+    else if code == 2
+        txt := "5M"
+    else if code == 3
+        txt := "15M"
+    else if code == 4
+        txt := "30M"
+    else if code == 17
+        txt := "45M"
+    else if code == 5
+        txt := "1H"
+    else if code == 6
+        txt := "2H"
+    else if code == 18
+        txt := "3H"
+    else if code == 7
+        txt := "4H"
+    else if code == 8
+        txt := "6H"
+    else if code == 9
+        txt := "8H"
+    else if code == 19
+        txt := "10H"
+    else if code == 10
+        txt := "12H"
+    else if code == 20
+        txt := "14H"
+    else if code == 11
+        txt := "16H"
+    else if code == 21
+        txt := "18H"
+    else if code == 12
+        txt := "20H"
+    else if code == 13
+        txt := "22H"
+    else if code == 14
+        txt := "1D"
+    else if code == 22
+        txt := "2D"
+    else if code == 23
+        txt := "3D"
+    else if code == 15
+        txt := "1W"
+    else if code == 24
+        txt := "1MO"
+    txt
+
+f_modeText(int code) =>
+    string txt = "UNK"
+    if code == 0
+        txt := "NONE"
+    else if code == 1
+        txt := "WAIT"
+    else if code == 2
+        txt := "CONFIRM"
+    else if code == 3
+        txt := "FADE"
+    else if code == 4
+        txt := "BLOCK"
+    else if code == 5
+        txt := "TRAP"
+    else if code == 6
+        txt := "CONFLICT"
+    else if code == 7
+        txt := "PREWARN"
+    else if code == 8
+        txt := "RECOVERY_FAIL"
+    else if code == 9
+        txt := "MIXED"
+    txt
+
+f_modeAbbrev(int code) =>
+    string txt = "UN"
+    if code == 0
+        txt := "NO"
+    else if code == 1
+        txt := "WT"
+    else if code == 2
+        txt := "CFM"
+    else if code == 3
+        txt := "FAD"
+    else if code == 4
+        txt := "BLK"
+    else if code == 5
+        txt := "TRP"
+    else if code == 6
+        txt := "CNF"
+    else if code == 7
+        txt := "PW"
+    else if code == 8
+        txt := "RF"
+    else if code == 9
+        txt := "MIX"
+    txt
+
+f_tfRolePanelPos(string opt) =>
+    p = position.top_right
+    if opt == "Top Left"
+        p := position.top_left
+    else if opt == "Top Center"
+        p := position.top_center
+    else if opt == "Top Right"
+        p := position.top_right
+    else if opt == "Middle Left"
+        p := position.middle_left
+    else if opt == "Middle Center"
+        p := position.middle_center
+    else if opt == "Middle Right"
+        p := position.middle_right
+    else if opt == "Bottom Left"
+        p := position.bottom_left
+    else if opt == "Bottom Center"
+        p := position.bottom_center
+    else if opt == "Bottom Right"
+        p := position.bottom_right
+    else
+        p := position.middle_right
+    p
+
+f_tfRolePanelSize(string opt) =>
+    sz = size.normal
+    if opt == "Tiny"
+        sz := size.tiny
+    else if opt == "Small"
+        sz := size.small
+    else if opt == "Normal"
+        sz := size.normal
+    else
+        sz := size.large
+    sz
+
+f_isLowerTfHintCode(int code) =>
+    code == 1 or code == 16 or code == 2 or code == 3
+
+f_isAnchorTfHintCode(int code) =>
+    code == 14 or code == 22 or code == 23 or code == 15 or code == 24
+
+f_isCoreTfHintCode(int code) =>
+    code == 9 or code == 19 or code == 10 or code == 20 or code == 11 or code == 21 or code == 12 or code == 13
+
+f_sgn(int d) =>
+    d > 0 ? "+" : d < 0 ? "-" : "0"
+
+f_pack(string tag, bool act, int dir, int state, int res) =>
+    act ? (tag + f_sgn(dir) + str.tostring(state) + "/" + str.tostring(res)) : (tag + "OFF")
+
+f_srcOk(float score, float dir, float state, float act, float evt, float res) =>
+    score >= 0 and score <= 100 and math.abs(dir) <= 1.5 and state >= -4 and state <= 4 and act >= 0 and act <= 1.5 and math.abs(evt) <= 200 and res >= 0 and res <= 5.5
+
+f_resBoost(int res) =>
+    1.0 + math.min(math.max(float(res), 0.0), 3.0) * 0.04
+
+//==================================================
+// 입력 소스
+// A 그룹 최종 LINK6 계약
+// SCORE / DIRECTION / STATE / ACTIVE_FLAG / EVENT / RESISTANCE
+//==================================================
+string G_SRC_SHIELD = "GENUT A | SOURCE | SHIELD"
+string G_SRC_ARMOR = "GENUT A | SOURCE | ARMOR"
+string G_SRC_PANTS = "GENUT A | SOURCE | PANTS"
+string G_SRC_GLOVE = "GENUT A | SOURCE | GLOVE"
+string G_SRC_SHOES = "GENUT A | SOURCE | SHOES"
+string G_SRC_NECKLACE = "GENUT A | SOURCE | NECKLACE"
+string G_SRC_EARRING = "GENUT A | SOURCE | EARRING"
+string G_SRC_RING = "GENUT A | SOURCE | RING"
+string G_SRC_HELMET = "GENUT A | SOURCE | HELMET"
+float srcShieldScore = input.source(close, "AL_SHIELD_SCORE", group=G_SRC_SHIELD, display=display.none)
+float srcShieldDir   = input.source(close, "AL_SHIELD_DIRECTION", group=G_SRC_SHIELD, display=display.none)
+float srcShieldState = input.source(close, "AL_SHIELD_STATE", group=G_SRC_SHIELD, display=display.none)
+float srcShieldAct   = input.source(close, "AL_SHIELD_ACTIVE_FLAG", group=G_SRC_SHIELD, display=display.none)
+float srcShieldEvt   = input.source(close, "AL_SHIELD_EVENT", group=G_SRC_SHIELD, display=display.none)
+float srcShieldRes   = input.source(close, "AL_SHIELD_RESISTANCE", group=G_SRC_SHIELD, display=display.none)
+
+float srcArmorScore = input.source(close, "AL_ARMOR_SCORE", group=G_SRC_ARMOR, display=display.none)
+float srcArmorDir   = input.source(close, "AL_ARMOR_DIRECTION", group=G_SRC_ARMOR, display=display.none)
+float srcArmorState = input.source(close, "AL_ARMOR_STATE", group=G_SRC_ARMOR, display=display.none)
+float srcArmorAct   = input.source(close, "AL_ARMOR_ACTIVE_FLAG", group=G_SRC_ARMOR, display=display.none)
+float srcArmorEvt   = input.source(close, "AL_ARMOR_EVENT", group=G_SRC_ARMOR, display=display.none)
+float srcArmorRes   = input.source(close, "AL_ARMOR_RESISTANCE", group=G_SRC_ARMOR, display=display.none)
+
+float srcPantsScore = input.source(close, "AL_PANTS_SCORE", group=G_SRC_PANTS, display=display.none)
+float srcPantsDir   = input.source(close, "AL_PANTS_DIRECTION", group=G_SRC_PANTS, display=display.none)
+float srcPantsState = input.source(close, "AL_PANTS_STATE", group=G_SRC_PANTS, display=display.none)
+float srcPantsAct   = input.source(close, "AL_PANTS_ACTIVE_FLAG", group=G_SRC_PANTS, display=display.none)
+float srcPantsEvt   = input.source(close, "AL_PANTS_EVENT", group=G_SRC_PANTS, display=display.none)
+float srcPantsRes   = input.source(close, "AL_PANTS_RESISTANCE", group=G_SRC_PANTS, display=display.none)
+
+float srcGloveScore = input.source(close, "AL_GLOVE_SCORE", group=G_SRC_GLOVE, display=display.none)
+float srcGloveDir   = input.source(close, "AL_GLOVE_DIRECTION", group=G_SRC_GLOVE, display=display.none)
+float srcGloveState = input.source(close, "AL_GLOVE_STATE", group=G_SRC_GLOVE, display=display.none)
+float srcGloveAct   = input.source(close, "AL_GLOVE_ACTIVE_FLAG", group=G_SRC_GLOVE, display=display.none)
+float srcGloveEvt   = input.source(close, "AL_GLOVE_EVENT", group=G_SRC_GLOVE, display=display.none)
+float srcGloveRes   = input.source(close, "AL_GLOVE_RESISTANCE", group=G_SRC_GLOVE, display=display.none)
+
+float srcShoesScore = input.source(close, "AL_SHOES_SCORE", group=G_SRC_SHOES, display=display.none)
+float srcShoesDir   = input.source(close, "AL_SHOES_DIRECTION", group=G_SRC_SHOES, display=display.none)
+float srcShoesState = input.source(close, "AL_SHOES_STATE", group=G_SRC_SHOES, display=display.none)
+float srcShoesAct   = input.source(close, "AL_SHOES_ACTIVE_FLAG", group=G_SRC_SHOES, display=display.none)
+float srcShoesEvt   = input.source(close, "AL_SHOES_EVENT", group=G_SRC_SHOES, display=display.none)
+float srcShoesRes   = input.source(close, "AL_SHOES_RESISTANCE", group=G_SRC_SHOES, display=display.none)
+
+float srcNeckScore = input.source(close, "AL_NECKLACE_SCORE", group=G_SRC_NECKLACE, display=display.none)
+float srcNeckDir   = input.source(close, "AL_NECKLACE_DIRECTION", group=G_SRC_NECKLACE, display=display.none)
+float srcNeckState = input.source(close, "AL_NECKLACE_STATE", group=G_SRC_NECKLACE, display=display.none)
+float srcNeckAct   = input.source(close, "AL_NECKLACE_ACTIVE_FLAG", group=G_SRC_NECKLACE, display=display.none)
+float srcNeckEvt   = input.source(close, "AL_NECKLACE_EVENT", group=G_SRC_NECKLACE, display=display.none)
+float srcNeckRes   = input.source(close, "AL_NECKLACE_RESISTANCE", group=G_SRC_NECKLACE, display=display.none)
+
+float srcEarringScore = input.source(close, "AL_EARRING_SCORE", group=G_SRC_EARRING, display=display.none)
+float srcEarringDir   = input.source(close, "AL_EARRING_DIRECTION", group=G_SRC_EARRING, display=display.none)
+float srcEarringState = input.source(close, "AL_EARRING_STATE", group=G_SRC_EARRING, display=display.none)
+float srcEarringAct   = input.source(close, "AL_EARRING_ACTIVE_FLAG", group=G_SRC_EARRING, display=display.none)
+float srcEarringEvt   = input.source(close, "AL_EARRING_EVENT", group=G_SRC_EARRING, display=display.none)
+float srcEarringRes   = input.source(close, "AL_EARRING_RESISTANCE", group=G_SRC_EARRING, display=display.none)
+
+float srcRingScore = input.source(close, "AL_RING_SCORE", group=G_SRC_RING, display=display.none)
+float srcRingDir   = input.source(close, "AL_RING_DIRECTION", group=G_SRC_RING, display=display.none)
+float srcRingState = input.source(close, "AL_RING_STATE", group=G_SRC_RING, display=display.none)
+float srcRingAct   = input.source(close, "AL_RING_ACTIVE_FLAG", group=G_SRC_RING, display=display.none)
+float srcRingEvt   = input.source(close, "AL_RING_EVENT", group=G_SRC_RING, display=display.none)
+float srcRingRes   = input.source(close, "AL_RING_RESISTANCE", group=G_SRC_RING, display=display.none)
+
+float srcHelmetScore = input.source(close, "AL_HELMET_SCORE", group=G_SRC_HELMET, display=display.none)
+float srcHelmetDir   = input.source(close, "AL_HELMET_DIRECTION", group=G_SRC_HELMET, display=display.none)
+float srcHelmetState = input.source(close, "AL_HELMET_STATE", group=G_SRC_HELMET, display=display.none)
+float srcHelmetAct   = input.source(close, "AL_HELMET_ACTIVE_FLAG", group=G_SRC_HELMET, display=display.none)
+float srcHelmetEvt   = input.source(close, "AL_HELMET_EVENT", group=G_SRC_HELMET, display=display.none)
+float srcHelmetRes   = input.source(close, "AL_HELMET_RESISTANCE", group=G_SRC_HELMET, display=display.none)
+
+//==================================================
+// 가중치
+//==================================================
+string G_W = "GENUT A | 가중치"
+float wShield   = input.float(1.20, "방패", step=0.05, group=G_W, display=display.none)
+float wArmor    = input.float(1.05, "갑옷", step=0.05, group=G_W, display=display.none)
+float wPants    = input.float(1.00, "바지", step=0.05, group=G_W, display=display.none)
+float wGlove    = input.float(0.95, "장갑", step=0.05, group=G_W, display=display.none)
+float wShoes    = input.float(0.95, "신발", step=0.05, group=G_W, display=display.none)
+float wNeck     = input.float(0.95, "목걸이", step=0.05, group=G_W, display=display.none)
+float wEarring  = input.float(0.90, "귀걸이", step=0.05, group=G_W, display=display.none)
+float wRing     = input.float(1.15, "반지", step=0.05, group=G_W, display=display.none)
+float wHelmet   = input.float(1.10, "헬멧", step=0.05, group=G_W, display=display.none)
+
+string G_H = "GENUT A | 흐름"
+int histLen = input.int(5, "흐름 길이", minval=3, maxval=10, group=G_H, display=display.none)
+
+string G_T = "GENUT A | 트리거"
+float stateTriggerWeight = input.float(0.10, "STATE 가중", step=0.01, group=G_T, display=display.none)
+float eventTriggerWeight = input.float(0.08, "EVENT 가중", step=0.01, group=G_T, display=display.none)
+float baseWeight = input.float(0.06, "BASE 가중", step=0.01, group=G_T, display=display.none)
+float structWeight = input.float(0.42, "RES 가중", step=0.01, group=G_T, display=display.none)
+
+string G_UI = "GENUT A | 표"
+bool showTable = input.bool(true, "표 표시", group=G_UI)
+string tablePosOpt = input.string("우하", "표 위치", options=["좌상","상중","우상","좌중","정중","우중","좌하","하중","우하"], group=G_UI)
+int tableScale = input.int(5, "표 크기 1~9", minval=1, maxval=9, group=G_UI)
+bool showTableBorder = input.bool(true, "표 테두리 표시", group=G_UI)
+color tableFrameColor = input.color(color.new(color.white, 10), "표 외곽선 색상", group=G_UI)
+color tableBorderColor = input.color(color.new(color.white, 45), "표 내부 테두리 색상", group=G_UI)
+int tableFrameWidth = input.int(1, "표 외곽선 두께", minval=0, maxval=3, group=G_UI)
+int tableBorderWidth = input.int(1, "표 내부 테두리 두께", minval=0, maxval=3, group=G_UI)
+int tableBgTransp = input.int(15, "표 배경 투명도", minval=0, maxval=100, group=G_UI)
+color colBg = input.color(color.new(color.rgb(18, 22, 31), 8), "배경", group=G_UI, display=display.none)
+color colGrid = input.color(color.new(color.silver, 86), "격자", group=G_UI, display=display.none)
+color colHead = input.color(color.rgb(215, 220, 228), "헤더", group=G_UI, display=display.none)
+color colText = input.color(color.rgb(245, 247, 250), "본문", group=G_UI, display=display.none)
+color colSoft = input.color(color.rgb(170, 176, 188), "보조", group=G_UI, display=display.none)
+color colGood = input.color(color.rgb(0, 234, 126), "좋음", group=G_UI, display=display.none)
+color colWarn = input.color(color.rgb(255, 166, 0), "경계", group=G_UI, display=display.none)
+color colBad = input.color(color.rgb(255, 60, 82), "위험", group=G_UI, display=display.none)
+color colAccent = input.color(color.rgb(32, 210, 255), "강조", group=G_UI, display=display.none)
+
+string G_ALERT = "GENUT A | 얼러트"
+bool useAlerts = input.bool(true, "얼러트 사용", group=G_ALERT, display=display.none)
+
+groupAlertBus = "HETEM Gate Alert Bus"
+enableAlertBus = input.bool(true, "Enable alert() JSON bus", group=groupAlertBus)
+sendSnapshots = input.bool(true, "Send TF snapshot on bar close", group=groupAlertBus)
+sendTriggers = input.bool(true, "Send realtime trigger changes", group=groupAlertBus)
+allowLiveTriggers = input.bool(true, "Allow realtime trigger alerts", group=groupAlertBus)
+gptAllowed = input.bool(true, "GPT allowed", group=groupAlertBus)
+voiceAllowed = input.bool(false, "Voice allowed", group=groupAlertBus)
+briefPolicy = input.string("HETEM_GATE_STATE_ONLY", "Brief policy", options=["HETEM_GATE_STATE_ONLY", "STATE_ONLY", "STORE_ONLY", "CHANGE_ONLY"], group=groupAlertBus)
+alertVersion = input.string("HETEM_GATE_V1", "Alert version", group=groupAlertBus)
+
+string G_TF_ROLE = "GPT TF Role"
+bool showTfRolePanel = input.bool(true, "TF Role Panel", group=G_TF_ROLE)
+string tfRolePanelPosOpt = input.string("Top Left", "TF Role Panel Position", options=["Top Left","Top Center","Top Right","Middle Left","Middle Center","Middle Right","Bottom Left","Bottom Center","Bottom Right"], group=G_TF_ROLE)
+string tfRolePanelSizeOpt = input.string("Small", "TF Role Panel Size", options=["Tiny","Small","Normal","Large"], group=G_TF_ROLE)
+string tfRolePanelMode = input.string("Mini", "TF Role Panel Mode", options=["Detail","Compact","Mini"], group=G_TF_ROLE)
+bool tfRoleUseAbbrev = input.bool(true, "Use Abbrev", group=G_TF_ROLE)
+
+//==================================================
+// 디코드
+//==================================================
+string G_SCALE = "GENUT A | Output Scale"
+string outputScaleMode = input.string("PER_COMPAT", "Output Scale Mode", options=["RAW","PER_COMPAT"], group=G_SCALE, display=display.none)
+
+bool shieldOk = f_srcOk(srcShieldScore, srcShieldDir, srcShieldState, srcShieldAct, srcShieldEvt, srcShieldRes)
+bool armorOk = f_srcOk(srcArmorScore, srcArmorDir, srcArmorState, srcArmorAct, srcArmorEvt, srcArmorRes)
+bool pantsOk = f_srcOk(srcPantsScore, srcPantsDir, srcPantsState, srcPantsAct, srcPantsEvt, srcPantsRes)
+bool gloveOk = f_srcOk(srcGloveScore, srcGloveDir, srcGloveState, srcGloveAct, srcGloveEvt, srcGloveRes)
+bool shoesOk = f_srcOk(srcShoesScore, srcShoesDir, srcShoesState, srcShoesAct, srcShoesEvt, srcShoesRes)
+bool neckOk = f_srcOk(srcNeckScore, srcNeckDir, srcNeckState, srcNeckAct, srcNeckEvt, srcNeckRes)
+bool earringOk = f_srcOk(srcEarringScore, srcEarringDir, srcEarringState, srcEarringAct, srcEarringEvt, srcEarringRes)
+bool ringOk = f_srcOk(srcRingScore, srcRingDir, srcRingState, srcRingAct, srcRingEvt, srcRingRes)
+bool helmetOk = f_srcOk(srcHelmetScore, srcHelmetDir, srcHelmetState, srcHelmetAct, srcHelmetEvt, srcHelmetRes)
+
+float shieldScore = shieldOk ? f_clamp(srcShieldScore, 0, 100) : 0
+float armorScore = armorOk ? f_clamp(srcArmorScore, 0, 100) : 0
+float pantsScore = pantsOk ? f_clamp(srcPantsScore, 0, 100) : 0
+float gloveScore = gloveOk ? f_clamp(srcGloveScore, 0, 100) : 0
+float shoesScore = shoesOk ? f_clamp(srcShoesScore, 0, 100) : 0
+float neckScore = neckOk ? f_clamp(srcNeckScore, 0, 100) : 0
+float earringScore = earringOk ? f_clamp(srcEarringScore, 0, 100) : 0
+float ringScore = ringOk ? f_clamp(srcRingScore, 0, 100) : 0
+float helmetScore = helmetOk ? f_clamp(srcHelmetScore, 0, 100) : 0
+
+int shieldDir = shieldOk ? int(math.round(srcShieldDir)) : 0
+int armorDir = armorOk ? int(math.round(srcArmorDir)) : 0
+int pantsDir = pantsOk ? int(math.round(srcPantsDir)) : 0
+int gloveDir = gloveOk ? int(math.round(srcGloveDir)) : 0
+int shoesDir = shoesOk ? int(math.round(srcShoesDir)) : 0
+int neckDir = neckOk ? int(math.round(srcNeckDir)) : 0
+int earringDir = earringOk ? int(math.round(srcEarringDir)) : 0
+int ringDir = ringOk ? int(math.round(srcRingDir)) : 0
+int helmetDir = helmetOk ? int(math.round(srcHelmetDir)) : 0
+
+int shieldState = shieldOk ? int(math.round(srcShieldState)) : 0
+int armorState = armorOk ? int(math.round(srcArmorState)) : 0
+int pantsState = pantsOk ? int(math.round(srcPantsState)) : 0
+int gloveState = gloveOk ? int(math.round(srcGloveState)) : 0
+int shoesState = shoesOk ? int(math.round(srcShoesState)) : 0
+int neckState = neckOk ? int(math.round(srcNeckState)) : 0
+int earringState = earringOk ? int(math.round(srcEarringState)) : 0
+int ringState = ringOk ? int(math.round(srcRingState)) : 0
+int helmetState = helmetOk ? int(math.round(srcHelmetState)) : 0
+
+int shieldRes = shieldOk ? int(math.round(srcShieldRes)) : 0
+int armorRes = armorOk ? int(math.round(srcArmorRes)) : 0
+int pantsRes = pantsOk ? int(math.round(srcPantsRes)) : 0
+int gloveRes = gloveOk ? int(math.round(srcGloveRes)) : 0
+int shoesRes = shoesOk ? int(math.round(srcShoesRes)) : 0
+int neckRes = neckOk ? int(math.round(srcNeckRes)) : 0
+int earringRes = earringOk ? int(math.round(srcEarringRes)) : 0
+int ringRes = ringOk ? int(math.round(srcRingRes)) : 0
+int helmetRes = helmetOk ? int(math.round(srcHelmetRes)) : 0
+
+bool shieldAct = shieldOk and srcShieldAct > 0.5
+bool armorAct = armorOk and srcArmorAct > 0.5
+bool pantsAct = pantsOk and srcPantsAct > 0.5
+bool gloveAct = gloveOk and srcGloveAct > 0.5
+bool shoesAct = shoesOk and srcShoesAct > 0.5
+bool neckAct = neckOk and srcNeckAct > 0.5
+bool earringAct = earringOk and srcEarringAct > 0.5
+bool ringAct = ringOk and srcRingAct > 0.5
+bool helmetAct = helmetOk and srcHelmetAct > 0.5
+
+float upW = 0.0
+float dnW = 0.0
+float activeCount = 0.0
+float coreActive = 0.0
+float auxActive = 0.0
+float triggerScore = 0.0
+float baseScore = 0.0
+float structScore = 0.0
+float failCount = 0.0
+float strongCount = 0.0
+float directionRaw = 0.0
+float riskBlockRaw = 0.0
+float trapPressureRaw = 0.0
+float neutralRaw = 0.0
+float blockSourceMask = 0.0
+
+//==================================================
+// 엔진
+//==================================================
+if shieldAct
+    float ws = shieldScore * wShield
+    float dirBoost = f_resBoost(shieldRes)
+    bool shieldDirectional = shieldDir != 0 and math.abs(shieldState) >= 1 and shieldScore >= 35
+    activeCount += 1
+    coreActive += 1
+    upW += shieldDirectional and shieldDir > 0 ? ws * dirBoost : 0
+    dnW += shieldDirectional and shieldDir < 0 ? ws * dirBoost : 0
+    directionRaw += shieldDirectional ? ws : 0
+    neutralRaw += shieldDirectional ? 0 : ws * 0.55
+    baseScore += shieldDirectional ? ws * baseWeight : ws * baseWeight * 0.18
+    triggerScore += shieldDirectional and math.abs(shieldState) >= 2 ? ws * stateTriggerWeight : 0
+    triggerScore += shieldDirectional and math.abs(srcShieldEvt) > 0 ? ws * eventTriggerWeight : 0
+    structScore += float(math.min(shieldRes, 3)) * structWeight * wShield
+    strongCount += (shieldDirectional and (shieldRes >= 3 or math.abs(shieldState) >= 2)) ? 1 : 0
+    failCount += (shieldRes <= 1 and math.abs(shieldState) <= 1 and shieldScore < 35) ? 1 : 0
+
+if armorAct
+    float ws = armorScore * wArmor
+    float dirBoost = f_resBoost(armorRes)
+    bool armorDirectional = armorDir != 0 and math.abs(armorState) >= 2 and armorRes >= 2 and armorScore >= 35
+    bool armorInside = math.abs(armorState) <= 1 or armorDir == 0
+    bool armorRiskRole = not armorDirectional and (armorRes <= 1 or armorScore < 35 or math.abs(armorState) >= 3)
+    activeCount += 1
+    coreActive += 1
+    upW += armorDirectional and armorDir > 0 ? ws * dirBoost : 0
+    dnW += armorDirectional and armorDir < 0 ? ws * dirBoost : 0
+    directionRaw += armorDirectional ? ws : 0
+    riskBlockRaw += armorRiskRole ? ws * 0.85 : 0
+    trapPressureRaw += armorRiskRole ? ws * 0.75 : 0
+    neutralRaw += armorInside and not armorRiskRole ? ws * 0.70 : 0
+    blockSourceMask += armorRiskRole ? 16.0 : 0.0
+    baseScore += armorDirectional ? ws * (baseWeight + 0.01) : ws * baseWeight * 0.15
+    triggerScore += armorDirectional and math.abs(armorState) >= 2 ? ws * stateTriggerWeight : 0
+    triggerScore += armorDirectional and math.abs(srcArmorEvt) > 0 ? ws * eventTriggerWeight : 0
+    structScore += float(math.min(armorRes, 3)) * structWeight * wArmor
+    strongCount += (armorDirectional and (armorRes >= 3 or math.abs(armorState) >= 2)) ? 1 : 0
+    failCount += (armorRes <= 1 and math.abs(armorState) <= 1 and armorScore < 35) ? 1 : 0
+
+if pantsAct
+    float ws = pantsScore * wPants
+    float dirBoost = f_resBoost(pantsRes)
+    bool pantsDirectional = pantsDir != 0 and pantsScore >= 35
+    activeCount += 1
+    auxActive += 1
+    upW += pantsDirectional and pantsDir > 0 ? ws * dirBoost : 0
+    dnW += pantsDirectional and pantsDir < 0 ? ws * dirBoost : 0
+    directionRaw += pantsDirectional ? ws : 0
+    neutralRaw += pantsDirectional ? 0 : ws * 0.45
+    baseScore += pantsDirectional ? ws * baseWeight : ws * baseWeight * 0.16
+    triggerScore += pantsDirectional and math.abs(pantsState) >= 2 ? ws * stateTriggerWeight : 0
+    triggerScore += pantsDirectional and math.abs(srcPantsEvt) > 0 ? ws * eventTriggerWeight : 0
+    structScore += float(math.min(pantsRes, 3)) * structWeight * wPants
+    strongCount += (pantsDirectional and (pantsRes >= 3 or math.abs(pantsState) >= 2)) ? 1 : 0
+    failCount += (pantsRes <= 1 and math.abs(pantsState) <= 1 and pantsScore < 35) ? 1 : 0
+
+if gloveAct
+    float ws = gloveScore * wGlove
+    bool gloveRiskRole = gloveScore < 35 or gloveRes <= 1 or math.abs(gloveState) >= 2
+    bool gloveRelease = not gloveRiskRole and math.abs(srcGloveEvt) > 0
+    activeCount += 1
+    auxActive += 1
+    riskBlockRaw += gloveRiskRole ? ws * 0.90 : ws * 0.25
+    trapPressureRaw += gloveRiskRole ? ws * 0.75 : 0
+    neutralRaw += gloveRelease ? ws * 0.60 : (gloveRiskRole ? 0 : ws * 0.35)
+    blockSourceMask += gloveRiskRole ? 4.0 : 0.0
+    baseScore += gloveRiskRole ? ws * baseWeight * 0.08 : ws * baseWeight * 0.15
+    triggerScore += gloveRiskRole and math.abs(gloveState) >= 2 ? ws * stateTriggerWeight * 0.65 : 0
+    triggerScore += gloveRiskRole and math.abs(srcGloveEvt) > 0 ? ws * eventTriggerWeight * 0.65 : 0
+    structScore += float(math.min(gloveRes, 3)) * structWeight * wGlove
+    strongCount += (gloveRiskRole and gloveRes >= 3) ? 1 : 0
+    failCount += (gloveRes <= 1 and math.abs(gloveState) <= 1 and gloveScore < 35) ? 1 : 0
+
+if shoesAct
+    float ws = shoesScore * wShoes
+    bool shoesRiskRole = shoesScore < 35 or shoesRes <= 1 or math.abs(shoesState) >= 2
+    bool shoesSetup = not shoesRiskRole and (math.abs(shoesState) == 1 or math.abs(srcShoesEvt) > 0)
+    activeCount += 1
+    auxActive += 1
+    riskBlockRaw += shoesRiskRole ? ws * 0.80 : 0
+    trapPressureRaw += shoesRiskRole ? ws * 0.70 : 0
+    neutralRaw += shoesSetup ? ws * 0.70 : (shoesRiskRole ? 0 : ws * 0.30)
+    blockSourceMask += shoesRiskRole ? 8.0 : 0.0
+    baseScore += ws * baseWeight * 0.12
+    triggerScore += shoesRiskRole and math.abs(shoesState) >= 2 ? ws * stateTriggerWeight * 0.55 : 0
+    triggerScore += shoesRiskRole and math.abs(srcShoesEvt) > 0 ? ws * eventTriggerWeight * 0.55 : 0
+    structScore += float(math.min(shoesRes, 3)) * structWeight * wShoes
+    strongCount += (shoesRiskRole and shoesRes >= 3) ? 1 : 0
+    failCount += (shoesRes <= 1 and math.abs(shoesState) <= 1 and shoesScore < 35) ? 1 : 0
+
+if neckAct
+    float ws = neckScore * wNeck
+    bool neckRiskRole = neckScore < 35 or neckRes <= 1 or math.abs(neckState) >= 2 or math.abs(srcNeckEvt) > 0
+    activeCount += 1
+    auxActive += 1
+    riskBlockRaw += neckRiskRole ? ws * 0.85 : ws * 0.20
+    trapPressureRaw += neckRiskRole ? ws * 0.70 : 0
+    neutralRaw += neckRiskRole ? 0 : ws * 0.35
+    blockSourceMask += neckRiskRole ? 2.0 : 0.0
+    baseScore += ws * baseWeight * 0.10
+    triggerScore += neckRiskRole and math.abs(neckState) >= 2 ? ws * stateTriggerWeight * 0.60 : 0
+    triggerScore += neckRiskRole and math.abs(srcNeckEvt) > 0 ? ws * eventTriggerWeight * 0.60 : 0
+    structScore += float(math.min(neckRes, 3)) * structWeight * wNeck
+    strongCount += (neckRiskRole and neckRes >= 3) ? 1 : 0
+    failCount += (neckRes <= 1 and math.abs(neckState) <= 1 and neckScore < 35) ? 1 : 0
+
+if earringAct
+    float ws = earringScore * wEarring
+    float dirBoost = f_resBoost(earringRes)
+    bool earringSoftFail = earringScore < 35 or earringRes <= 1 or (math.abs(srcEarringEvt) > 0 and math.abs(earringState) <= 1)
+    bool earringDirectional = earringDir != 0 and not earringSoftFail
+    activeCount += 1
+    auxActive += 1
+    upW += earringDirectional and earringDir > 0 ? ws * dirBoost : 0
+    dnW += earringDirectional and earringDir < 0 ? ws * dirBoost : 0
+    directionRaw += earringDirectional ? ws : 0
+    neutralRaw += earringSoftFail ? ws * 0.70 : (earringDirectional ? 0 : ws * 0.35)
+    baseScore += earringDirectional ? ws * baseWeight : ws * baseWeight * 0.15
+    triggerScore += earringDirectional and math.abs(earringState) >= 2 ? ws * stateTriggerWeight : 0
+    triggerScore += earringDirectional and math.abs(srcEarringEvt) > 0 ? ws * eventTriggerWeight : 0
+    structScore += float(math.min(earringRes, 3)) * structWeight * wEarring
+    strongCount += (earringDirectional and (earringRes >= 3 or math.abs(earringState) >= 2)) ? 1 : 0
+    failCount += (earringRes <= 1 and math.abs(earringState) <= 1 and earringScore < 35) ? 1 : 0
+
+if ringAct
+    float ws = ringScore * wRing
+    float dirBoost = f_resBoost(ringRes)
+    bool ringSoftFail = ringScore < 35 or ringRes <= 1 or (math.abs(srcRingEvt) > 0 and math.abs(ringState) <= 1)
+    bool ringDirectional = ringDir != 0 and not ringSoftFail
+    activeCount += 1
+    coreActive += 1
+    upW += ringDirectional and ringDir > 0 ? ws * dirBoost : 0
+    dnW += ringDirectional and ringDir < 0 ? ws * dirBoost : 0
+    directionRaw += ringDirectional ? ws : 0
+    neutralRaw += ringSoftFail ? ws * 0.70 : (ringDirectional ? 0 : ws * 0.35)
+    baseScore += ringDirectional ? ws * (baseWeight + 0.01) : ws * baseWeight * 0.15
+    triggerScore += ringDirectional and math.abs(ringState) >= 2 ? ws * stateTriggerWeight : 0
+    triggerScore += ringDirectional and math.abs(srcRingEvt) > 0 ? ws * eventTriggerWeight : 0
+    structScore += float(math.min(ringRes, 3)) * structWeight * wRing
+    strongCount += (ringDirectional and (ringRes >= 3 or math.abs(ringState) >= 2)) ? 1 : 0
+    failCount += (ringRes <= 1 and math.abs(ringState) <= 1 and ringScore < 35) ? 1 : 0
+
+if helmetAct
+    float ws = helmetScore * wHelmet
+    float dirBoost = f_resBoost(helmetRes)
+    bool helmetDirectionConfirmed = helmetDir != 0 and (math.abs(helmetState) >= 2 or math.abs(srcHelmetEvt) > 0 or helmetRes >= 3) and helmetScore >= 35
+    bool helmetRiskRole = helmetScore < 35 or helmetRes <= 1 or math.abs(helmetState) >= 2 or math.abs(srcHelmetEvt) > 0
+    activeCount += 1
+    coreActive += 1
+    upW += helmetDirectionConfirmed and helmetDir > 0 ? ws * dirBoost : 0
+    dnW += helmetDirectionConfirmed and helmetDir < 0 ? ws * dirBoost : 0
+    directionRaw += helmetDirectionConfirmed ? ws * 0.70 : 0
+    riskBlockRaw += helmetRiskRole ? ws * 0.90 : ws * 0.25
+    trapPressureRaw += helmetRiskRole ? ws * 0.85 : 0
+    neutralRaw += helmetDirectionConfirmed ? 0 : ws * 0.60
+    blockSourceMask += helmetRiskRole ? 1.0 : 0.0
+    baseScore += helmetDirectionConfirmed ? ws * baseWeight * 0.70 : ws * baseWeight * 0.12
+    triggerScore += helmetRiskRole and math.abs(helmetState) >= 2 ? ws * stateTriggerWeight * 0.70 : 0
+    triggerScore += helmetRiskRole and math.abs(srcHelmetEvt) > 0 ? ws * eventTriggerWeight * 0.70 : 0
+    structScore += float(math.min(helmetRes, 3)) * structWeight * wHelmet
+    strongCount += ((helmetDirectionConfirmed or helmetRiskRole) and helmetRes >= 3) ? 1 : 0
+    failCount += (helmetRes <= 1 and math.abs(helmetState) <= 1 and helmetScore < 35) ? 1 : 0
+
+float directionScore = f_clamp(directionRaw * 0.13, 0, 100)
+float riskBlockScore = f_clamp(riskBlockRaw * 0.12 + failCount * 10.0, 0, 100)
+float neutralDiagnosticScore = f_clamp(neutralRaw * 0.14, 0, 100)
+float totalW = math.max(1.0, upW + dnW)
+float alignScore = 100.0 * math.max(upW, dnW) / totalW
+float netScore = 100.0 * math.abs(upW - dnW) / totalW
+float conflictScore = activeCount >= 2 ? f_clamp(100.0 - alignScore, 0, 100) : 0.0
+float trapPressureScore = f_clamp(trapPressureRaw * 0.11 + failCount * 12.0 + conflictScore * 0.35 + riskBlockScore * 0.35, 0, 100)
+float trapScore = trapPressureScore
+float execBlend = f_clamp(baseScore + triggerScore + structScore - riskBlockScore * 0.18, 0, 100)
+float totalScore = f_clamp(0.28 * alignScore + 0.18 * netScore + 0.22 * baseScore + 0.12 * triggerScore + 0.08 * structScore + 0.12 * directionScore - 0.08 * riskBlockScore - 0.04 * neutralDiagnosticScore, 0, 100)
+
+int genutDir = 0
+if upW > dnW and (upW - dnW) >= 8
+    genutDir := 1
+else if dnW > upW and (dnW - upW) >= 8
+    genutDir := -1
+
+float rawTriggerScore = triggerScore
+float rawBaseScore = baseScore
+float rawStructScore = structScore
+float rawTotalScore = totalScore
+bool compatDirectionAgreed = genutDir != 0 and alignScore >= 60 and netScore >= 55
+bool compatActiveEnough = activeCount >= 3
+bool compatRiskClear = riskBlockScore < 55 and trapPressureScore < 72 and failCount <= 1
+bool compatEvidenceEnough = strongCount >= 1 or rawTriggerScore >= 6 or directionScore >= 25 or coreActive >= 2
+bool compatLiftAllowed = compatDirectionAgreed and compatActiveEnough and compatRiskClear and compatEvidenceEnough
+float compatMomentumLift = rawTotalScore > nz(rawTotalScore[1], rawTotalScore) ? 1.5 : 0.0
+float perBaseScore = compatLiftAllowed ? f_clamp(math.max(rawBaseScore, rawBaseScore * 1.25 + directionScore * 0.20 + activeCount * 2.2 + netScore * 0.03), 0, 36) : rawBaseScore
+float perTriggerScore = compatLiftAllowed ? f_clamp(math.max(rawTriggerScore, rawTriggerScore * 1.18 + directionScore * 0.16 + strongCount * 3.0 + activeCount * 1.4 + compatMomentumLift), 0, 38) : rawTriggerScore
+float perStructScore = compatLiftAllowed ? f_clamp(math.max(rawStructScore, rawStructScore * 1.10 + directionScore * 0.10 + strongCount * 2.4 + activeCount * 1.2 + (alignScore >= 75 ? 2.5 : 0.0)), 0, 32) : rawStructScore
+float compatTotal = f_clamp(0.28 * alignScore + 0.20 * netScore + 0.16 * perBaseScore + 0.10 * perTriggerScore + 0.07 * perStructScore + 0.09 * directionScore - 0.12 * riskBlockScore - 0.06 * neutralDiagnosticScore, 0, 100)
+float perTotalScore = compatLiftAllowed ? f_clamp(math.max(rawTotalScore, compatTotal), 0, 100) : rawTotalScore
+
+triggerScore := outputScaleMode == "RAW" ? rawTriggerScore : perTriggerScore
+baseScore := outputScaleMode == "RAW" ? rawBaseScore : perBaseScore
+structScore := outputScaleMode == "RAW" ? rawStructScore : perStructScore
+totalScore := outputScaleMode == "RAW" ? rawTotalScore : perTotalScore
+execBlend := f_clamp(baseScore + triggerScore + structScore - riskBlockScore * 0.18, 0, 100)
+
+int genutState = totalScore >= 74 and activeCount >= 5 and strongCount >= 2 ? 3 : totalScore >= 58 and activeCount >= 4 ? 2 : totalScore >= 38 and activeCount >= 3 ? 1 : 0
+if failCount >= 3
+    genutState := 4
+
+int genutRisk = failCount >= 3 or activeCount <= 1 or riskBlockScore >= 72 ? 2 : totalScore >= 68 and strongCount >= 2 and riskBlockScore < 45 ? 0 : 1
+bool blockFlag = genutRisk == 2 or alignScore < 50 or activeCount < 3 or riskBlockScore >= 78 or trapPressureScore >= 82
+trapScore := f_clamp(trapPressureScore + (blockFlag ? 10.0 : 0.0) + (genutState == 4 ? 12.0 : 0.0), 0, 100)
+bool waitFlag = genutDir == 0 or genutState < 2 or blockFlag
+
+int blockReasonCode = failCount >= 3 ? 1 : activeCount < 3 ? 2 : alignScore < 50 ? 3 : genutRisk == 2 ? 4 : genutState < 2 ? 5 : waitFlag ? 6 : 0
+string blockReasonTxt = f_reasonCode(blockReasonCode)
+int barConfirmed = barstate.isconfirmed ? 1 : 0
+
+float flowDelta = nz(totalScore - totalScore[1])
+float flowSlope = ta.ema(flowDelta, histLen)
+int prevDir = int(nz(float(genutDir[1]), 0.0))
+int prevState = int(nz(float(genutState[1]), 0.0))
+float riskBlockJump = riskBlockScore - nz(riskBlockScore[1], riskBlockScore)
+float totalDrop = nz(totalScore[1], totalScore) - totalScore
+bool dirChanged = genutDir != prevDir and (genutDir != 0 or prevDir != 0)
+bool majorStateDowngrade = (prevState >= 2 and genutState <= 1) or (prevState == 3 and genutState < 3) or genutState == 4
+bool smallStateChange = genutState != prevState and not majorStateDowngrade
+bool totalScoreDropped = totalScore < nz(totalScore[1], totalScore)
+bool flowStrongByDir = dirChanged and (totalDrop >= 4 or riskBlockJump >= 8 or flowSlope <= -3)
+bool flowStrongByState = majorStateDowngrade and (riskBlockJump >= 8 or totalDrop >= 6)
+bool flowStrongByRisk = riskBlockJump >= 14 and totalScoreDropped
+bool flowShiftStrong = flowStrongByDir or flowStrongByState or flowStrongByRisk
+bool flowShiftWeak = not flowShiftStrong and (dirChanged or majorStateDowngrade or smallStateChange or math.abs(flowDelta) >= 3)
+bool flowWeakOnly = flowShiftWeak and not flowShiftStrong
+int flowShift = flowShiftStrong ? (dirChanged and genutDir != 0 ? genutDir : 2) : 0
+bool exitStrong = genutState == 4 or blockFlag or (totalDrop >= 6 and flowSlope <= -2) or (riskBlockJump >= 8 and totalDrop >= 4)
+bool exitWeak = not exitStrong and (genutState == 0 or (totalDrop >= 3 and flowSlope < 0) or neutralDiagnosticScore - nz(neutralDiagnosticScore[1], neutralDiagnosticScore) >= 12)
+bool hardExitOK = exitStrong
+bool entrySuppress = blockFlag or (riskBlockJump >= 8 and totalDrop > 0) or (trapPressureScore >= 72 and riskBlockScore >= 55) or (flowWeakOnly and riskBlockScore >= 55)
+bool exitOK = hardExitOK
+bool longOK = genutDir > 0 and genutState >= 2 and genutRisk != 2 and triggerScore >= 18 and structScore >= 8 and directionScore >= 20 and not entrySuppress
+bool shortOK = genutDir < 0 and genutState >= 2 and genutRisk != 2 and triggerScore >= 18 and structScore >= 8 and directionScore >= 20 and not entrySuppress
+
+//==================================================
+// GENUT A FORCE LAYER BRIEFING SOURCE
+// 목적: 매매 신호가 아니라 힘의 시간축 이동 / 피로 / 충돌을 GPT가 읽기 위한 내부 소스
+//==================================================
+int tfSeconds = timeframe.in_seconds(timeframe.period)
+int tfRoleCode = tfSeconds <= 1800 ? 1 : tfSeconds < 86400 ? 2 : 3
+int currentTfHintCode = f_tfHintCode(timeframe.period)
+int nextTfHintCode = f_nextTfHintCode(currentTfHintCode)
+float trapPressureJump = trapPressureScore - nz(trapPressureScore[1], trapPressureScore)
+float forceScore = f_clamp(0.30 * directionScore + 0.24 * triggerScore + 0.18 * baseScore + 0.10 * alignScore + 0.10 * netScore + math.max(flowSlope, 0) * 4.0 + math.max(flowDelta, 0) * 2.0 - riskBlockScore * 0.10 - trapPressureScore * 0.06, 0, 100)
+float forceFadeScore = f_clamp(riskBlockScore * 0.32 + trapPressureScore * 0.28 + neutralDiagnosticScore * 0.18 + math.max(totalDrop, 0) * 5.0 + math.max(-flowSlope, 0) * 6.0 + failCount * 8.0, 0, 100)
+float directionScoreDelta = directionScore - nz(directionScore[1], directionScore)
+bool forceShiftFlowAligned = flowShiftStrong and math.abs(flowDelta) >= 3 and math.abs(flowSlope) >= 2 and flowDelta * flowSlope > 0
+bool forceShiftDirectionMoved = dirChanged or genutState != prevState or math.abs(directionScoreDelta) >= 5 or directionScore >= 28
+bool forceShiftAlert = forceShiftFlowAligned and forceShiftDirectionMoved
+bool forceConfirmAlert = genutDir != 0 and genutState >= 2 and totalScore >= 66 and activeCount >= 5 and forceScore >= 68 and flowSlope >= 1 and forceFadeScore < 55 and not entrySuppress
+bool forceFadeCore = forceFadeScore >= 62 and (blockFlag or riskBlockScore >= 58 or exitWeak or exitStrong)
+bool forceFadeMoving = flowSlope <= -2 or totalDrop >= 4 or riskBlockJump >= 8 or trapPressureJump >= 8
+bool forceFadeAlert = forceFadeCore and forceFadeMoving
+bool blockOnDomAlert = blockFlag and forceFadeScore >= 58 and (riskBlockScore >= 64 or exitWeak or exitStrong)
+bool riskFadeAlert = riskBlockScore >= 64 and forceFadeScore >= 58 and (exitWeak or exitStrong or totalDrop >= 4)
+bool trapWaitCore = waitFlag and trapScore >= 50 and conflictScore >= 35 and neutralDiagnosticScore >= 45
+bool waitConflictAlert = trapWaitCore or (waitFlag and conflictScore >= 55 and neutralDiagnosticScore >= 55)
+bool trapFakeoutAlert = waitFlag and (trapScore >= 68 or (trapPressureJump >= 8 and riskBlockScore >= 45)) and (conflictScore >= 35 or neutralDiagnosticScore >= 45)
+int horusAEventCode = forceShiftAlert ? 110 : forceConfirmAlert ? 120 : forceFadeAlert ? 130 : blockOnDomAlert ? 140 : riskFadeAlert ? 150 : waitConflictAlert ? 160 : trapFakeoutAlert ? 170 : 100
+bool lowerTfA = f_isLowerTfHintCode(currentTfHintCode)
+bool anchorTfA = f_isAnchorTfHintCode(currentTfHintCode)
+bool coreTfA = f_isCoreTfHintCode(currentTfHintCode)
+bool forceAliveA = activeCount >= 2 and (forceScore >= 44 or totalScore >= 48 or directionScore >= 22 or math.abs(flowSlope) >= 1 or math.abs(flowDelta) >= 2)
+bool forceDominantRiskA = (blockFlag and riskBlockScore >= 68) or trapScore >= 75 or conflictScore >= 68 or trapPressureScore >= 78
+bool forceNoDomRiskA = not waitFlag and conflictScore < 52 and trapScore < 62 and trapPressureScore < 68 and forceFadeScore < 62 and not blockFlag
+bool lowerNoiseRoleA = lowerTfA and (trapScore >= 60 or conflictScore >= 50 or waitFlag) and forceScore < 55
+bool anchorRoleA = anchorTfA and (forceScore >= 50 or totalScore >= 50) and activeCount >= 3
+bool domCandidateRoleA = forceScore >= 72 and totalScore >= 64 and activeCount >= 5 and flowSlope >= 1 and flowDelta >= 0 and forceNoDomRiskA and not waitConflictAlert and not trapFakeoutAlert
+bool nextTfTestRoleA = nextTfHintCode != 0 and forceAliveA and (forceConfirmAlert or (coreTfA and (forceFadeScore >= 45 or forceShiftAlert or flowWeakOnly)))
+bool transferRoleA = nextTfHintCode != 0 and not (trapScore >= 78 or conflictScore >= 70) and (forceShiftAlert or (forceScore >= 54 and forceFadeScore >= 50) or (coreTfA and forceAliveA and forceFadeScore >= 45))
+bool supportRoleA = forceAliveA and not forceDominantRiskA and (forceScore >= 46 or totalScore >= 50 or (coreTfA and activeCount >= 2 and directionScore >= 20))
+int horusATfRoleCode = 0
+if lowerNoiseRoleA
+    horusATfRoleCode := 1
+else if nextTfTestRoleA
+    horusATfRoleCode := 5
+else if domCandidateRoleA
+    horusATfRoleCode := 4
+else if transferRoleA
+    horusATfRoleCode := 3
+else if anchorRoleA
+    horusATfRoleCode := 6
+else if supportRoleA
+    horusATfRoleCode := 2
+bool modeWaitA = waitFlag or neutralDiagnosticScore >= 60
+bool modeConfirmA = forceConfirmAlert or forceScore >= 68
+bool modeFadeA = forceFadeAlert or forceFadeScore >= 62
+bool modeBlockA = blockOnDomAlert or blockFlag or riskBlockScore >= 70
+bool modeTrapA = trapFakeoutAlert or trapScore >= 68 or trapPressureScore >= 70
+bool modeConflictA = waitConflictAlert or conflictScore >= 55
+int modeKindCountA = (modeWaitA ? 1 : 0) + (modeConfirmA ? 1 : 0) + (modeFadeA ? 1 : 0) + (modeBlockA ? 1 : 0) + (modeTrapA ? 1 : 0) + (modeConflictA ? 1 : 0)
+int horusAModeCode = 0
+if modeKindCountA >= 4
+    horusAModeCode := 9
+else if modeBlockA
+    horusAModeCode := 4
+else if modeTrapA
+    horusAModeCode := 5
+else if modeConflictA
+    horusAModeCode := 6
+else if modeFadeA
+    horusAModeCode := 3
+else if modeConfirmA
+    horusAModeCode := 2
+else if modeWaitA
+    horusAModeCode := 1
+bool forceShiftPulse = barstate.isconfirmed and forceShiftAlert and not forceShiftAlert[1]
+bool forceConfirmPulse = barstate.isconfirmed and forceConfirmAlert and not forceConfirmAlert[1]
+bool forceFadeBlockAlert = forceFadeAlert or blockOnDomAlert or riskFadeAlert
+bool forceFadeBlockPulse = barstate.isconfirmed and forceFadeBlockAlert and not forceFadeBlockAlert[1]
+bool trapWaitAlert = trapFakeoutAlert or waitConflictAlert
+bool trapWaitPulse = barstate.isconfirmed and trapWaitAlert and not trapWaitAlert[1]
+var int flowUpStreak = 0
+var int flowDnStreak = 0
+flowUpStreak := totalScore > totalScore[1] ? nz(flowUpStreak[1]) + 1 : 0
+flowDnStreak := totalScore < totalScore[1] ? nz(flowDnStreak[1]) + 1 : 0
+string flowHist = f_flowChar(nz(totalScore[4] - totalScore[5])) + f_flowChar(nz(totalScore[3] - totalScore[4])) + f_flowChar(nz(totalScore[2] - totalScore[3])) + f_flowChar(nz(totalScore[1] - totalScore[2])) + f_flowChar(nz(totalScore - totalScore[1]))
+
+float gateScoreA = f_clamp(totalScore + forceScore * 0.18 - riskBlockScore * 0.26 - trapScore * 0.18 - conflictScore * 0.12, 0, 100)
+float pressureIndexA = f_clamp(forceScore * 0.46 + directionScore * 0.22 + triggerScore * 0.16 + math.max(flowSlope, 0) * 6.0 + math.max(flowDelta, 0) * 2.2 - forceFadeScore * 0.12, 0, 100)
+bool prevBlockFlagA = bar_index > 0 ? blockFlag[1] : false
+bool prevWaitFlagA = bar_index > 0 ? waitFlag[1] : false
+float prevForceFadeScoreA = nz(forceFadeScore[1], forceFadeScore)
+float prevRiskBlockScoreA = nz(riskBlockScore[1], riskBlockScore)
+bool gateClearingA = (prevBlockFlagA and not blockFlag) or (prevWaitFlagA and not waitFlag) or (forceFadeScore < prevForceFadeScoreA and riskBlockScore < prevRiskBlockScoreA and (prevForceFadeScoreA >= 55 or prevRiskBlockScoreA >= 55))
+bool pressureRisingAlertA = pressureIndexA >= 60 and pressureIndexA - nz(pressureIndexA[1], pressureIndexA) >= 6 and not blockFlag
+string gateStateA = "WAIT"
+if blockFlag or riskBlockScore >= 78
+    gateStateA := "BLOCKED"
+else if trapWaitAlert or conflictScore >= 55 or waitFlag
+    gateStateA := "CONGESTED"
+else if gateClearingA
+    gateStateA := "CLEARING"
+else if genutRisk == 2 or riskBlockScore >= 62 or forceFadeScore >= 62
+    gateStateA := "RISK"
+else if forceConfirmAlert or (gateScoreA >= 60 and forceScore >= 55 and genutState >= 2)
+    gateStateA := "OPEN"
+int hetemAEventCode = forceShiftAlert ? 110 : pressureRisingAlertA ? 115 : forceConfirmAlert ? 120 : forceFadeBlockAlert ? 130 : trapWaitAlert ? 160 : 100
+string hetemAEventName = forceShiftAlert ? "FORCE_SHIFT" : pressureRisingAlertA ? "PRESSURE_RISING" : forceConfirmAlert ? "FORCE_CONFIRM" : forceFadeBlockAlert ? "FORCE_FADE_BLOCK" : trapWaitAlert ? "TRAP_WAIT" : "OBSERVE"
+string hetemAPressureBand = f_scoreBand(pressureIndexA)
+string hetemAGateBand = f_scoreBand(gateScoreA)
+string hetemARiskBand = f_scoreBand(riskBlockScore)
+string hetemASignatureBand = gateStateA + "/" + hetemAPressureBand + "/" + hetemARiskBand
+float hetemAEventSeverity = f_clamp(math.max(math.max(riskBlockScore, trapScore), math.max(conflictScore, forceFadeScore)) + (blockFlag ? 8.0 : 0.0) + (trapWaitAlert ? 4.0 : 0.0), 0, 100)
+bool gawPolicyBlockA = blockFlag or gateStateA == "BLOCKED" or riskBlockScore >= 78
+bool gawPolicyCheckA = forceShiftAlert or pressureRisingAlertA or gateClearingA or forceFadeBlockAlert
+bool gawPolicyWaitA = waitFlag or trapWaitAlert or conflictScore >= 55 or gateStateA == "CONGESTED"
+string gawPolicyA = gawPolicyBlockA ? "GP:BK" : gawPolicyCheckA ? "GP:CK" : gawPolicyWaitA ? "GP:WT" : "GP:ON"
+string gawSchemaVersionA = "GV3"
+
+string corePack = f_pack("S", shieldAct, shieldDir, shieldState, shieldRes) + " " + f_pack("R", ringAct, ringDir, ringState, ringRes) + " " + f_pack("H", helmetAct, helmetDir, helmetState, helmetRes) + " " + f_pack("A", armorAct, armorDir, armorState, armorRes)
+string auxPack = f_pack("P", pantsAct, pantsDir, pantsState, pantsRes) + " " + f_pack("G", gloveAct, gloveDir, gloveState, gloveRes) + " " + f_pack("W", shoesAct, shoesDir, shoesState, shoesRes) + " " + f_pack("N", neckAct, neckDir, neckState, neckRes) + " " + f_pack("E", earringAct, earringDir, earringState, earringRes)
+
+//==================================================
+// 표
+//==================================================
+color dirColor = genutDir > 0 ? colGood : genutDir < 0 ? colBad : colWarn
+color stateColor = genutState == 4 ? colBad : genutState >= 2 ? colGood : genutState == 1 ? colWarn : colSoft
+color riskColor = genutRisk == 0 ? colGood : genutRisk == 1 ? colWarn : colBad
+color trgColor = triggerScore >= 24 ? colGood : triggerScore >= 18 ? colWarn : colBad
+color baseColor = baseScore >= 24 ? colGood : baseScore >= 14 ? colWarn : colBad
+color structColor = structScore >= 14 ? colGood : structScore >= 8 ? colWarn : colBad
+color alignColor = alignScore >= 65 ? colGood : alignScore >= 50 ? colWarn : colBad
+color netColor = netScore >= 38 ? colGood : netScore >= 20 ? colWarn : colBad
+color scoreColor = totalScore >= 70 ? colGood : totalScore >= 40 ? colWarn : colBad
+color activeColor = activeCount >= 6 ? colGood : activeCount >= 3 ? colWarn : colBad
+color blockColor = blockFlag ? colBad : colGood
+color flowColor = flowSlope > 0 ? colGood : flowSlope < 0 ? colBad : colSoft
+color conflictColor = conflictScore >= 45 ? colBad : conflictScore >= 25 ? colWarn : colGood
+color trapColor = trapScore >= 65 ? colBad : trapScore >= 35 ? colWarn : colGood
+color gateColorA = gateStateA == "OPEN" or gateStateA == "CLEARING" ? colGood : gateStateA == "WAIT" or gateStateA == "CONGESTED" ? colWarn : colBad
+color pressureColorA = pressureIndexA >= 60 ? colGood : pressureIndexA >= 40 ? colWarn : colSoft
+color severityColorA = hetemAEventSeverity >= 75 ? colBad : hetemAEventSeverity >= 45 ? colWarn : colGood
+color policyColorA = gawPolicyA == "GP:BK" ? colBad : gawPolicyA == "GP:WT" ? colWarn : gawPolicyA == "GP:CK" ? colAccent : colGood
+
+var table panel = na
+var string lastTableLayoutKey = ""
+int frameW = showTableBorder ? tableFrameWidth : 0
+int borderW = showTableBorder ? tableBorderWidth : 0
+color tableBgColor = color.new(colBg, tableBgTransp)
+string tableLayoutKey = str.tostring(tableScale) + "|" + tablePosOpt + "|" + (showTableBorder ? "1" : "0") + "|" + str.tostring(tableFrameWidth) + "|" + str.tostring(tableBorderWidth) + "|" + str.tostring(tableBgTransp)
+txtSize = f_textSizeFromScale(tableScale)
+bodySz = txtSize
+headSz = txtSize
+
+if barstate.islast
+    if showTable
+        if na(panel) or tableLayoutKey != lastTableLayoutKey
+            if not na(panel)
+                table.delete(panel)
+            panel := table.new(f_tablePos(tablePosOpt), 4, 19, bgcolor=tableBgColor, frame_color=tableFrameColor, frame_width=frameW, border_color=tableBorderColor, border_width=borderW)
+            lastTableLayoutKey := tableLayoutKey
+        table.clear(panel, 0, 0, 3, 18)
+        string gawGateA = f_gawGate(gateStateA)
+        string gawPressA = f_gawBand(hetemAPressureBand)
+        string gawStateA = f_gawState(f_stateCode(genutState))
+        string gawRiskA = f_gawRisk(f_riskCode(genutRisk))
+        string tableBlockA = blockFlag ? "BLOCK" : "CLEAR"
+        string tableFlowA = flowSlope > 0 ? "UP" : flowSlope < 0 ? "DOWN" : "FLAT"
+        string gawBlockA = f_gawBlock(tableBlockA)
+        string gawFlowA = f_gawFlow(tableFlowA)
+        string gawEventA = f_gawEvent(hetemAEventName)
+        string gawNextA = f_nextTfText(nextTfHintCode)
+
+        table.cell(panel, 0, 0, "HA", text_color=colHead, text_size=headSz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 0, "FRC", text_color=colAccent, text_size=headSz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 0, "TF", text_color=colHead, text_size=headSz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 0, timeframe.period, text_color=colText, text_size=headSz, bgcolor=tableBgColor)
+
+        table.cell(panel, 0, 1, "GW", text_color=colHead, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 1, "EC:" + gawEventA, text_color=colAccent, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 1, "ES:" + f_numTxt(hetemAEventSeverity), text_color=severityColorA, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 1, gawPolicyA, text_color=policyColorA, text_size=bodySz, bgcolor=tableBgColor)
+
+        table.cell(panel, 0, 2, "G1", text_color=colHead, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 2, "HA-F", text_color=colAccent, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 2, "R:" + gawRiskA, text_color=riskColor, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 2, "B:" + gawBlockA, text_color=blockColor, text_size=bodySz, bgcolor=tableBgColor)
+
+        table.cell(panel, 0, 3, "G2", text_color=colHead, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 3, "G:" + gawGateA, text_color=gateColorA, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 3, "N:" + gawNextA, text_color=colText, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 3, "SO", text_color=colGood, text_size=bodySz, bgcolor=tableBgColor)
+
+        table.cell(panel, 0, 4, "ST", text_color=colText, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 4, gawStateA, text_color=stateColor, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 4, "SC", text_color=colSoft, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 4, str.tostring(genutState), text_color=stateColor, text_size=bodySz, bgcolor=tableBgColor)
+
+        table.cell(panel, 0, 5, "RK", text_color=colText, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 5, gawRiskA, text_color=riskColor, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 5, "RC", text_color=colSoft, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 5, str.tostring(genutRisk), text_color=riskColor, text_size=bodySz, bgcolor=tableBgColor)
+
+        table.cell(panel, 0, 6, "B", text_color=colText, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 6, gawBlockA, text_color=blockColor, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 6, "BR", text_color=colSoft, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 6, str.tostring(blockReasonCode), text_color=blockColor, text_size=bodySz, bgcolor=tableBgColor)
+
+        table.cell(panel, 0, 7, "F", text_color=colText, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 7, "F", text_color=colAccent, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 7, "EC", text_color=colSoft, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 7, gawEventA, text_color=colAccent, text_size=bodySz, bgcolor=tableBgColor)
+
+        table.cell(panel, 0, 8, "FL", text_color=colText, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 8, gawFlowA, text_color=flowColor, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 8, "DL", text_color=colSoft, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 8, f_numTxt(flowDelta), text_color=flowColor, text_size=bodySz, bgcolor=tableBgColor)
+
+        table.cell(panel, 0, 9, "FS", text_color=colText, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 9, f_numTxt(forceScore), text_color=scoreColor, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 9, "FD", text_color=colSoft, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 9, f_numTxt(forceFadeScore), text_color=riskColor, text_size=bodySz, bgcolor=tableBgColor)
+
+        table.cell(panel, 0, 10, "SC", text_color=colText, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 10, f_gawBand(f_scoreBand(structScore)), text_color=structColor, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 10, "AL", text_color=colSoft, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 10, f_gawBand(f_scoreBand(alignScore)), text_color=alignColor, text_size=bodySz, bgcolor=tableBgColor)
+
+        table.cell(panel, 0, 11, "NT", text_color=colText, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 11, f_gawBand(f_scoreBand(netScore)), text_color=netColor, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 11, "TL", text_color=colSoft, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 11, f_gawBand(f_scoreBand(totalScore)), text_color=scoreColor, text_size=bodySz, bgcolor=tableBgColor)
+
+        table.cell(panel, 0, 12, "CN", text_color=colText, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 12, f_gawBand(f_scoreBand(conflictScore)), text_color=conflictColor, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 12, "TP", text_color=colSoft, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 12, f_gawBand(f_scoreBand(trapScore)), text_color=trapColor, text_size=bodySz, bgcolor=tableBgColor)
+
+        table.cell(panel, 0, 13, "AC", text_color=colText, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 13, f_numTxt(activeCount), text_color=activeColor, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 13, "CR", text_color=colSoft, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 13, f_numTxt(coreActive), text_color=activeColor, text_size=bodySz, bgcolor=tableBgColor)
+
+        table.cell(panel, 0, 14, "AX", text_color=colText, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 14, f_numTxt(auxActive), text_color=activeColor, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 14, "RN", text_color=colSoft, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 14, str.tostring(math.max(flowUpStreak, flowDnStreak)), text_color=flowColor, text_size=bodySz, bgcolor=tableBgColor)
+
+        table.cell(panel, 0, 15, "MD", text_color=colText, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 15, f_modeAbbrev(horusAModeCode), text_color=colWarn, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 15, "RL", text_color=colSoft, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 15, f_tfRoleAbbrev(horusATfRoleCode), text_color=colAccent, text_size=bodySz, bgcolor=tableBgColor)
+
+        table.cell(panel, 0, 16, "NX", text_color=colText, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 16, gawNextA, text_color=colText, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 16, "BR", text_color=colSoft, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 16, barConfirmed == 1 ? "CL" : "LV", text_color=colAccent, text_size=bodySz, bgcolor=tableBgColor)
+
+        table.cell(panel, 0, 17, "SG", text_color=colText, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 17, f_gawBand(hetemASignatureBand), text_color=colAccent, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 17, "EC", text_color=colSoft, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 17, str.tostring(hetemAEventCode), text_color=colAccent, text_size=bodySz, bgcolor=tableBgColor)
+
+        table.cell(panel, 0, 18, "END", text_color=colSoft, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 1, 18, "GAW", text_color=colAccent, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 2, 18, gawSchemaVersionA, text_color=colGood, text_size=bodySz, bgcolor=tableBgColor)
+        table.cell(panel, 3, 18, "HTM", text_color=colAccent, text_size=bodySz, bgcolor=tableBgColor)
+    else
+        if not na(panel)
+            table.delete(panel)
+            panel := na
+            lastTableLayoutKey := ""
+
+
+//==================================================
+// 숨김 출력
+//==================================================
+var table tfRolePanel = na
+var string lastTfRoleLayoutKey = ""
+string tfRoleLayoutKey = tableLayoutKey + "|" + tfRolePanelPosOpt + "|" + tfRolePanelMode
+tfRolePanelTextSize = txtSize
+string tfPanelTfTextA = f_nextTfText(currentTfHintCode)
+string tfPanelNextTextA = f_nextTfText(nextTfHintCode)
+string tfPanelRoleTextA = tfRoleUseAbbrev ? f_tfRoleAbbrev(horusATfRoleCode) : f_tfRoleText(horusATfRoleCode)
+string tfPanelModeTextA = tfRoleUseAbbrev ? f_modeAbbrev(horusAModeCode) : f_modeText(horusAModeCode)
+string tfPanelLayerTextA = tfRoleUseAbbrev ? "F" : "FORCE"
+string tfPanelHeadTextA = tfRoleUseAbbrev ? "A·F" : "GENUT A FORCE"
+if barstate.islast
+    if showTfRolePanel
+        if na(tfRolePanel) or tfRoleLayoutKey != lastTfRoleLayoutKey
+            if not na(tfRolePanel)
+                table.delete(tfRolePanel)
+            tfRolePanel := table.new(f_tfRolePanelPos(tfRolePanelPosOpt), 3, 7, bgcolor=tableBgColor, frame_color=tableFrameColor, frame_width=frameW, border_color=tableBorderColor, border_width=borderW)
+            lastTfRoleLayoutKey := tfRoleLayoutKey
+        table.clear(tfRolePanel, 0, 0, 2, 6)
+        if tfRolePanelMode == "Detail"
+            table.cell(tfRolePanel, 0, 0, "GENUT A · FORCE TF ROLE", text_color=colHead, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 1, 0, "FORCE", text_color=colAccent, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 0, 1, "TF", text_color=colSoft, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 1, 1, tfPanelTfTextA, text_color=colText, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 0, 2, "SELF ROLE", text_color=colSoft, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 1, 2, f_tfRoleText(horusATfRoleCode), text_color=colAccent, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 0, 3, "NEXT HINT", text_color=colSoft, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 1, 3, tfPanelNextTextA, text_color=colText, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 0, 4, "MODE", text_color=colSoft, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 1, 4, f_modeText(horusAModeCode), text_color=colWarn, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 0, 5, "EC", text_color=colSoft, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 1, 5, str.tostring(horusAEventCode), text_color=colText, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 0, 6, "LAYER", text_color=colSoft, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 1, 6, "FORCE", text_color=colAccent, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+        else if tfRolePanelMode == "Compact"
+            table.cell(tfRolePanel, 0, 0, tfPanelHeadTextA, text_color=colHead, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 1, 0, "TF", text_color=colSoft, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 2, 0, tfPanelTfTextA, text_color=colText, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 0, 1, "SR", text_color=colSoft, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 1, 1, tfPanelRoleTextA, text_color=colAccent, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 0, 2, "NX", text_color=colSoft, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 1, 2, tfPanelNextTextA, text_color=colText, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 0, 3, "MD", text_color=colSoft, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 1, 3, tfPanelModeTextA, text_color=colWarn, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 0, 4, "EC", text_color=colSoft, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 1, 4, str.tostring(horusAEventCode), text_color=colText, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 0, 5, "LY", text_color=colSoft, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 1, 5, tfPanelLayerTextA, text_color=colAccent, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+        else
+            table.cell(tfRolePanel, 0, 0, tfPanelHeadTextA, text_color=colHead, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 1, 0, tfPanelTfTextA, text_color=colText, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 0, 1, "SR " + tfPanelRoleTextA, text_color=colAccent, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 1, 1, "NX " + tfPanelNextTextA, text_color=colText, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 0, 2, "MD " + tfPanelModeTextA, text_color=colWarn, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+            table.cell(tfRolePanel, 1, 2, "EC " + str.tostring(horusAEventCode), text_color=colText, text_size=tfRolePanelTextSize, bgcolor=tableBgColor)
+    else
+        if not na(tfRolePanel)
+            table.delete(tfRolePanel)
+            tfRolePanel := na
+            lastTfRoleLayoutKey := ""
+
+plot(float(genutDir), title="AL_GENUT_A_DIRECTION", display=display.none)
+plot(float(genutState), title="AL_GENUT_A_STATE", display=display.none)
+plot(float(genutRisk), title="AL_GENUT_A_RISK", display=display.none)
+plot(triggerScore, title="AL_GENUT_A_TRIGGER_SCORE", display=display.none)
+plot(baseScore, title="AL_GENUT_A_BASE_SCORE", display=display.none)
+plot(structScore, title="AL_GENUT_A_STRUCT_SCORE", display=display.none)
+plot(alignScore, title="AL_GENUT_A_ALIGN_SCORE", display=display.none)
+plot(netScore, title="AL_GENUT_A_NET_SCORE", display=display.none)
+plot(conflictScore, title="AL_GENUT_A_CONFLICT_SCORE", display=display.none)
+plot(trapScore, title="AL_GENUT_A_TRAP_SCORE", display=display.none)
+plot(execBlend, title="AL_GENUT_A_EXEC_BLEND", display=display.none)
+plot(activeCount, title="AL_GENUT_A_ACTIVE_COUNT", display=display.none)
+plot(coreActive, title="AL_GENUT_A_CORE_ACTIVE", display=display.none)
+plot(auxActive, title="AL_GENUT_A_AUX_ACTIVE", display=display.none)
+plot(failCount, title="AL_GENUT_A_FAIL_COUNT", display=display.none)
+plot(totalScore, title="AL_GENUT_A_TOTAL_SCORE", display=display.none)
+plot(longOK ? 1.0 : 0.0, title="AL_GENUT_A_FORCE_UP_STATE", display=display.none)
+plot(shortOK ? 1.0 : 0.0, title="AL_GENUT_A_FORCE_DOWN_STATE", display=display.none)
+plot(waitFlag ? 1.0 : 0.0, title="AL_GENUT_A_WAIT_FLAG", display=display.none)
+plot(exitOK ? 1.0 : 0.0, title="AL_GENUT_A_RISK_FADE_STATE", display=display.none)
+plot(blockFlag ? 1.0 : 0.0, title="AL_GENUT_A_BLOCK_FLAG", display=display.none)
+plot(float(blockReasonCode), title="AL_GENUT_A_BLOCK_REASON_CODE", display=display.none)
+plot(float(barConfirmed), title="AL_GENUT_A_BAR_CONFIRMED", display=display.none)
+plot(flowDelta, title="AL_GENUT_A_FLOW_DELTA", display=display.none)
+plot(flowSlope, title="AL_GENUT_A_FLOW_SLOPE", display=display.none)
+plot(float(flowUpStreak), title="AL_GENUT_A_FLOW_UP_STREAK", display=display.none)
+plot(float(flowDnStreak), title="AL_GENUT_A_FLOW_DN_STREAK", display=display.none)
+plot(float(flowShift), title="AL_GENUT_A_FLOW_SHIFT", display=display.none)
+plot(directionScore, title="AL_GENUT_A_DIRECTION_SCORE", display=display.none)
+plot(riskBlockScore, title="AL_GENUT_A_RISK_BLOCK_SCORE", display=display.none)
+plot(trapPressureScore, title="AL_GENUT_A_TRAP_PRESSURE_SCORE", display=display.none)
+plot(neutralDiagnosticScore, title="AL_GENUT_A_NEUTRAL_DIAGNOSTIC_SCORE", display=display.none)
+plot(flowShiftStrong ? 1.0 : 0.0, title="AL_GENUT_A_FLOW_SHIFT_STRONG", display=display.none)
+plot(flowShiftWeak ? 1.0 : 0.0, title="AL_GENUT_A_FLOW_SHIFT_WEAK", display=display.none)
+plot(exitStrong ? 1.0 : 0.0, title="AL_GENUT_A_FORCE_FADE_STRONG", display=display.none)
+plot(exitWeak ? 1.0 : 0.0, title="AL_GENUT_A_FORCE_FADE_WEAK", display=display.none)
+plot(blockSourceMask, title="AL_GENUT_A_BLOCK_SOURCE_MASK", display=display.none)
+plot(entrySuppress ? 1.0 : 0.0, title="AL_GENUT_A_GATE_SUPPRESS", display=display.none)
+plot(hardExitOK ? 1.0 : 0.0, title="AL_GENUT_A_HARD_BLOCK_STATE", display=display.none)
+plot(flowWeakOnly ? 1.0 : 0.0, title="AL_GENUT_A_FLOW_WEAK_ONLY", display=display.none)
+plot(compatLiftAllowed ? 1.0 : 0.0, title="AL_GENUT_A_COMPAT_LIFT_ALLOWED", display=display.none)
+plot(rawTriggerScore, title="AL_GENUT_A_RAW_TRIGGER_SCORE", display=display.none)
+plot(rawBaseScore, title="AL_GENUT_A_RAW_BASE_SCORE", display=display.none)
+plot(rawStructScore, title="AL_GENUT_A_RAW_STRUCT_SCORE", display=display.none)
+plot(rawTotalScore, title="AL_GENUT_A_RAW_TOTAL_SCORE", display=display.none)
+plot(forceScore, title="AL_GENUT_A_FORCE_SCORE", display=display.none)
+plot(forceFadeScore, title="AL_GENUT_A_FORCE_FADE_SCORE", display=display.none)
+plot(gateScoreA, title="AL_GENUT_A_HETEM_GATE_SCORE", display=display.none)
+plot(pressureIndexA, title="AL_GENUT_A_HETEM_PRESSURE_INDEX", display=display.none)
+plot(gateStateA == "OPEN" ? 1.0 : gateStateA == "BLOCKED" ? 2.0 : gateStateA == "CONGESTED" ? 3.0 : gateStateA == "CLEARING" ? 4.0 : gateStateA == "RISK" ? 5.0 : 0.0, title="AL_GENUT_A_HETEM_GATE_STATE_CODE", display=display.none)
+plot(float(hetemAEventCode), title="AL_GENUT_A_HETEM_EVENT_CODE", display=display.none)
+plot(float(horusATfRoleCode), title="AL_GENUT_A_TF_ROLE_CODE", display=display.none)
+plot(float(nextTfHintCode), title="AL_GENUT_A_NEXT_TF_HINT_CODE", display=display.none)
+plot(float(horusAModeCode), title="AL_GENUT_A_MODE_CODE", display=display.none)
+plot(float(horusAEventCode), title="AL_GENUT_A_EVENT_CODE", display=display.none)
+
+//==================================================
+// HETEM Gate Alert Bus | Unified alert() JSON
+//==================================================
+string alertBusSeasonA = "AL HETEM"
+string alertBusSeasonCodeA = "HETEM"
+string alertBusGroupA = "A"
+string alertBusLayerA = "FORCE"
+string alertBusDirA = f_dirCode(genutDir)
+string alertBusStateA = f_stateCode(genutState)
+string alertBusRiskA = f_riskCode(genutRisk)
+string alertBusRiskBandA = hetemARiskBand
+string alertBusTotalA = f_numTxt(totalScore)
+string alertBusBlockA = blockFlag ? "BLOCK" : "CLEAR"
+string alertBusFlowA = flowSlope > 0 ? "UP" : flowSlope < 0 ? "DOWN" : "FLAT"
+string alertBusNextTfA = f_nextTfText(nextTfHintCode)
+string alertBusModeCodeA = str.tostring(horusAModeCode)
+string alertBusEventCodeA = str.tostring(hetemAEventCode)
+string alertBusEventSeverityA = f_numTxt(hetemAEventSeverity)
+string alertBusGawPolicyA = gawPolicyA
+string alertBusSchemaVersionA = gawSchemaVersionA
+string alertBusGateStateA = gateStateA
+string alertBusGateScoreA = f_numTxt(gateScoreA)
+string alertBusPressureIndexA = f_numTxt(pressureIndexA)
+string alertBusPressureBandA = hetemAPressureBand
+string alertBusStateSignatureA = timeframe.period + "|" + alertBusLayerA + "|" + alertBusDirA + "_" + alertBusStateA + "|" + alertBusRiskBandA + "|" + alertBusBlockA + "|" + alertBusGateStateA + "|" + alertBusPressureBandA + "|" + alertBusEventCodeA
+var string lastEventSignature = ""
+var string lastSnapshotKey = ""
+
+string snapshotKeyA = syminfo.tickerid + "|" + alertBusGroupA + "|" + alertBusLayerA + "|" + timeframe.period + "|" + str.tostring(time)
+string snapshotEventSignatureA = syminfo.tickerid + "|" + timeframe.period + "|" + alertBusLayerA + "|TF_SNAPSHOT|" + alertBusGateStateA + "|" + alertBusPressureBandA + "|" + alertBusBlockA + "|CLOSED"
+string snapshotDedupKeyA = f_keySafe(syminfo.tickerid + "_" + alertBusGroupA + "_" + alertBusLayerA + "_" + timeframe.period + "_TF_SNAPSHOT")
+string snapshotJsonA = f_makeAlertBusJson("SNAPSHOT", "TF_SNAPSHOT", "BAR_CLOSE", "CLOSED", alertBusSeasonA, alertBusSeasonCodeA, alertBusGroupA, alertBusLayerA, alertBusDirA, alertBusStateA, alertBusRiskA, alertBusTotalA, alertBusBlockA, alertBusFlowA, alertBusNextTfA, alertBusModeCodeA, alertBusEventCodeA, alertBusEventSeverityA, alertBusGawPolicyA, alertBusSchemaVersionA, alertBusGateStateA, alertBusGateScoreA, alertBusPressureIndexA, alertBusStateSignatureA, snapshotEventSignatureA, snapshotDedupKeyA, briefPolicy, gptAllowed, voiceAllowed, alertVersion)
+if enableAlertBus and sendSnapshots and barstate.isconfirmed and barstate.isrealtime and snapshotKeyA != lastSnapshotKey
+    alert(snapshotJsonA, alert.freq_once_per_bar_close)
+    lastSnapshotKey := snapshotKeyA
+
+bool evForceShift = forceShiftAlert
+bool evPressureRising = pressureRisingAlertA
+bool evForceConfirm = forceConfirmAlert
+bool evForceFadeBlock = forceFadeBlockAlert
+bool evTrapWait = trapWaitAlert
+bool evForceShiftEdge = evForceShift and not evForceShift[1]
+bool evPressureRisingEdge = evPressureRising and not evPressureRising[1]
+bool evForceConfirmEdge = evForceConfirm and not evForceConfirm[1]
+bool evForceFadeBlockEdge = evForceFadeBlock and not evForceFadeBlock[1]
+bool evTrapWaitEdge = evTrapWait and not evTrapWait[1]
+bool alertBusTriggerAllowedA = allowLiveTriggers and barstate.isrealtime
+
+string forceShiftEventSignatureA = syminfo.tickerid + "|" + timeframe.period + "|" + alertBusLayerA + "|FORCE_SHIFT|" + alertBusGateStateA + "|" + alertBusPressureBandA + "|" + alertBusBlockA + "|RT"
+string forceShiftDedupKeyA = f_keySafe(syminfo.tickerid + "_" + alertBusGroupA + "_" + alertBusLayerA + "_" + timeframe.period + "_FORCE_SHIFT")
+string forceShiftJsonA = f_makeAlertBusJson("TRIGGER", "FORCE_SHIFT", "EDGE_CHANGED", "RT", alertBusSeasonA, alertBusSeasonCodeA, alertBusGroupA, alertBusLayerA, alertBusDirA, alertBusStateA, alertBusRiskA, alertBusTotalA, alertBusBlockA, alertBusFlowA, alertBusNextTfA, alertBusModeCodeA, alertBusEventCodeA, alertBusEventSeverityA, alertBusGawPolicyA, alertBusSchemaVersionA, alertBusGateStateA, alertBusGateScoreA, alertBusPressureIndexA, alertBusStateSignatureA, forceShiftEventSignatureA, forceShiftDedupKeyA, briefPolicy, gptAllowed, voiceAllowed, alertVersion)
+if enableAlertBus and sendTriggers and alertBusTriggerAllowedA and evForceShiftEdge and forceShiftEventSignatureA != lastEventSignature
+    alert(forceShiftJsonA, alert.freq_once_per_bar)
+    lastEventSignature := forceShiftEventSignatureA
+
+string pressureRisingEventSignatureA = syminfo.tickerid + "|" + timeframe.period + "|" + alertBusLayerA + "|PRESSURE_RISING|" + alertBusGateStateA + "|" + alertBusPressureBandA + "|" + alertBusBlockA + "|RT"
+string pressureRisingDedupKeyA = f_keySafe(syminfo.tickerid + "_" + alertBusGroupA + "_" + alertBusLayerA + "_" + timeframe.period + "_PRESSURE_RISING")
+string pressureRisingJsonA = f_makeAlertBusJson("TRIGGER", "PRESSURE_RISING", "EDGE_CHANGED", "RT", alertBusSeasonA, alertBusSeasonCodeA, alertBusGroupA, alertBusLayerA, alertBusDirA, alertBusStateA, alertBusRiskA, alertBusTotalA, alertBusBlockA, alertBusFlowA, alertBusNextTfA, alertBusModeCodeA, alertBusEventCodeA, alertBusEventSeverityA, alertBusGawPolicyA, alertBusSchemaVersionA, alertBusGateStateA, alertBusGateScoreA, alertBusPressureIndexA, alertBusStateSignatureA, pressureRisingEventSignatureA, pressureRisingDedupKeyA, briefPolicy, gptAllowed, voiceAllowed, alertVersion)
+if enableAlertBus and sendTriggers and alertBusTriggerAllowedA and evPressureRisingEdge and pressureRisingEventSignatureA != lastEventSignature
+    alert(pressureRisingJsonA, alert.freq_once_per_bar)
+    lastEventSignature := pressureRisingEventSignatureA
+
+string forceConfirmEventSignatureA = syminfo.tickerid + "|" + timeframe.period + "|" + alertBusLayerA + "|FORCE_CONFIRM|" + alertBusGateStateA + "|" + alertBusPressureBandA + "|" + alertBusBlockA + "|RT"
+string forceConfirmDedupKeyA = f_keySafe(syminfo.tickerid + "_" + alertBusGroupA + "_" + alertBusLayerA + "_" + timeframe.period + "_FORCE_CONFIRM")
+string forceConfirmJsonA = f_makeAlertBusJson("TRIGGER", "FORCE_CONFIRM", "EDGE_CHANGED", "RT", alertBusSeasonA, alertBusSeasonCodeA, alertBusGroupA, alertBusLayerA, alertBusDirA, alertBusStateA, alertBusRiskA, alertBusTotalA, alertBusBlockA, alertBusFlowA, alertBusNextTfA, alertBusModeCodeA, alertBusEventCodeA, alertBusEventSeverityA, alertBusGawPolicyA, alertBusSchemaVersionA, alertBusGateStateA, alertBusGateScoreA, alertBusPressureIndexA, alertBusStateSignatureA, forceConfirmEventSignatureA, forceConfirmDedupKeyA, briefPolicy, gptAllowed, voiceAllowed, alertVersion)
+if enableAlertBus and sendTriggers and alertBusTriggerAllowedA and evForceConfirmEdge and forceConfirmEventSignatureA != lastEventSignature
+    alert(forceConfirmJsonA, alert.freq_once_per_bar)
+    lastEventSignature := forceConfirmEventSignatureA
+
+string forceFadeBlockEventSignatureA = syminfo.tickerid + "|" + timeframe.period + "|" + alertBusLayerA + "|FORCE_FADE_BLOCK|" + alertBusGateStateA + "|" + alertBusPressureBandA + "|" + alertBusBlockA + "|RT"
+string forceFadeBlockDedupKeyA = f_keySafe(syminfo.tickerid + "_" + alertBusGroupA + "_" + alertBusLayerA + "_" + timeframe.period + "_FORCE_FADE_BLOCK")
+string forceFadeBlockJsonA = f_makeAlertBusJson("TRIGGER", "FORCE_FADE_BLOCK", "EDGE_CHANGED", "RT", alertBusSeasonA, alertBusSeasonCodeA, alertBusGroupA, alertBusLayerA, alertBusDirA, alertBusStateA, alertBusRiskA, alertBusTotalA, alertBusBlockA, alertBusFlowA, alertBusNextTfA, alertBusModeCodeA, alertBusEventCodeA, alertBusEventSeverityA, alertBusGawPolicyA, alertBusSchemaVersionA, alertBusGateStateA, alertBusGateScoreA, alertBusPressureIndexA, alertBusStateSignatureA, forceFadeBlockEventSignatureA, forceFadeBlockDedupKeyA, briefPolicy, gptAllowed, voiceAllowed, alertVersion)
+if enableAlertBus and sendTriggers and alertBusTriggerAllowedA and evForceFadeBlockEdge and forceFadeBlockEventSignatureA != lastEventSignature
+    alert(forceFadeBlockJsonA, alert.freq_once_per_bar)
+    lastEventSignature := forceFadeBlockEventSignatureA
+
+string trapWaitEventSignatureA = syminfo.tickerid + "|" + timeframe.period + "|" + alertBusLayerA + "|TRAP_WAIT|" + alertBusGateStateA + "|" + alertBusPressureBandA + "|" + alertBusBlockA + "|RT"
+string trapWaitDedupKeyA = f_keySafe(syminfo.tickerid + "_" + alertBusGroupA + "_" + alertBusLayerA + "_" + timeframe.period + "_TRAP_WAIT")
+string trapWaitJsonA = f_makeAlertBusJson("TRIGGER", "TRAP_WAIT", "EDGE_CHANGED", "RT", alertBusSeasonA, alertBusSeasonCodeA, alertBusGroupA, alertBusLayerA, alertBusDirA, alertBusStateA, alertBusRiskA, alertBusTotalA, alertBusBlockA, alertBusFlowA, alertBusNextTfA, alertBusModeCodeA, alertBusEventCodeA, alertBusEventSeverityA, alertBusGawPolicyA, alertBusSchemaVersionA, alertBusGateStateA, alertBusGateScoreA, alertBusPressureIndexA, alertBusStateSignatureA, trapWaitEventSignatureA, trapWaitDedupKeyA, briefPolicy, gptAllowed, voiceAllowed, alertVersion)
+if enableAlertBus and sendTriggers and alertBusTriggerAllowedA and evTrapWaitEdge and trapWaitEventSignatureA != lastEventSignature
+    alert(trapWaitJsonA, alert.freq_once_per_bar)
+    lastEventSignature := trapWaitEventSignatureA
+
+//==================================================
+// 알림 재정의 V2: GENUT A internal / FORCE role
+// 매수·매도·진입·청산 표현 제거. Output count 절약형 5-alert 구성.
+//==================================================
+alertcondition(useAlerts and barstate.isconfirmed, title="AL GENUT A | TF SNAPSHOT", message="{\"source\":\"TradingView\",\"system\":\"AiLynx\",\"engine\":\"GENUT\",\"observer\":\"HORUS\",\"group\":\"A\",\"layer\":\"FORCE\",\"event\":\"TF_SNAPSHOT\",\"trigger\":\"SNAPSHOT_CLOSED\",\"symbol\":\"{{exchange}}:{{ticker}}\",\"tf\":\"{{interval}}\",\"time\":\"{{time}}\",\"open\":\"{{open}}\",\"high\":\"{{high}}\",\"low\":\"{{low}}\",\"close\":\"{{close}}\",\"volume\":\"{{volume}}\",\"bar_status\":\"CLOSED\",\"dir\":\"{{plot(\"AL_GENUT_A_DIRECTION\")}}\",\"state\":\"{{plot(\"AL_GENUT_A_STATE\")}}\",\"risk\":\"{{plot(\"AL_GENUT_A_RISK\")}}\",\"force\":\"{{plot(\"AL_GENUT_A_FORCE_SCORE\")}}\",\"fade\":\"{{plot(\"AL_GENUT_A_FORCE_FADE_SCORE\")}}\",\"flow_shift\":\"{{plot(\"AL_GENUT_A_FLOW_SHIFT\")}}\",\"tf_role_code\":\"{{plot(\"AL_GENUT_A_TF_ROLE_CODE\")}}\",\"next_tf_hint_code\":\"{{plot(\"AL_GENUT_A_NEXT_TF_HINT_CODE\")}}\",\"mode_code\":\"{{plot(\"AL_GENUT_A_MODE_CODE\")}}\",\"event_code\":\"{{plot(\"AL_GENUT_A_EVENT_CODE\")}}\",\"defense_rule_version\":\"DEFENSE_VALIDATION_V1_2026_05_14\",\"defense_eval_status\":\"PENDING\",\"defense_type\":\"STATE_SNAPSHOT\",\"base_price\":\"{{close}}\",\"base_time\":\"{{time}}\",\"eval_horizons\":\"5m,15m,1h,4h\",\"price_source\":\"TRADINGVIEW_SNAPSHOT_ONLY\",\"role_map_version\":\"TFROLE_EXP_2026_05_13\",\"purpose\":\"GPT_BRIEFING_TIMEFRAME_MIGRATION\"}")
+alertcondition(useAlerts and forceShiftPulse, title="AL GENUT A | FORCE SHIFT", message="{\"source\":\"TradingView\",\"system\":\"AiLynx\",\"engine\":\"GENUT\",\"observer\":\"HORUS\",\"group\":\"A\",\"layer\":\"FORCE\",\"event\":\"FORCE_SHIFT\",\"trigger\":\"EDGE_CLOSED\",\"symbol\":\"{{exchange}}:{{ticker}}\",\"tf\":\"{{interval}}\",\"time\":\"{{time}}\",\"open\":\"{{open}}\",\"high\":\"{{high}}\",\"low\":\"{{low}}\",\"close\":\"{{close}}\",\"volume\":\"{{volume}}\",\"bar_status\":\"CLOSED\",\"dir\":\"{{plot(\"AL_GENUT_A_DIRECTION\")}}\",\"state\":\"{{plot(\"AL_GENUT_A_STATE\")}}\",\"risk\":\"{{plot(\"AL_GENUT_A_RISK\")}}\",\"force\":\"{{plot(\"AL_GENUT_A_FORCE_SCORE\")}}\",\"fade\":\"{{plot(\"AL_GENUT_A_FORCE_FADE_SCORE\")}}\",\"flow_delta\":\"{{plot(\"AL_GENUT_A_FLOW_DELTA\")}}\",\"flow_slope\":\"{{plot(\"AL_GENUT_A_FLOW_SLOPE\")}}\",\"direction_score\":\"{{plot(\"AL_GENUT_A_DIRECTION_SCORE\")}}\",\"tf_role_code\":\"{{plot(\"AL_GENUT_A_TF_ROLE_CODE\")}}\",\"next_tf_hint_code\":\"{{plot(\"AL_GENUT_A_NEXT_TF_HINT_CODE\")}}\",\"mode_code\":\"{{plot(\"AL_GENUT_A_MODE_CODE\")}}\",\"event_code\":\"{{plot(\"AL_GENUT_A_EVENT_CODE\")}}\",\"defense_rule_version\":\"DEFENSE_VALIDATION_V1_2026_05_14\",\"defense_eval_status\":\"PENDING\",\"defense_type\":\"FORCE_MIGRATION\",\"base_price\":\"{{close}}\",\"base_time\":\"{{time}}\",\"eval_horizons\":\"5m,15m,1h,4h\",\"price_source\":\"TRADINGVIEW_SNAPSHOT_ONLY\",\"role_map_version\":\"TFROLE_EXP_2026_05_13\",\"purpose\":\"GPT_BRIEFING_TIMEFRAME_MIGRATION\"}")
+alertcondition(useAlerts and forceConfirmPulse, title="AL GENUT A | FORCE CONFIRM", message="{\"source\":\"TradingView\",\"system\":\"AiLynx\",\"engine\":\"GENUT\",\"observer\":\"HORUS\",\"group\":\"A\",\"layer\":\"FORCE\",\"event\":\"FORCE_CONFIRM\",\"trigger\":\"EDGE_CLOSED\",\"symbol\":\"{{exchange}}:{{ticker}}\",\"tf\":\"{{interval}}\",\"time\":\"{{time}}\",\"open\":\"{{open}}\",\"high\":\"{{high}}\",\"low\":\"{{low}}\",\"close\":\"{{close}}\",\"volume\":\"{{volume}}\",\"bar_status\":\"CLOSED\",\"dir\":\"{{plot(\"AL_GENUT_A_DIRECTION\")}}\",\"state\":\"{{plot(\"AL_GENUT_A_STATE\")}}\",\"risk\":\"{{plot(\"AL_GENUT_A_RISK\")}}\",\"force\":\"{{plot(\"AL_GENUT_A_FORCE_SCORE\")}}\",\"total\":\"{{plot(\"AL_GENUT_A_TOTAL_SCORE\")}}\",\"active\":\"{{plot(\"AL_GENUT_A_ACTIVE_COUNT\")}}\",\"tf_role_code\":\"{{plot(\"AL_GENUT_A_TF_ROLE_CODE\")}}\",\"next_tf_hint_code\":\"{{plot(\"AL_GENUT_A_NEXT_TF_HINT_CODE\")}}\",\"mode_code\":\"{{plot(\"AL_GENUT_A_MODE_CODE\")}}\",\"event_code\":\"{{plot(\"AL_GENUT_A_EVENT_CODE\")}}\",\"defense_rule_version\":\"DEFENSE_VALIDATION_V1_2026_05_14\",\"defense_eval_status\":\"PENDING\",\"defense_type\":\"FORCE_CONFIRM\",\"base_price\":\"{{close}}\",\"base_time\":\"{{time}}\",\"eval_horizons\":\"5m,15m,1h,4h\",\"price_source\":\"TRADINGVIEW_SNAPSHOT_ONLY\",\"role_map_version\":\"TFROLE_EXP_2026_05_13\",\"purpose\":\"GPT_BRIEFING_TIMEFRAME_MIGRATION\"}")
+alertcondition(useAlerts and forceFadeBlockPulse, title="AL GENUT A | FORCE FADE BLOCK", message="{\"source\":\"TradingView\",\"system\":\"AiLynx\",\"engine\":\"GENUT\",\"observer\":\"HORUS\",\"group\":\"A\",\"layer\":\"FORCE\",\"event\":\"FORCE_FADE_BLOCK\",\"trigger\":\"EDGE_CLOSED\",\"symbol\":\"{{exchange}}:{{ticker}}\",\"tf\":\"{{interval}}\",\"time\":\"{{time}}\",\"open\":\"{{open}}\",\"high\":\"{{high}}\",\"low\":\"{{low}}\",\"close\":\"{{close}}\",\"volume\":\"{{volume}}\",\"bar_status\":\"CLOSED\",\"dir\":\"{{plot(\"AL_GENUT_A_DIRECTION\")}}\",\"state\":\"{{plot(\"AL_GENUT_A_STATE\")}}\",\"risk\":\"{{plot(\"AL_GENUT_A_RISK\")}}\",\"force\":\"{{plot(\"AL_GENUT_A_FORCE_SCORE\")}}\",\"fade\":\"{{plot(\"AL_GENUT_A_FORCE_FADE_SCORE\")}}\",\"block\":\"{{plot(\"AL_GENUT_A_BLOCK_FLAG\")}}\",\"reason\":\"{{plot(\"AL_GENUT_A_BLOCK_REASON_CODE\")}}\",\"risk_block\":\"{{plot(\"AL_GENUT_A_RISK_BLOCK_SCORE\")}}\",\"fade_weak\":\"{{plot(\"AL_GENUT_A_FORCE_FADE_WEAK\")}}\",\"fade_strong\":\"{{plot(\"AL_GENUT_A_FORCE_FADE_STRONG\")}}\",\"tf_role_code\":\"{{plot(\"AL_GENUT_A_TF_ROLE_CODE\")}}\",\"next_tf_hint_code\":\"{{plot(\"AL_GENUT_A_NEXT_TF_HINT_CODE\")}}\",\"mode_code\":\"{{plot(\"AL_GENUT_A_MODE_CODE\")}}\",\"event_code\":\"{{plot(\"AL_GENUT_A_EVENT_CODE\")}}\",\"defense_rule_version\":\"DEFENSE_VALIDATION_V1_2026_05_14\",\"defense_eval_status\":\"PENDING\",\"defense_type\":\"CHASE_RISK_FADE_BLOCK\",\"base_price\":\"{{close}}\",\"base_time\":\"{{time}}\",\"eval_horizons\":\"5m,15m,1h,4h\",\"price_source\":\"TRADINGVIEW_SNAPSHOT_ONLY\",\"role_map_version\":\"TFROLE_EXP_2026_05_13\",\"purpose\":\"GPT_BRIEFING_TIMEFRAME_MIGRATION\"}")
+alertcondition(useAlerts and trapWaitPulse, title="AL GENUT A | TRAP WAIT", message="{\"source\":\"TradingView\",\"system\":\"AiLynx\",\"engine\":\"GENUT\",\"observer\":\"HORUS\",\"group\":\"A\",\"layer\":\"FORCE\",\"event\":\"TRAP_WAIT\",\"trigger\":\"EDGE_CLOSED\",\"symbol\":\"{{exchange}}:{{ticker}}\",\"tf\":\"{{interval}}\",\"time\":\"{{time}}\",\"open\":\"{{open}}\",\"high\":\"{{high}}\",\"low\":\"{{low}}\",\"close\":\"{{close}}\",\"volume\":\"{{volume}}\",\"bar_status\":\"CLOSED\",\"dir\":\"{{plot(\"AL_GENUT_A_DIRECTION\")}}\",\"state\":\"{{plot(\"AL_GENUT_A_STATE\")}}\",\"risk\":\"{{plot(\"AL_GENUT_A_RISK\")}}\",\"force\":\"{{plot(\"AL_GENUT_A_FORCE_SCORE\")}}\",\"trap\":\"{{plot(\"AL_GENUT_A_TRAP_SCORE\")}}\",\"conflict\":\"{{plot(\"AL_GENUT_A_CONFLICT_SCORE\")}}\",\"neutral\":\"{{plot(\"AL_GENUT_A_NEUTRAL_DIAGNOSTIC_SCORE\")}}\",\"wait\":\"{{plot(\"AL_GENUT_A_WAIT_FLAG\")}}\",\"tf_role_code\":\"{{plot(\"AL_GENUT_A_TF_ROLE_CODE\")}}\",\"next_tf_hint_code\":\"{{plot(\"AL_GENUT_A_NEXT_TF_HINT_CODE\")}}\",\"mode_code\":\"{{plot(\"AL_GENUT_A_MODE_CODE\")}}\",\"event_code\":\"{{plot(\"AL_GENUT_A_EVENT_CODE\")}}\",\"defense_rule_version\":\"DEFENSE_VALIDATION_V1_2026_05_14\",\"defense_eval_status\":\"PENDING\",\"defense_type\":\"TRAP_WAIT_RISK\",\"base_price\":\"{{close}}\",\"base_time\":\"{{time}}\",\"eval_horizons\":\"5m,15m,1h,4h\",\"price_source\":\"TRADINGVIEW_SNAPSHOT_ONLY\",\"role_map_version\":\"TFROLE_EXP_2026_05_13\",\"purpose\":\"GPT_BRIEFING_TIMEFRAME_MIGRATION\"}")

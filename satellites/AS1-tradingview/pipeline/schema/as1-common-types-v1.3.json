@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ailynx.local/schemas/as1-common-types-v1.3.json",
+  "title": "AS1 common types v1.3",
+  "$defs": {
+    "layoutId": {"enum": ["HORUS_A", "HORUS_B", "MAAT", "MAAT2"]},
+    "contract": {
+      "type": "object", "additionalProperties": false,
+      "required": ["contract_type", "contract_id", "series_symbol", "expiry_kind", "expiry_time", "settlement_asset", "contract_multiplier", "continuous_series", "adjustment_mode", "adjustment_applied", "roll_state", "roll_event"],
+      "properties": {
+        "contract_type": {"enum": ["NONE", "LINEAR", "INVERSE", "QUANTO", "UNKNOWN"]},
+        "contract_id": {"type": ["string", "null"]}, "series_symbol": {"type": ["string", "null"]},
+        "expiry_kind": {"enum": ["NONE", "PERPETUAL", "DATED", "UNKNOWN"]}, "expiry_time": {"type": ["integer", "null"], "minimum": 0},
+        "settlement_asset": {"type": ["string", "null"]}, "contract_multiplier": {"type": ["number", "null"], "exclusiveMinimum": 0},
+        "continuous_series": {"type": "boolean"}, "adjustment_mode": {"enum": ["NONE", "BACK_ADJUSTED", "FORWARD_ADJUSTED", "RATIO_ADJUSTED", "UNKNOWN"]},
+        "adjustment_applied": {"type": "boolean"}, "roll_state": {"enum": ["NONE", "PRE_ROLL", "ROLLING", "POST_ROLL", "EXPIRED", "UNKNOWN"]}, "roll_event": {"type": "boolean"}
+      }
+    },
+    "instrument": {
+      "type": "object", "additionalProperties": false,
+      "required": ["ticker_id", "venue", "symbol", "base_asset", "quote_asset", "asset_class", "instrument_type", "contract"],
+      "properties": {
+        "ticker_id": {"type": "string", "minLength": 1}, "venue": {"type": "string", "minLength": 1}, "symbol": {"type": "string", "minLength": 1},
+        "base_asset": {"type": "string", "minLength": 1}, "quote_asset": {"type": "string", "minLength": 1},
+        "asset_class": {"enum": ["CRYPTO", "EQUITY", "INDEX", "COMMODITY", "FX", "FIXED_INCOME", "EVENT", "OTHER", "UNKNOWN"]},
+        "instrument_type": {"enum": ["SPOT", "EQUITY", "ETF", "INDEX", "PERPETUAL", "FUTURE", "OPTION", "CFD", "FUND", "OTHER", "UNKNOWN"]},
+        "contract": {"$ref": "#/$defs/contract"}, "extensions": {"type": "object"}
+      }
+    },
+    "sessionHint": {
+      "type": "object", "additionalProperties": false, "required": ["session_type", "session_state", "is_market_open"],
+      "properties": {"session_type": {"enum": ["CONTINUOUS_24_7", "EXCHANGE_SESSION", "CUSTOM", "UNKNOWN"]}, "session_state": {"enum": ["OPEN", "PRE_MARKET", "REGULAR", "POST_MARKET", "CLOSED", "MAINTENANCE", "HALTED", "UNKNOWN"]}, "is_market_open": {"type": "boolean"}}
+    },
+    "timing": {
+      "type": "object", "additionalProperties": false, "required": ["timeframe", "bar_open_time", "bar_close_time", "sent_at"],
+      "properties": {"timeframe": {"type": "string", "minLength": 1}, "bar_open_time": {"type": "integer", "minimum": 0}, "bar_close_time": {"type": "integer", "minimum": 0}, "sent_at": {"type": "integer", "minimum": 0}}
+    },
+    "bar": {
+      "type": "object", "additionalProperties": false, "required": ["open", "high", "low", "close", "volume", "volume_unit", "volume_basis"],
+      "properties": {"open": {"type": "number"}, "high": {"type": "number"}, "low": {"type": "number"}, "close": {"type": "number"}, "volume": {"type": ["number", "null"]}, "volume_unit": {"enum": ["BASE_ASSET", "QUOTE_ASSET", "CONTRACTS", "UNKNOWN"]}, "volume_basis": {"enum": ["EXCHANGE_NATIVE", "BASE_NORMALIZED", "QUOTE_NOTIONAL", "RELATIVE_NORMALIZED", "UNKNOWN"]}}
+    },
+    "quality": {
+      "type": "object", "additionalProperties": false, "required": ["sensor_quality", "valid", "flags"],
+      "properties": {"sensor_quality": {"enum": ["GOOD", "LIMITED", "WATCH", "INVALID"]}, "valid": {"type": "boolean"}, "flags": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}}
+    }
+  }
+}

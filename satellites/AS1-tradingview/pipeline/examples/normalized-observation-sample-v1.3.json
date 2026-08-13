@@ -1,0 +1,1 @@
+{"example_id":"NORMALIZED_OBSERVATION_SAMPLE_V1_3","fixture_id":"AS1_V13_NORMAL_001","fixture_path":"../tests/fixtures/v1.3/AS1_V13_NORMAL_001.json","json_pointer":"/normalized_observations/0","status":"FIXTURE_REFERENCE","notice":"The referenced object preserves the corresponding Raw event and adds canonical server context."}

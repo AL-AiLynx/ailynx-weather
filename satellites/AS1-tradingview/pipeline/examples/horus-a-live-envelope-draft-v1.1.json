@@ -1,0 +1,9 @@
+{
+  "schema_version": "as1.v1.1", "satellite_id": "AS1", "platform": "TRADINGVIEW", "layout_id": "HORUS_A", "observer": "HORUS", "code_version": "TBD: current alertVersion",
+  "instrument": {"ticker_id": "COINBASE:BTCUSD", "venue": "COINBASE", "symbol": "BTCUSD", "base_asset": "BTC", "quote_asset": "USD", "source_regime_id": "coinbase-btcusd-from-2026-07-22"},
+  "timing": {"timeframe": "TBD: timeframe.period", "bar_open_time": 1785145200000, "bar_close_time": 1785148800000, "sent_at": 1785148801000},
+  "bar": {"open": 100000.0, "high": 100250.0, "low": 99850.0, "close": 100100.0, "volume": 123.45, "volume_unit": "RAW_EXCHANGE_VOLUME"},
+  "packet_type": "BAR_CLOSE_SNAPSHOT", "confirmed": true, "quality": {"sensor_quality": "TBD: derive from required source readiness", "freshness": "TBD: server evaluates age_seconds", "valid": true, "flags": ["TBD: add MISSING_VOLUME or PARTIAL_SOURCE when applicable"]},
+  "dedup_key": "AS1|HORUS_A|COINBASE:BTCUSD|coinbase-btcusd-from-2026-07-22|TBD:timeframe.period|1785148800000|as1.v1.1",
+  "payload": {"draft_notice": "OHLCV와 시간 숫자는 명확한 설명용 sample 값입니다. HORUS A에서 확인된 필드만 아래에 적었습니다.", "direction": "TBD: AL_GENUT_A_DIRECTION", "state": "TBD: AL_GENUT_A_STATE", "risk": "TBD: AL_GENUT_A_RISK", "total_score": "TBD: AL_GENUT_A_TOTAL_SCORE", "force_score": "TBD: AL_GENUT_A_FORCE_SCORE", "force_fade_score": "TBD: AL_GENUT_A_FORCE_FADE_SCORE", "flow_shift": "TBD: AL_GENUT_A_FLOW_SHIFT", "gate_state": "TBD: alertBusGateStateA", "gate_score": "TBD: alertBusGateScoreA", "pressure_index": "TBD: alertBusPressureIndexA", "block": "TBD: AL_GENUT_A_BLOCK_FLAG", "event_code": "TBD: AL_GENUT_A_EVENT_CODE", "next_timeframe_hint": "TBD: alertBusNextTfA", "mode_code": "TBD: alertBusModeCodeA", "active_component_count": "TBD: AL_GENUT_A_ACTIVE_COUNT"}
+}

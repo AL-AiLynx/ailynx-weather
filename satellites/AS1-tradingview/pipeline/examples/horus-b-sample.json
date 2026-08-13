@@ -1,0 +1,23 @@
+{
+  "schema_version": "as1-alert-envelope-v1",
+  "satellite_id": "AS1",
+  "platform": "tradingview",
+  "layout_id": "horus-b",
+  "observer": "horus-b-hub",
+  "code_version": "1.0.0",
+  "ticker_id": "BINANCE:BTCUSDT",
+  "symbol": "BTCUSDT",
+  "timeframe": "15",
+  "bar_open_time": "2026-07-27T00:00:00Z",
+  "bar_close_time": "2026-07-27T00:15:00Z",
+  "sent_at": "2026-07-27T00:15:01Z",
+  "packet_type": "bar_close_snapshot",
+  "confirmed": true,
+  "quality": "normal",
+  "dedup_key": "horus-b|BINANCE:BTCUSDT|15|2026-07-27T00:15:00Z|as1-alert-envelope-v1",
+  "payload": {
+    "structure_gate": true,
+    "hetem_gate": false,
+    "active_components": ["asha", "bau", "kheper", "nubia"]
+  }
+}

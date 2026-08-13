@@ -1,0 +1,1014 @@
+//@version=6
+indicator("AL HERU 365 GPT", overlay=true, max_bars_back=2000, max_lines_count=1, max_labels_count=1)
+
+//==================================================
+// AL HERU 365 GPT ONLY V4
+// ROLE : LONG_MEMORY_BASELINE Layer
+// USE  : GPT / Sheet / Discord briefing state layer
+// BAN  : buy/sell, entry/exit, target/stop wording
+// NOTE : Table is forced visible even while 365D data is still loading.
+//==================================================
+
+//==================================================
+// INPUTS - BASIS
+//==================================================
+groupBasis = "01 HERU 365 | Basis"
+basisLen = input.int(365, "Daily Basis Length", minval=180, maxval=1200, group=groupBasis)
+priceBins = input.int(80, "POC/Memory Resolution", minval=40, maxval=160, group=groupBasis)
+clusterPct = input.float(3.0, "Cluster Grouping %", minval=0.5, maxval=10.0, step=0.1, group=groupBasis)
+nearPct = input.float(1.0, "Near Threshold %", minval=0.1, maxval=10.0, step=0.1, group=groupBasis)
+dupPct = input.float(0.25, "POC/Memory Duplicate %", minval=0.01, maxval=2.0, step=0.01, group=groupBasis)
+useCustomWeights = input.bool(false, "Use Custom Weights (DEV)", group=groupBasis)
+smaWeightInput = input.float(1.0, "SMA Weight", minval=0.1, maxval=5.0, step=0.1, group=groupBasis)
+emaWeightInput = input.float(1.2, "EMA Weight", minval=0.1, maxval=5.0, step=0.1, group=groupBasis)
+pocWeightInput = input.float(1.8, "POC Weight", minval=0.1, maxval=5.0, step=0.1, group=groupBasis)
+memWeightInput = input.float(1.8, "Memory Weight", minval=0.1, maxval=5.0, step=0.1, group=groupBasis)
+//==================================================
+// INPUTS - LINES
+//==================================================
+groupLines = "02 HERU 365 | Lines"
+showSMA = input.bool(true, "Show SMA365", group=groupLines)
+showEMA = input.bool(true, "Show EMA365", group=groupLines)
+showPOC = input.bool(true, "Show POC365", group=groupLines)
+showMemory = input.bool(true, "Show Memory365", group=groupLines)
+showConsensus = input.bool(true, "Show Consensus365", group=groupLines)
+showUpperClus = input.bool(true, "Show Upper Cluster", group=groupLines)
+showLowerClus = input.bool(true, "Show Lower Cluster", group=groupLines)
+
+smaColor = input.color(color.white, "SMA365 Color", group=groupLines)
+emaColor = input.color(color.rgb(255, 0, 140), "EMA365 Color", group=groupLines)
+pocColor = input.color(color.rgb(255, 165, 0), "POC365 Color", group=groupLines)
+memoryColor = input.color(color.rgb(0, 255, 255), "Memory365 Color", group=groupLines)
+consensusColor = input.color(color.yellow, "Consensus365 Color", group=groupLines)
+upperClusColor = input.color(color.purple, "Upper Cluster Color", group=groupLines)
+lowerClusColor = input.color(color.rgb(173, 255, 47), "Lower Cluster Color", group=groupLines)
+
+smaWidth = input.int(2, "SMA365 Width", minval=1, maxval=4, group=groupLines)
+emaWidth = input.int(2, "EMA365 Width", minval=1, maxval=4, group=groupLines)
+pocWidth = input.int(2, "POC365 Width", minval=1, maxval=4, group=groupLines)
+memoryWidth = input.int(2, "Memory365 Width", minval=1, maxval=4, group=groupLines)
+consensusWidth = input.int(3, "Consensus365 Width", minval=1, maxval=4, group=groupLines)
+upperClusWidth = input.int(3, "Upper Cluster Width", minval=1, maxval=4, group=groupLines)
+lowerClusWidth = input.int(3, "Lower Cluster Width", minval=1, maxval=4, group=groupLines)
+
+//==================================================
+// INPUTS - GPT TABLE
+//==================================================
+groupTable = "03 GPT HERU | Table"
+showTable = input.bool(true, "표 표시", group=groupTable, display=display.none)
+showHeruTable = showTable
+heruTableMode = input.string("COMPACT", "열 표시 모드", options=["MINI", "COMPACT", "DETAIL"], group=groupTable, display=display.none)
+heruTablePosOpt = input.string("우측 상단", "표 위치", options=["좌측 상단", "중앙 상단", "우측 상단", "좌측 중앙", "정중앙", "우측 중앙", "좌측 하단", "중앙 하단", "우측 하단"], group=groupTable, display=display.none)
+tableSizeScale = input.int(4, "표 크기 1~10", minval=1, maxval=10, group=groupTable, display=display.none)
+string heruTableSizeOpt = "SCALE"
+cellWidthOpt = input.int(0, "셀 너비 (0 = 자동)", minval=0, maxval=40, group=groupTable, display=display.none)
+cellHeightOpt = input.int(0, "셀 높이 (0 = 자동)", minval=0, maxval=20, group=groupTable, display=display.none)
+// HERU의 6열 밀집 테이블은 기존 열 균형 유지를 위해 셀 폭/높이를 직접 강제하지 않는다.
+showTableFrame = input.bool(true, "표 외곽선 표시", group=groupTable, display=display.none)
+showTableGrid = input.bool(true, "표 내부 그리드 표시", group=groupTable, display=display.none)
+frameWidthOpt = input.int(1, "외곽선 두께", minval=0, maxval=5, group=groupTable, display=display.none)
+gridWidthOpt = input.int(1, "그리드 두께", minval=0, maxval=5, group=groupTable, display=display.none)
+frameColorOpt = input.color(color.new(color.white, 70), "표 외곽선 색상", group=groupTable, display=display.none)
+gridColorOpt = input.color(color.new(color.white, 85), "표 테두리 색상", group=groupTable, display=display.none)
+tableBgTransp = input.int(20, "표 배경 투명도", minval=0, maxval=100, group=groupTable, display=display.none)
+headerBgTransp = input.int(35, "헤더 배경 투명도", minval=0, maxval=100, group=groupTable, display=display.none)
+riskBgTransp = input.int(35, "위험/경고 배경 투명도", minval=0, maxval=100, group=groupTable, display=display.none)
+langMode = input.string("CODE", "상태 언어", options=["KR", "EN", "CODE"], group=groupTable, display=display.none)
+columnMode = input.string("NORMAL", "열 표시 모드 V2", options=["COMPACT", "NORMAL", "DEBUG"], group=groupTable, display=display.none)
+debugMode = input.bool(false, "디버그 모드", group=groupTable, display=display.none)
+compactRows = input.bool(true, "행 간격 압축", group=groupTable, display=display.none)
+priceFormatOpt = input.string("MINTICK", "Price Format", options=["MINTICK", "0", "0.0", "0.00"], group=groupTable, display=display.none)
+clearTableWhenOff = input.bool(true, "Clear Table When OFF", group=groupTable, display=display.none)
+showStateRow = input.bool(true, "STATE 행 표시", group=groupTable, display=display.none)
+showZoneRow = input.bool(true, "ZONE 행 표시", group=groupTable, display=display.none)
+showMemoryRow = input.bool(true, "MEMORY 행 표시", group=groupTable, display=display.none)
+showRiskRow = input.bool(true, "RISK 행 표시", group=groupTable, display=display.none)
+showEventRow = input.bool(true, "EVENT 행 표시", group=groupTable, display=display.none)
+showBusRow = input.bool(true, "BUS 행 표시", group=groupTable, display=display.none)
+
+//==================================================
+// INPUTS - GPT TABLE COLORS
+//==================================================
+groupTableColor = "04 GPT HERU | Table Colors"
+heruHeaderBg = input.color(color.new(color.teal, 35), "헤더 배경색", group=groupTableColor, display=display.none)
+heruBodyBg = input.color(color.new(color.black, 20), "본문 배경색", group=groupTableColor, display=display.none)
+heruFinalBg = input.color(color.new(color.black, 15), "종합 행 배경색", group=groupTableColor, display=display.none)
+heruHeaderText = input.color(color.white, "기본 글자색", group=groupTableColor, display=display.none)
+heruBodyText = input.color(color.white, "본문 글자색", group=groupTableColor, display=display.none)
+heruUpColor = input.color(color.lime, "UP 글자색", group=groupTableColor, display=display.none)
+heruDownColor = input.color(color.red, "DOWN 글자색", group=groupTableColor, display=display.none)
+heruNearColor = input.color(color.rgb(120, 200, 255), "Nearest Text", group=groupTableColor, display=display.none)
+heruStateColor = input.color(color.rgb(255, 230, 120), "State Text", group=groupTableColor, display=display.none)
+heruWarnColor = input.color(color.rgb(255, 150, 80), "Warning Text", group=groupTableColor, display=display.none)
+
+//==================================================
+// INPUTS - ALERTS
+//==================================================
+groupAlert = "05 GPT HERU | Alerts"
+enableSnapshotAlert = input.bool(true, "Enable SNAPSHOT Alert", group=groupAlert, display=display.none)
+enableNearKeyAlert = input.bool(true, "Enable NEAR KEY LEVEL Alert", group=groupAlert, display=display.none)
+enableClusterTouchAlert = input.bool(true, "Enable CLUSTER TOUCH Alert", group=groupAlert, display=display.none)
+enableCenterCrossAlert = input.bool(true, "Enable CENTER CROSS Alert", group=groupAlert, display=display.none)
+
+//==================================================
+// CONSTANTS
+//==================================================
+float SMA_W = useCustomWeights ? smaWeightInput : 1.0
+float EMA_W = useCustomWeights ? emaWeightInput : 1.2
+float POC_W = useCustomWeights ? pocWeightInput : 1.8
+float MEM_W = useCustomWeights ? memWeightInput : 1.8
+
+//==================================================
+// HELPERS - DISPLAY
+//==================================================
+f_pos(string opt) =>
+    p = position.top_right
+    if opt == "좌측 상단"
+        p := position.top_left
+    else if opt == "중앙 상단"
+        p := position.top_center
+    else if opt == "우측 상단"
+        p := position.top_right
+    else if opt == "좌측 중앙"
+        p := position.middle_left
+    else if opt == "정중앙"
+        p := position.middle_center
+    else if opt == "우측 중앙"
+        p := position.middle_right
+    else if opt == "좌측 하단"
+        p := position.bottom_left
+    else if opt == "중앙 하단"
+        p := position.bottom_center
+    else if opt == "우측 하단"
+        p := position.bottom_right
+    p
+
+f_sizeFromScale(int scale) =>
+    s = size.small
+    if scale <= 2
+        s := size.tiny
+    else if scale <= 5
+        s := size.small
+    else if scale <= 7
+        s := size.normal
+    else if scale <= 9
+        s := size.large
+    else
+        s := size.huge
+    s
+
+f_size(string opt) =>
+    f_sizeFromScale(tableSizeScale)
+f_price(float v) =>
+    string out = "NA"
+    if not na(v)
+        if priceFormatOpt == "MINTICK"
+            out := str.tostring(v, format.mintick)
+        else if priceFormatOpt == "0"
+            out := str.tostring(v, "#")
+        else if priceFormatOpt == "0.0"
+            out := str.tostring(v, "#.0")
+        else
+            out := str.tostring(v, "#.00")
+    out
+
+f_pct(float v) =>
+    na(v) ? "NA" : str.tostring(v, "#.##") + "%"
+
+f_distPct(float fromPrice, float toPrice) =>
+    float out = na
+    if not na(fromPrice) and not na(toPrice) and fromPrice != 0
+        out := ((toPrice - fromPrice) / fromPrice) * 100.0
+    out
+
+f_absDistPct(float fromPrice, float toPrice) =>
+    float raw = f_distPct(fromPrice, toPrice)
+    na(raw) ? na : math.abs(raw)
+
+f_isNear(float currentPrice, float level, float pctTol) =>
+    bool out = false
+    if not na(currentPrice) and not na(level) and currentPrice != 0
+        out := math.abs((level - currentPrice) / currentPrice) * 100.0 <= pctTol
+    out
+
+f_isSameLevel(float a, float b, float pctTol) =>
+    bool out = false
+    if not na(a) and not na(b)
+        float base = math.max(math.abs(a), 1e-6)
+        out := math.abs(a - b) / base * 100.0 <= pctTol
+    out
+
+f_levelSide(float currentPrice, float level) =>
+    string out = "NA"
+    if not na(currentPrice) and not na(level)
+        if f_isNear(currentPrice, level, nearPct)
+            out := "NEAR"
+        else if level > currentPrice
+            out := "ABOVE_PX"
+        else
+            out := "BELOW_PX"
+    out
+
+//==================================================
+// HELPERS - CODE TEXT
+//==================================================
+f_stateName(int code) =>
+    string out = "UNKNOWN"
+    if code == 1
+        out := "CENTER_NEAR"
+    else if code == 2
+        out := "CENTER_ABOVE"
+    else if code == 3
+        out := "CENTER_BELOW"
+    else if code == 4
+        out := "UPPER_NEAR"
+    else if code == 5
+        out := "LOWER_NEAR"
+    else if code == 6
+        out := "ABOVE_UPPER"
+    else if code == 7
+        out := "BELOW_LOWER"
+    else if code == 8
+        out := "BETWEEN_CENTER_UPPER"
+    else if code == 9
+        out := "BETWEEN_LOWER_CENTER"
+    out
+
+f_zoneName(int code) =>
+    string out = "UNKNOWN"
+    if code == 1
+        out := "LOWER_ZONE"
+    else if code == 2
+        out := "CENTER_ZONE"
+    else if code == 3
+        out := "UPPER_ZONE"
+    else if code == 4
+        out := "ABOVE_ALL"
+    else if code == 5
+        out := "BELOW_ALL"
+    else if code == 6
+        out := "NO_CLUSTER"
+    out
+
+f_nearestName(int code) =>
+    string out = "NONE"
+    if code == 1
+        out := "SMA365"
+    else if code == 2
+        out := "EMA365"
+    else if code == 3
+        out := "POC365"
+    else if code == 4
+        out := "MEM365"
+    else if code == 5
+        out := "CONS365"
+    else if code == 6
+        out := "UPPER"
+    else if code == 7
+        out := "LOWER"
+    out
+
+f_eventName(int code) =>
+    string out = "HERU_SNAPSHOT"
+    if code == 110
+        out := "NEAR_LEVEL"
+    else if code == 120
+        out := "NEAR_CENTER"
+    else if code == 130
+        out := "NEAR_UPPER_CLUSTER"
+    else if code == 140
+        out := "NEAR_LOWER_CLUSTER"
+    else if code == 150
+        out := "POC_MEMORY_DUP"
+    else if code == 160
+        out := "ABOVE_CENTER"
+    else if code == 170
+        out := "BELOW_CENTER"
+    out
+
+f_heruStateText(int code, string lang) =>
+    string out = f_stateName(code)
+    if lang == "CODE"
+        out := "ST" + str.tostring(code)
+    else if lang == "KR"
+        if code == 1
+            out := "중심근접"
+        else if code == 2
+            out := "중심상단"
+        else if code == 3
+            out := "중심하단"
+        else if code == 4
+            out := "상단근접"
+        else if code == 5
+            out := "하단근접"
+        else if code == 6
+            out := "상단돌파"
+        else if code == 7
+            out := "하단이탈"
+        else if code == 8
+            out := "상단구간"
+        else if code == 9
+            out := "하단구간"
+        else
+            out := "확인"
+    out
+
+f_heruZoneText(int code, string lang) =>
+    string out = f_zoneName(code)
+    if lang == "CODE"
+        out := "Z" + str.tostring(code)
+    else if lang == "KR"
+        if code == 1
+            out := "하단존"
+        else if code == 2
+            out := "중심존"
+        else if code == 3
+            out := "상단존"
+        else if code == 4
+            out := "상단밖"
+        else if code == 5
+            out := "하단밖"
+        else if code == 6
+            out := "클러스터없음"
+        else
+            out := "확인"
+    out
+
+f_heruEventText(int code, string lang) =>
+    string out = f_eventName(code)
+    if lang == "CODE"
+        out := "E" + str.tostring(code)
+    else if lang == "KR"
+        if code == 110
+            out := "레벨근접"
+        else if code == 120
+            out := "중심근접"
+        else if code == 130
+            out := "상단근접"
+        else if code == 140
+            out := "하단근접"
+        else if code == 150
+            out := "기억중복"
+        else if code == 160
+            out := "중심상단"
+        else if code == 170
+            out := "중심하단"
+        else
+            out := "스냅샷"
+    out
+
+//==================================================
+// HELPERS - 365D CALCULATION
+//==================================================
+f_bestVolumePriceConfirmed(float zoneLow, float zoneHigh, int bars, int bins, float refPrice) =>
+    float bestPrice = na
+    float bestVol = -1.0
+    if not na(zoneLow) and not na(zoneHigh) and zoneHigh > zoneLow and bars > 0 and bins > 0
+        float step = (zoneHigh - zoneLow) / bins
+        if step > 0
+            float[] vols = array.new_float(bins + 1, 0.0)
+            for i = 0 to bars - 1
+                float hi_ = high[i + 1]
+                float lo_ = low[i + 1]
+                float vol_ = volume[i + 1]
+                if not na(hi_) and not na(lo_) and not na(vol_)
+                    int idxLo = int(math.floor((lo_ - zoneLow) / step))
+                    int idxHi = int(math.ceil((hi_ - zoneLow) / step))
+                    idxLo := math.max(0, math.min(bins, idxLo))
+                    idxHi := math.max(0, math.min(bins, idxHi))
+                    int span = math.max(1, idxHi - idxLo + 1)
+                    float volShare = vol_ / span
+                    for k = idxLo to idxHi
+                        array.set(vols, k, array.get(vols, k) + volShare)
+            for k = 0 to bins
+                float volAt = array.get(vols, k)
+                float lvl = zoneLow + step * k
+                bool betterVol = volAt > bestVol
+                bool betterTie = volAt == bestVol and (na(bestPrice) or math.abs(lvl - refPrice) < math.abs(bestPrice - refPrice))
+                if betterVol or betterTie
+                    bestVol := volAt
+                    bestPrice := lvl
+    bestPrice
+
+f_bestTouchPriceConfirmed(float zoneLow, float zoneHigh, int bars, int bins, float refPrice) =>
+    float bestPrice = na
+    int bestCount = -1
+    if not na(zoneLow) and not na(zoneHigh) and zoneHigh > zoneLow and bars > 0 and bins > 0
+        float step = (zoneHigh - zoneLow) / bins
+        if step > 0
+            int[] counts = array.new_int(bins + 1, 0)
+            for i = 0 to bars - 1
+                float hi_ = high[i + 1]
+                float lo_ = low[i + 1]
+                if not na(hi_) and not na(lo_)
+                    int idxLo = int(math.floor((lo_ - zoneLow) / step))
+                    int idxHi = int(math.ceil((hi_ - zoneLow) / step))
+                    idxLo := math.max(0, math.min(bins, idxLo))
+                    idxHi := math.max(0, math.min(bins, idxHi))
+                    for k = idxLo to idxHi
+                        array.set(counts, k, array.get(counts, k) + 1)
+            for k = 0 to bins
+                int cnt = array.get(counts, k)
+                float lvl = zoneLow + step * k
+                bool betterCount = cnt > bestCount
+                bool betterTie = cnt == bestCount and (na(bestPrice) or math.abs(lvl - refPrice) < math.abs(bestPrice - refPrice))
+                if betterCount or betterTie
+                    bestCount := cnt
+                    bestPrice := lvl
+    bestPrice
+
+f_touchCountConfirmed(float level, int bars) =>
+    float cnt = 0.0
+    if not na(level)
+        for i = 0 to bars - 1
+            float hi_ = high[i + 1]
+            float lo_ = low[i + 1]
+            if not na(hi_) and not na(lo_) and hi_ >= level and lo_ <= level
+                cnt += 1.0
+    cnt
+
+f_buildHeru(int len, int bins) =>
+    float refClose = close[1]
+    float smaV = ta.sma(close, len)[1]
+    float emaV = ta.ema(close, len)[1]
+    float yHigh = ta.highest(high[1], len)
+    float yLow = ta.lowest(low[1], len)
+    float pocV = f_bestVolumePriceConfirmed(yLow, yHigh, len, bins, refClose)
+    float memV = f_bestTouchPriceConfirmed(yLow, yHigh, len, bins, refClose)
+    float memTouches = f_touchCountConfirmed(memV, len)
+    [smaV, emaV, pocV, memV, memTouches, refClose]
+
+f_weightedCenter(float p1, float w1, float p2, float w2, float p3, float w3, float p4, float w4) =>
+    float sumP = 0.0
+    float sumW = 0.0
+    if not na(p1)
+        sumP += p1 * w1
+        sumW += w1
+    if not na(p2)
+        sumP += p2 * w2
+        sumW += w2
+    if not na(p3)
+        sumP += p3 * w3
+        sumW += w3
+    if not na(p4)
+        sumP += p4 * w4
+        sumW += w4
+    float out = na
+    if sumW > 0
+        out := sumP / sumW
+    out
+
+f_cluster(float currentPrice, float p1, float w1, string n1, float p2, float w2, string n2, float p3, float w3, string n3, float p4, float w4, string n4, bool wantUpper, float pct) =>
+    float[] prices = array.new_float(0)
+    float[] weights = array.new_float(0)
+    string[] names = array.new_string(0)
+    array.push(prices, p1)
+    array.push(prices, p2)
+    array.push(prices, p3)
+    array.push(prices, p4)
+    array.push(weights, w1)
+    array.push(weights, w2)
+    array.push(weights, w3)
+    array.push(weights, w4)
+    array.push(names, n1)
+    array.push(names, n2)
+    array.push(names, n3)
+    array.push(names, n4)
+    float bestPx = na
+    float bestWeight = 0.0
+    float bestMembers = 0.0
+    string bestCombo = "NONE"
+    for i = 0 to 3
+        float pi = array.get(prices, i)
+        bool seedOk = not na(pi) and (wantUpper ? pi > currentPrice : pi < currentPrice)
+        if seedOk
+            float sumP = 0.0
+            float sumW = 0.0
+            float members = 0.0
+            string combo = ""
+            for j = 0 to 3
+                float pj = array.get(prices, j)
+                float wj = array.get(weights, j)
+                string nj = array.get(names, j)
+                bool memberSide = not na(pj) and (wantUpper ? pj > currentPrice : pj < currentPrice)
+                float dPct = na
+                if not na(pj) and pi != 0
+                    dPct := math.abs((pj - pi) / pi) * 100.0
+                if memberSide and not na(dPct) and dPct <= pct
+                    sumP += pj * wj
+                    sumW += wj
+                    members += 1.0
+                    combo := combo == "" ? nj : combo + "+" + nj
+            if sumW > 0
+                float px = sumP / sumW
+                bool betterWeight = sumW > bestWeight
+                bool betterMembers = sumW == bestWeight and members > bestMembers
+                bool betterDistance = sumW == bestWeight and members == bestMembers and (na(bestPx) or math.abs(px - currentPrice) < math.abs(bestPx - currentPrice))
+                if betterWeight or betterMembers or betterDistance
+                    bestWeight := sumW
+                    bestPx := px
+                    bestMembers := members
+                    bestCombo := combo
+    [bestPx, bestWeight, bestMembers, bestCombo]
+
+//==================================================
+// DAILY CONFIRMED 365D VALUES
+//==================================================
+[sma365, ema365, poc365, memory365, memoryTouches, dailyCloseRef] = request.security(syminfo.tickerid, "D", f_buildHeru(basisLen, priceBins), lookahead=barmerge.lookahead_on)
+
+bool dupPocMem = f_isSameLevel(poc365, memory365, dupPct)
+int consensusMembers = (not na(sma365) ? 1 : 0) + (not na(ema365) ? 1 : 0) + (not na(poc365) ? 1 : 0) + (not na(memory365) ? 1 : 0)
+float consensusWeightSum = (not na(sma365) ? SMA_W : 0.0) + (not na(ema365) ? EMA_W : 0.0) + (not na(poc365) ? POC_W : 0.0) + (not na(memory365) ? MEM_W : 0.0)
+float consensus365 = f_weightedCenter(sma365, SMA_W, ema365, EMA_W, poc365, POC_W, memory365, MEM_W)
+[upperCluster, upperStrength, upperMembersRaw, upperCombo] = f_cluster(close, sma365, SMA_W, "SMA", ema365, EMA_W, "EMA", poc365, POC_W, "POC", memory365, MEM_W, "MEM", true, clusterPct)
+[lowerCluster, lowerStrength, lowerMembersRaw, lowerCombo] = f_cluster(close, sma365, SMA_W, "SMA", ema365, EMA_W, "EMA", poc365, POC_W, "POC", memory365, MEM_W, "MEM", false, clusterPct)
+
+//==================================================
+// DISTANCES
+//==================================================
+float smaDistPct = f_distPct(close, sma365)
+float emaDistPct = f_distPct(close, ema365)
+float pocDistPct = f_distPct(close, poc365)
+float memoryDistPct = f_distPct(close, memory365)
+float consensusDistPct = f_distPct(close, consensus365)
+float upperDistPct = f_distPct(close, upperCluster)
+float lowerDistPct = f_distPct(close, lowerCluster)
+
+bool nearCenter = f_isNear(close, consensus365, nearPct)
+bool nearUpper = f_isNear(close, upperCluster, nearPct)
+bool nearLower = f_isNear(close, lowerCluster, nearPct)
+
+//==================================================
+// NEAREST LEVEL
+//==================================================
+int nearestCode = 0
+float nearestLevel = na
+float nearestAbsDist = na
+
+float dSma = f_absDistPct(close, sma365)
+if not na(dSma) and (na(nearestAbsDist) or dSma < nearestAbsDist)
+    nearestCode := 1
+    nearestLevel := sma365
+    nearestAbsDist := dSma
+
+float dEma = f_absDistPct(close, ema365)
+if not na(dEma) and (na(nearestAbsDist) or dEma < nearestAbsDist)
+    nearestCode := 2
+    nearestLevel := ema365
+    nearestAbsDist := dEma
+
+float dPoc = f_absDistPct(close, poc365)
+if not na(dPoc) and (na(nearestAbsDist) or dPoc < nearestAbsDist)
+    nearestCode := 3
+    nearestLevel := poc365
+    nearestAbsDist := dPoc
+
+float dMem = f_absDistPct(close, memory365)
+if not na(dMem) and (na(nearestAbsDist) or dMem < nearestAbsDist)
+    nearestCode := 4
+    nearestLevel := memory365
+    nearestAbsDist := dMem
+
+float dCons = f_absDistPct(close, consensus365)
+if not na(dCons) and (na(nearestAbsDist) or dCons < nearestAbsDist)
+    nearestCode := 5
+    nearestLevel := consensus365
+    nearestAbsDist := dCons
+
+float dUpper = f_absDistPct(close, upperCluster)
+if not na(dUpper) and (na(nearestAbsDist) or dUpper < nearestAbsDist)
+    nearestCode := 6
+    nearestLevel := upperCluster
+    nearestAbsDist := dUpper
+
+float dLower = f_absDistPct(close, lowerCluster)
+if not na(dLower) and (na(nearestAbsDist) or dLower < nearestAbsDist)
+    nearestCode := 7
+    nearestLevel := lowerCluster
+    nearestAbsDist := dLower
+
+float nearestDistPct = f_distPct(close, nearestLevel)
+//==================================================
+// STATE / ZONE / EVENT CODES
+//==================================================
+int stateCode = 0
+if not na(close)
+    if nearCenter
+        stateCode := 1
+    else if nearUpper
+        stateCode := 4
+    else if nearLower
+        stateCode := 5
+    else if not na(upperCluster) and close > upperCluster
+        stateCode := 6
+    else if not na(lowerCluster) and close < lowerCluster
+        stateCode := 7
+    else if not na(consensus365) and close > consensus365
+        stateCode := 2
+    else if not na(consensus365) and close < consensus365
+        stateCode := 3
+
+if stateCode == 2 and not na(upperCluster) and close < upperCluster
+    stateCode := 8
+if stateCode == 3 and not na(lowerCluster) and close > lowerCluster
+    stateCode := 9
+
+int zoneCode = 0
+if na(upperCluster) and na(lowerCluster)
+    zoneCode := 6
+else if not na(upperCluster) and close > upperCluster
+    zoneCode := 4
+else if not na(lowerCluster) and close < lowerCluster
+    zoneCode := 5
+else if not na(consensus365) and f_isNear(close, consensus365, nearPct)
+    zoneCode := 2
+else if not na(consensus365) and close > consensus365
+    zoneCode := 3
+else if not na(consensus365) and close < consensus365
+    zoneCode := 1
+
+bool evNearLevel = not na(nearestAbsDist) and nearestAbsDist <= nearPct
+bool evNearCenter = nearCenter
+bool evNearUpper = nearUpper
+bool evNearLower = nearLower
+bool evPocMemDup = dupPocMem
+bool evAboveCenter = not na(consensus365) and close > consensus365 and not nearCenter
+bool evBelowCenter = not na(consensus365) and close < consensus365 and not nearCenter
+
+int eventCode = 100
+if evNearLevel
+    eventCode := 110
+if evNearCenter
+    eventCode := 120
+if evNearUpper
+    eventCode := 130
+if evNearLower
+    eventCode := 140
+if evPocMemDup
+    eventCode := 150
+if evAboveCenter
+    eventCode := 160
+if evBelowCenter
+    eventCode := 170
+
+int eventMask = 0
+string eventFlags = ""
+if evNearLevel
+    eventMask += 1
+    eventFlags := eventFlags == "" ? "NEAR_LEVEL" : eventFlags + "|NEAR_LEVEL"
+if evNearCenter
+    eventMask += 2
+    eventFlags := eventFlags == "" ? "NEAR_CENTER" : eventFlags + "|NEAR_CENTER"
+if evNearUpper
+    eventMask += 4
+    eventFlags := eventFlags == "" ? "NEAR_UPPER_CLUSTER" : eventFlags + "|NEAR_UPPER_CLUSTER"
+if evNearLower
+    eventMask += 8
+    eventFlags := eventFlags == "" ? "NEAR_LOWER_CLUSTER" : eventFlags + "|NEAR_LOWER_CLUSTER"
+if evPocMemDup
+    eventMask += 16
+    eventFlags := eventFlags == "" ? "POC_MEMORY_DUP" : eventFlags + "|POC_MEMORY_DUP"
+if evAboveCenter
+    eventMask += 32
+    eventFlags := eventFlags == "" ? "ABOVE_CENTER" : eventFlags + "|ABOVE_CENTER"
+if evBelowCenter
+    eventMask += 64
+    eventFlags := eventFlags == "" ? "BELOW_CENTER" : eventFlags + "|BELOW_CENTER"
+if eventFlags == ""
+    eventFlags := "NONE"
+
+int heruDirCode = 0
+if stateCode == 2 or stateCode == 6 or stateCode == 8
+    heruDirCode := 1
+else if stateCode == 3 or stateCode == 7 or stateCode == 9
+    heruDirCode := -1
+float heruScoreRaw = na(consensusDistPct) ? 50.0 : 50.0 - consensusDistPct * 5.0
+float heruScore = math.max(0.0, math.min(100.0, heruScoreRaw))
+int heruRiskCode = 0
+if evNearLevel
+    heruRiskCode := 2
+if evNearUpper or evNearLower or evPocMemDup
+    heruRiskCode := math.max(heruRiskCode, 3)
+if eventMask >= 16
+    heruRiskCode := math.max(heruRiskCode, 4)
+int heruMaatEventCode = 0
+if evNearUpper or evNearLower or evNearLevel
+    heruMaatEventCode := 8
+else if evPocMemDup
+    heruMaatEventCode := 4
+else if evAboveCenter or evBelowCenter
+    heruMaatEventCode := 1
+
+//==================================================
+// VISIBLE PLOTS - keep original titles for alert placeholders
+//==================================================
+plot(showSMA ? sma365 : na, title="AL_HERU_SMA365", color=smaColor, linewidth=smaWidth, style=plot.style_line)
+plot(showEMA ? ema365 : na, title="AL_HERU_EMA365", color=emaColor, linewidth=emaWidth, style=plot.style_line)
+plot(showPOC ? poc365 : na, title="AL_HERU_POC365", color=pocColor, linewidth=pocWidth, style=plot.style_line)
+plot(showMemory ? memory365 : na, title="AL_HERU_MEMORY365", color=memoryColor, linewidth=memoryWidth, style=plot.style_line)
+plot(showConsensus ? consensus365 : na, title="AL_HERU_CONSENSUS365", color=consensusColor, linewidth=consensusWidth, style=plot.style_line)
+plot(showUpperClus ? upperCluster : na, title="AL_HERU_UPPER_CLUSTER", color=upperClusColor, linewidth=upperClusWidth, style=plot.style_line)
+plot(showLowerClus ? lowerCluster : na, title="AL_HERU_LOWER_CLUSTER", color=lowerClusColor, linewidth=lowerClusWidth, style=plot.style_line)
+
+//==================================================
+// HIDDEN PLOTS - GPT / Sheet / Alert placeholders
+//==================================================
+plot(stateCode, title="AL_HERU_STATE_CODE", display=display.none)
+plot(zoneCode, title="AL_HERU_ZONE_CODE", display=display.none)
+plot(nearestCode, title="AL_HERU_NEAREST_CODE", display=display.none)
+plot(nearestLevel, title="AL_HERU_NEAREST_LEVEL", display=display.none)
+plot(nearestDistPct, title="AL_HERU_NEAREST_DIST_PCT", display=display.none)
+plot(upperDistPct, title="AL_HERU_UPPER_DIST_PCT", display=display.none)
+plot(lowerDistPct, title="AL_HERU_LOWER_DIST_PCT", display=display.none)
+plot(consensusDistPct, title="AL_HERU_CONSENSUS_DIST_PCT", display=display.none)
+plot(dupPocMem ? 1 : 0, title="AL_HERU_POC_MEMORY_DUP_FLAG", display=display.none)
+plot(upperMembersRaw, title="AL_HERU_UPPER_MEMBERS", display=display.none)
+plot(lowerMembersRaw, title="AL_HERU_LOWER_MEMBERS", display=display.none)
+plot(float(heruDirCode), title="AL_HERU_DIR_CODE", display=display.none)
+plot(heruScore, title="AL_HERU_SCORE", display=display.none)
+plot(float(heruRiskCode), title="AL_HERU_RISK_CODE", display=display.none)
+plot(float(heruMaatEventCode), title="AL_HERU_EVENT_CODE", display=display.none)
+plot(eventCode, title="AL_HERU_RAW_EVENT_CODE", display=display.none)
+plot(eventMask, title="AL_HERU_EVENT_MASK", display=display.none)
+plot(consensusMembers, title="AL_HERU_CONSENSUS_MEMBERS", display=display.none)
+plot(consensusWeightSum, title="AL_HERU_CONSENSUS_WEIGHT_SUM", display=display.none)
+
+//==================================================
+// TABLE - always visible when ON, even if values are NA
+//==================================================
+int T_LAST_COL = 5
+int T_LAST_ROW = 14
+int tableFrameWidth = showTableFrame ? frameWidthOpt : 0
+int tableGridWidth = showTableGrid ? gridWidthOpt : 0
+var table heruTable = table.new(f_pos(heruTablePosOpt), T_LAST_COL + 1, T_LAST_ROW + 1, frame_color=frameColorOpt, frame_width=tableFrameWidth, border_color=gridColorOpt, border_width=tableGridWidth)
+
+f_blankRow(int r) =>
+    table.cell(heruTable, 0, r, "", text_color=heruBodyText, bgcolor=color.new(heruBodyBg, 100), text_size=f_size(heruTableSizeOpt))
+    table.cell(heruTable, 1, r, "", text_color=heruBodyText, bgcolor=color.new(heruBodyBg, 100), text_size=f_size(heruTableSizeOpt))
+    table.cell(heruTable, 2, r, "", text_color=heruBodyText, bgcolor=color.new(heruBodyBg, 100), text_size=f_size(heruTableSizeOpt))
+    table.cell(heruTable, 3, r, "", text_color=heruBodyText, bgcolor=color.new(heruBodyBg, 100), text_size=f_size(heruTableSizeOpt))
+    table.cell(heruTable, 4, r, "", text_color=heruBodyText, bgcolor=color.new(heruBodyBg, 100), text_size=f_size(heruTableSizeOpt))
+    table.cell(heruTable, 5, r, "", text_color=heruBodyText, bgcolor=color.new(heruBodyBg, 100), text_size=f_size(heruTableSizeOpt))
+
+f_row2(int r, string a, string b, color c) =>
+    table.cell(heruTable, 0, r, a, text_color=c, bgcolor=heruBodyBg, text_size=f_size(heruTableSizeOpt))
+    table.cell(heruTable, 1, r, b, text_color=heruBodyText, bgcolor=heruBodyBg, text_size=f_size(heruTableSizeOpt))
+    table.cell(heruTable, 2, r, "", text_color=heruBodyText, bgcolor=color.new(heruBodyBg, 100), text_size=f_size(heruTableSizeOpt))
+    table.cell(heruTable, 3, r, "", text_color=heruBodyText, bgcolor=color.new(heruBodyBg, 100), text_size=f_size(heruTableSizeOpt))
+    table.cell(heruTable, 4, r, "", text_color=heruBodyText, bgcolor=color.new(heruBodyBg, 100), text_size=f_size(heruTableSizeOpt))
+    table.cell(heruTable, 5, r, "", text_color=heruBodyText, bgcolor=color.new(heruBodyBg, 100), text_size=f_size(heruTableSizeOpt))
+
+f_row4(int r, string a, string b, string c, string d, color tc) =>
+    table.cell(heruTable, 0, r, a, text_color=tc, bgcolor=heruBodyBg, text_size=f_size(heruTableSizeOpt))
+    table.cell(heruTable, 1, r, b, text_color=heruBodyText, bgcolor=heruBodyBg, text_size=f_size(heruTableSizeOpt))
+    table.cell(heruTable, 2, r, c, text_color=heruBodyText, bgcolor=heruBodyBg, text_size=f_size(heruTableSizeOpt))
+    table.cell(heruTable, 3, r, d, text_color=heruBodyText, bgcolor=heruBodyBg, text_size=f_size(heruTableSizeOpt))
+    table.cell(heruTable, 4, r, "", text_color=heruBodyText, bgcolor=color.new(heruBodyBg, 100), text_size=f_size(heruTableSizeOpt))
+    table.cell(heruTable, 5, r, "", text_color=heruBodyText, bgcolor=color.new(heruBodyBg, 100), text_size=f_size(heruTableSizeOpt))
+
+f_row6(int r, string a, string b, string c, string d, string e, string f, color tc) =>
+    table.cell(heruTable, 0, r, a, text_color=tc, bgcolor=heruBodyBg, text_size=f_size(heruTableSizeOpt))
+    table.cell(heruTable, 1, r, b, text_color=tc, bgcolor=heruBodyBg, text_size=f_size(heruTableSizeOpt))
+    table.cell(heruTable, 2, r, c, text_color=heruBodyText, bgcolor=heruBodyBg, text_size=f_size(heruTableSizeOpt))
+    table.cell(heruTable, 3, r, d, text_color=heruBodyText, bgcolor=heruBodyBg, text_size=f_size(heruTableSizeOpt))
+    table.cell(heruTable, 4, r, e, text_color=heruBodyText, bgcolor=heruBodyBg, text_size=f_size(heruTableSizeOpt))
+    table.cell(heruTable, 5, r, f, text_color=heruBodyText, bgcolor=heruBodyBg, text_size=f_size(heruTableSizeOpt))
+
+if barstate.islast
+    table.clear(heruTable, 0, 0, T_LAST_COL, T_LAST_ROW)
+    if showHeruTable
+        table.set_position(heruTable, f_pos(heruTablePosOpt))
+        string activeMode = debugMode ? "DEBUG" : columnMode
+        string drawMode = heruTableMode
+        if activeMode == "COMPACT"
+            drawMode := "MINI"
+        else if activeMode == "DEBUG"
+            drawMode := "DETAIL"
+        string busText = "D" + str.tostring(heruDirCode) + " S" + str.tostring(math.round(heruScore)) + " R" + str.tostring(heruRiskCode) + " E" + str.tostring(heruMaatEventCode)
+        string stateDisplay = f_heruStateText(stateCode, langMode)
+        string zoneDisplay = f_heruZoneText(zoneCode, langMode)
+        string eventDisplay = f_heruEventText(eventCode, langMode)
+        string nearestDisplay = langMode == "CODE" ? "N" + str.tostring(nearestCode) : f_nearestName(nearestCode)
+        table.cell(heruTable, 0, 0, drawMode == "MINI" ? "H365" : "HERU365", text_color=heruHeaderText, bgcolor=heruHeaderBg, text_size=f_size(heruTableSizeOpt))
+        table.cell(heruTable, 1, 0, stateDisplay, text_color=heruStateColor, bgcolor=heruHeaderBg, text_size=f_size(heruTableSizeOpt))
+        table.cell(heruTable, 2, 0, "LAYER", text_color=heruHeaderText, bgcolor=heruHeaderBg, text_size=f_size(heruTableSizeOpt))
+        table.cell(heruTable, 3, 0, "LONG_MEMORY", text_color=heruHeaderText, bgcolor=heruHeaderBg, text_size=f_size(heruTableSizeOpt))
+        table.cell(heruTable, 4, 0, "EV", text_color=heruHeaderText, bgcolor=heruHeaderBg, text_size=f_size(heruTableSizeOpt))
+        table.cell(heruTable, 5, 0, eventDisplay, text_color=heruHeaderText, bgcolor=heruHeaderBg, text_size=f_size(heruTableSizeOpt))
+        int row = 1
+        if drawMode == "MINI"
+            if showStateRow
+                f_row2(row, "ST", stateDisplay, heruStateColor)
+                row := row + 1
+            if showZoneRow
+                f_row2(row, "ZONE", zoneDisplay, heruBodyText)
+                row := row + 1
+            if showMemoryRow
+                f_row2(row, "NR", nearestDisplay + " " + f_pct(nearestDistPct), heruNearColor)
+                row := row + 1
+                f_row2(row, "CN", f_price(consensus365) + " " + f_pct(consensusDistPct), consensusColor)
+                row := row + 1
+                f_row2(row, "DUP", dupPocMem ? "POC/MEM YES" : "POC/MEM NO", dupPocMem ? heruWarnColor : heruBodyText)
+                row := row + 1
+            if showRiskRow
+                f_row2(row, "RISK", "R" + str.tostring(heruRiskCode) + " Z" + str.tostring(zoneCode), heruRiskCode >= 4 ? heruWarnColor : heruBodyText)
+                row := row + 1
+            if showEventRow
+                f_row2(row, "EVENT", eventDisplay, heruStateColor)
+                row := row + 1
+            if showBusRow
+                f_row2(row, "BUS", busText, heruBodyText)
+        else if drawMode == "COMPACT"
+            if showStateRow
+                f_row4(row, "STATE", stateDisplay, "SCORE", str.tostring(math.round(heruScore)), heruStateColor)
+                row := row + 1
+            if showZoneRow
+                f_row4(row, "PX", f_price(close), "ZONE", zoneDisplay, heruBodyText)
+                row := row + 1
+            if showMemoryRow
+                f_row4(row, "NEAR", nearestDisplay, f_price(nearestLevel), f_pct(nearestDistPct), heruNearColor)
+                row := row + 1
+                f_row4(row, "SMA", f_price(sma365), f_levelSide(close, sma365), f_pct(smaDistPct), smaColor)
+                row := row + 1
+                f_row4(row, "EMA", f_price(ema365), f_levelSide(close, ema365), f_pct(emaDistPct), emaColor)
+                row := row + 1
+                f_row4(row, "POC", f_price(poc365), f_levelSide(close, poc365), f_pct(pocDistPct), pocColor)
+                row := row + 1
+                f_row4(row, "MEM", f_price(memory365), f_levelSide(close, memory365), f_pct(memoryDistPct), memoryColor)
+                row := row + 1
+                f_row4(row, "CONS", f_price(consensus365), f_levelSide(close, consensus365), f_pct(consensusDistPct), consensusColor)
+                row := row + 1
+                f_row4(row, "UPPER", f_price(upperCluster), str.tostring(upperMembersRaw, "#") + " MEM", f_pct(upperDistPct), upperClusColor)
+                row := row + 1
+                f_row4(row, "LOWER", f_price(lowerCluster), str.tostring(lowerMembersRaw, "#") + " MEM", f_pct(lowerDistPct), lowerClusColor)
+                row := row + 1
+            if showRiskRow
+                f_row4(row, "RISK", "R" + str.tostring(heruRiskCode), "DUP", dupPocMem ? "YES" : "NO", heruRiskCode >= 4 ? heruWarnColor : heruBodyText)
+                row := row + 1
+            if showEventRow
+                f_row4(row, "EVENT", eventDisplay, "EV", str.tostring(eventCode), heruStateColor)
+                row := row + 1
+            if showBusRow
+                f_row4(row, "BUS", busText, "MASK", str.tostring(eventMask), heruBodyText)
+        else
+            if showStateRow
+                f_row6(row, "STATE", stateDisplay, "DIR", str.tostring(heruDirCode), "SCORE", str.tostring(math.round(heruScore)), heruStateColor)
+                row := row + 1
+            if showZoneRow
+                f_row6(row, "ZONE", zoneDisplay, "PX", f_price(close), "NEAR", nearestDisplay, heruBodyText)
+                row := row + 1
+            if showMemoryRow
+                f_row6(row, "SMA365", f_price(sma365), f_levelSide(close, sma365), f_pct(smaDistPct), str.tostring(SMA_W, "#.##"), "AVG", smaColor)
+                row := row + 1
+                f_row6(row, "EMA365", f_price(ema365), f_levelSide(close, ema365), f_pct(emaDistPct), str.tostring(EMA_W, "#.##"), "WEIGHT", emaColor)
+                row := row + 1
+                f_row6(row, "POC365", f_price(poc365), f_levelSide(close, poc365), f_pct(pocDistPct), str.tostring(POC_W, "#.##"), dupPocMem ? "DUP_MEM" : "VOL", pocColor)
+                row := row + 1
+                f_row6(row, "MEM365", f_price(memory365), f_levelSide(close, memory365), f_pct(memoryDistPct), str.tostring(MEM_W, "#.##"), "TOUCH " + str.tostring(memoryTouches, "#"), memoryColor)
+                row := row + 1
+                f_row6(row, "CONS365", f_price(consensus365), f_levelSide(close, consensus365), f_pct(consensusDistPct), "CENTER", "WEIGHTED", consensusColor)
+                row := row + 1
+                f_row6(row, "UPPER", f_price(upperCluster), f_levelSide(close, upperCluster), f_pct(upperDistPct), str.tostring(upperStrength, "#.##"), upperCombo, upperClusColor)
+                row := row + 1
+                f_row6(row, "LOWER", f_price(lowerCluster), f_levelSide(close, lowerCluster), f_pct(lowerDistPct), str.tostring(lowerStrength, "#.##"), lowerCombo, lowerClusColor)
+                row := row + 1
+                f_row6(row, "NEAREST", f_price(nearestLevel), nearestDisplay, f_pct(nearestDistPct), "CODE " + str.tostring(nearestCode), "GPT_KEY", heruNearColor)
+                row := row + 1
+            if showRiskRow
+                f_row6(row, "RISK", "R" + str.tostring(heruRiskCode), "DUP", dupPocMem ? "YES" : "NO", "MASK", str.tostring(eventMask), heruRiskCode >= 4 ? heruWarnColor : heruBodyText)
+                row := row + 1
+            if showEventRow
+                f_row6(row, "EVENT", eventDisplay, "RAW", str.tostring(eventCode), "MAAT", str.tostring(heruMaatEventCode), heruStateColor)
+                row := row + 1
+            if showBusRow
+                f_row6(row, "BUS", busText, "RULE", "STATE_ONLY", "GPT", "BRIEF", heruWarnColor)
+    else
+        if clearTableWhenOff
+            table.clear(heruTable, 0, 0, T_LAST_COL, T_LAST_ROW)
+
+//==================================================
+// ALERT CONDITIONS
+//==================================================
+bool snapshotCond = enableSnapshotAlert and barstate.isconfirmed
+bool nearKeyLevelCond = enableNearKeyAlert and barstate.isconfirmed and not na(nearestAbsDist) and nearestAbsDist <= nearPct
+bool clusterTouchCond = enableClusterTouchAlert and barstate.isconfirmed and (nearUpper or nearLower)
+bool centerCrossCond = enableCenterCrossAlert and barstate.isconfirmed and not na(consensus365) and ta.cross(close, consensus365)
+
+const string ALERT_JSON_SNAPSHOT = "{\"source\":\"TradingView\",\"system\":\"AiLynx\",\"engine\":\"HERU365\",\"observer\":\"HORUS\",\"layer\":\"LONG_MEMORY_BASELINE\",\"event\":\"HERU_SNAPSHOT\",\"symbol\":\"{{exchange}}:{{ticker}}\",\"tf\":\"{{interval}}\",\"time\":\"{{time}}\",\"close\":\"{{close}}\",\"state_code\":\"{{plot(\"AL_HERU_STATE_CODE\")}}\",\"zone_code\":\"{{plot(\"AL_HERU_ZONE_CODE\")}}\",\"nearest_code\":\"{{plot(\"AL_HERU_NEAREST_CODE\")}}\",\"nearest_level\":\"{{plot(\"AL_HERU_NEAREST_LEVEL\")}}\",\"nearest_dist_pct\":\"{{plot(\"AL_HERU_NEAREST_DIST_PCT\")}}\",\"upper_dist_pct\":\"{{plot(\"AL_HERU_UPPER_DIST_PCT\")}}\",\"lower_dist_pct\":\"{{plot(\"AL_HERU_LOWER_DIST_PCT\")}}\",\"consensus_dist_pct\":\"{{plot(\"AL_HERU_CONSENSUS_DIST_PCT\")}}\",\"event_code\":\"{{plot(\"AL_HERU_EVENT_CODE\")}}\",\"purpose\":\"GPT_BRIEFING_LONG_MEMORY_BASELINE\",\"rule\":\"STATE_ONLY_NO_BUY_SELL_ENTRY_EXIT_TARGET_STOP\"}"
+const string ALERT_JSON_NEAR = "{\"source\":\"TradingView\",\"system\":\"AiLynx\",\"engine\":\"HERU365\",\"observer\":\"HORUS\",\"layer\":\"LONG_MEMORY_BASELINE\",\"event\":\"HERU_NEAR_KEY_LEVEL\",\"symbol\":\"{{exchange}}:{{ticker}}\",\"tf\":\"{{interval}}\",\"time\":\"{{time}}\",\"close\":\"{{close}}\",\"state_code\":\"{{plot(\"AL_HERU_STATE_CODE\")}}\",\"nearest_code\":\"{{plot(\"AL_HERU_NEAREST_CODE\")}}\",\"nearest_level\":\"{{plot(\"AL_HERU_NEAREST_LEVEL\")}}\",\"nearest_dist_pct\":\"{{plot(\"AL_HERU_NEAREST_DIST_PCT\")}}\",\"event_code\":\"{{plot(\"AL_HERU_EVENT_CODE\")}}\",\"purpose\":\"GPT_BRIEFING_LONG_MEMORY_BASELINE\",\"rule\":\"STATE_ONLY_NO_BUY_SELL_ENTRY_EXIT_TARGET_STOP\"}"
+const string ALERT_JSON_CLUSTER = "{\"source\":\"TradingView\",\"system\":\"AiLynx\",\"engine\":\"HERU365\",\"observer\":\"HORUS\",\"layer\":\"LONG_MEMORY_BASELINE\",\"event\":\"HERU_CLUSTER_TOUCH\",\"symbol\":\"{{exchange}}:{{ticker}}\",\"tf\":\"{{interval}}\",\"time\":\"{{time}}\",\"close\":\"{{close}}\",\"state_code\":\"{{plot(\"AL_HERU_STATE_CODE\")}}\",\"upper_dist_pct\":\"{{plot(\"AL_HERU_UPPER_DIST_PCT\")}}\",\"lower_dist_pct\":\"{{plot(\"AL_HERU_LOWER_DIST_PCT\")}}\",\"event_code\":\"{{plot(\"AL_HERU_EVENT_CODE\")}}\",\"purpose\":\"GPT_BRIEFING_LONG_MEMORY_BASELINE\",\"rule\":\"STATE_ONLY_NO_BUY_SELL_ENTRY_EXIT_TARGET_STOP\"}"
+const string ALERT_JSON_CENTER = "{\"source\":\"TradingView\",\"system\":\"AiLynx\",\"engine\":\"HERU365\",\"observer\":\"HORUS\",\"layer\":\"LONG_MEMORY_BASELINE\",\"event\":\"HERU_CENTER_CROSS\",\"symbol\":\"{{exchange}}:{{ticker}}\",\"tf\":\"{{interval}}\",\"time\":\"{{time}}\",\"close\":\"{{close}}\",\"state_code\":\"{{plot(\"AL_HERU_STATE_CODE\")}}\",\"consensus_dist_pct\":\"{{plot(\"AL_HERU_CONSENSUS_DIST_PCT\")}}\",\"event_code\":\"{{plot(\"AL_HERU_EVENT_CODE\")}}\",\"purpose\":\"GPT_BRIEFING_LONG_MEMORY_BASELINE\",\"rule\":\"STATE_ONLY_NO_BUY_SELL_ENTRY_EXIT_TARGET_STOP\"}"
+
+alertcondition(snapshotCond, title="AL HERU 365 | SNAPSHOT", message=ALERT_JSON_SNAPSHOT)
+alertcondition(nearKeyLevelCond, title="AL HERU 365 | NEAR KEY LEVEL", message=ALERT_JSON_NEAR)
+alertcondition(clusterTouchCond, title="AL HERU 365 | CLUSTER TOUCH", message=ALERT_JSON_CLUSTER)
+alertcondition(centerCrossCond, title="AL HERU 365 | CENTER CROSS", message=ALERT_JSON_CENTER)
+
+//==================================================
+// HERU365 | Dynamic alert() JSON
+// 목적: TradingView {{plot(...)}} 치환 실패를 피하고 Pine 내부 값을 직접 JSON으로 전송
+// 사용법: TradingView Alert에서 "Any alert() function call" 선택
+//==================================================
+groupHeruFuncAlert = "06 GPT HERU | Function Alerts"
+useHeruFuncAlerts = input.bool(true, "Use Function alert()", group=groupHeruFuncAlert, display=display.none)
+
+f_h365JsonPair(string k, string v) =>
+    "\"" + k + "\":\"" + v + "\""
+
+f_h365JsonNum(string k, float v) =>
+    "\"" + k + "\":\"" + str.tostring(v) + "\""
+
+f_h365JsonInt(string k, int v) =>
+    "\"" + k + "\":\"" + str.tostring(v) + "\""
+
+f_h365Symbol() =>
+    syminfo.prefix == "" ? syminfo.ticker : syminfo.prefix + ":" + syminfo.ticker
+
+f_heruJson(string ev, string trg, string defenseType) =>
+    string s = "{"
+    s += f_h365JsonPair("source", "TradingView")
+    s += "," + f_h365JsonPair("system", "AiLynx")
+    s += "," + f_h365JsonPair("engine", "HERU365")
+    s += "," + f_h365JsonPair("observer", "HORUS")
+    s += "," + f_h365JsonPair("layer", "LONG_MEMORY_BASELINE")
+    s += "," + f_h365JsonPair("event", ev)
+    s += "," + f_h365JsonPair("event_type", ev)
+    s += "," + f_h365JsonPair("warning_type", defenseType)
+    s += "," + f_h365JsonPair("defense_type", defenseType)
+    s += "," + f_h365JsonPair("trigger", trg)
+    s += "," + f_h365JsonPair("symbol", f_h365Symbol())
+    s += "," + f_h365JsonPair("tf", timeframe.period)
+    s += "," + f_h365JsonPair("timeframe", timeframe.period)
+    s += "," + f_h365JsonPair("time", str.tostring(time))
+    s += "," + f_h365JsonNum("open", open)
+    s += "," + f_h365JsonNum("high", high)
+    s += "," + f_h365JsonNum("low", low)
+    s += "," + f_h365JsonNum("close", close)
+    s += "," + f_h365JsonNum("volume", volume)
+    s += "," + f_h365JsonPair("bar_status", barstate.isconfirmed ? "CLOSED" : "OPEN")
+    s += "," + f_h365JsonInt("state_code", stateCode)
+    s += "," + f_h365JsonPair("state_name", f_stateName(stateCode))
+    s += "," + f_h365JsonInt("zone_code", zoneCode)
+    s += "," + f_h365JsonPair("zone_name", f_zoneName(zoneCode))
+    s += "," + f_h365JsonInt("nearest_code", nearestCode)
+    s += "," + f_h365JsonPair("nearest_name", f_nearestName(nearestCode))
+    s += "," + f_h365JsonNum("nearest_level", nearestLevel)
+    s += "," + f_h365JsonNum("nearest_dist_pct", nearestDistPct)
+    s += "," + f_h365JsonNum("sma365", sma365)
+    s += "," + f_h365JsonNum("ema365", ema365)
+    s += "," + f_h365JsonNum("poc365", poc365)
+    s += "," + f_h365JsonNum("memory365", memory365)
+    s += "," + f_h365JsonNum("consensus365", consensus365)
+    s += "," + f_h365JsonNum("upper_cluster", upperCluster)
+    s += "," + f_h365JsonNum("lower_cluster", lowerCluster)
+    s += "," + f_h365JsonNum("sma_dist_pct", smaDistPct)
+    s += "," + f_h365JsonNum("ema_dist_pct", emaDistPct)
+    s += "," + f_h365JsonNum("poc_dist_pct", pocDistPct)
+    s += "," + f_h365JsonNum("memory_dist_pct", memoryDistPct)
+    s += "," + f_h365JsonNum("consensus_dist_pct", consensusDistPct)
+    s += "," + f_h365JsonNum("upper_dist_pct", upperDistPct)
+    s += "," + f_h365JsonNum("lower_dist_pct", lowerDistPct)
+    s += "," + f_h365JsonPair("near_center", nearCenter ? "1" : "0")
+    s += "," + f_h365JsonPair("near_upper", nearUpper ? "1" : "0")
+    s += "," + f_h365JsonPair("near_lower", nearLower ? "1" : "0")
+    s += "," + f_h365JsonPair("poc_memory_dup", dupPocMem ? "1" : "0")
+    s += "," + f_h365JsonNum("memory_touches", memoryTouches)
+    s += "," + f_h365JsonInt("consensus_members", consensusMembers)
+    s += "," + f_h365JsonNum("consensus_weight_sum", consensusWeightSum)
+    s += "," + f_h365JsonNum("sma_weight", SMA_W)
+    s += "," + f_h365JsonNum("ema_weight", EMA_W)
+    s += "," + f_h365JsonNum("poc_weight", POC_W)
+    s += "," + f_h365JsonNum("memory_weight", MEM_W)
+    s += "," + f_h365JsonNum("upper_members", upperMembersRaw)
+    s += "," + f_h365JsonNum("lower_members", lowerMembersRaw)
+    s += "," + f_h365JsonPair("upper_combo", upperCombo)
+    s += "," + f_h365JsonPair("lower_combo", lowerCombo)
+    s += "," + f_h365JsonInt("event_code", eventCode)
+    s += "," + f_h365JsonPair("event_name", f_eventName(eventCode))
+    s += "," + f_h365JsonPair("event_flags", eventFlags)
+    s += "," + f_h365JsonInt("event_mask", eventMask)
+    s += "," + f_h365JsonPair("event_code_type", "CLASSIFICATION_NOT_ENERGY_SCORE")
+    s += "," + f_h365JsonPair("lookahead_mode", "PREV_DAILY_VALUES_WITH_LOOKAHEAD_ON")
+    s += "," + f_h365JsonPair("cross_layer", "COMBINE_WITH_WENUT_ENGINE_IN_BACKEND")
+    s += "," + f_h365JsonPair("defense_rule_version", "LONG_MEMORY_BASELINE_V1_2026_05_14")
+    s += "," + f_h365JsonPair("defense_eval_status", "PENDING")
+    s += "," + f_h365JsonNum("base_price", close)
+    s += "," + f_h365JsonPair("base_time", str.tostring(time))
+    s += "," + f_h365JsonPair("eval_horizons", "1h,4h,1d")
+    s += "," + f_h365JsonPair("price_source", "TRADINGVIEW_SNAPSHOT_ONLY")
+    s += "," + f_h365JsonPair("purpose", "GPT_BRIEFING_LONG_MEMORY_BASELINE")
+    s += "," + f_h365JsonPair("rule", "STATE_ONLY_NO_BUY_SELL_ENTRY_EXIT_TARGET_STOP")
+    s += "}"
+    s
+
+if useHeruFuncAlerts and snapshotCond
+    alert(f_heruJson("HERU_SNAPSHOT", "SNAPSHOT_CLOSED", "LONG_MEMORY_SNAPSHOT"), alert.freq_once_per_bar_close)
+
+if useHeruFuncAlerts and nearKeyLevelCond
+    alert(f_heruJson("HERU_NEAR_KEY_LEVEL", "EDGE_CLOSED", "LONG_MEMORY_NEAR_KEY_LEVEL"), alert.freq_once_per_bar_close)
+
+if useHeruFuncAlerts and clusterTouchCond
+    alert(f_heruJson("HERU_CLUSTER_TOUCH", "EDGE_CLOSED", "LONG_MEMORY_CLUSTER_TOUCH"), alert.freq_once_per_bar_close)
+
+if useHeruFuncAlerts and centerCrossCond
+    alert(f_heruJson("HERU_CENTER_CROSS", "EDGE_CLOSED", "LONG_MEMORY_CENTER_CROSS"), alert.freq_once_per_bar_close)

@@ -1,0 +1,1278 @@
+//@version=6
+indicator("AL MAAT Stopwatch Validator MVP", shorttitle="MAAT STOPWATCH", overlay=false)
+
+string G_RPC = "MAAT | RPC"
+string G_STRUCT = "MAAT | STRUCT"
+string G_VOL = "MAAT | VOL"
+string G_HERU = "MAAT | HERU"
+string G_WENUT = "MAAT | WENUT"
+string G_RSI = "MAAT | RSI"
+string grpTable = "MAAT | Table"
+string grpRows = "MAAT | Rows"
+string grpAlert = "MAAT | Alerts"
+string G_STOPWATCH = "MAAT Stopwatch Validator"
+
+float rpcDirSrc = input.source(close, "AL_RPC_DIR_CODE", group=G_RPC, display=display.none)
+float rpcScoreSrc = input.source(close, "AL_RPC_SCORE", group=G_RPC, display=display.none)
+float rpcRiskSrc = input.source(close, "AL_RPC_RISK_CODE", group=G_RPC, display=display.none)
+float rpcEventSrc = input.source(close, "AL_RPC_EVENT_CODE", group=G_RPC, display=display.none)
+
+float structDirSrc = input.source(close, "AL_STRUCT_DIR_CODE", group=G_STRUCT, display=display.none)
+float structScoreSrc = input.source(close, "AL_STRUCT_SCORE", group=G_STRUCT, display=display.none)
+float structRiskSrc = input.source(close, "AL_STRUCT_RISK_CODE", group=G_STRUCT, display=display.none)
+float structEventSrc = input.source(close, "AL_STRUCT_EVENT_CODE", group=G_STRUCT, display=display.none)
+
+float volDirSrc = input.source(close, "AL_VOL_DIR_CODE", group=G_VOL, display=display.none)
+float volScoreSrc = input.source(close, "AL_VOL_SCORE", group=G_VOL, display=display.none)
+float volRiskSrc = input.source(close, "AL_VOL_RISK_CODE", group=G_VOL, display=display.none)
+float volEventSrc = input.source(close, "AL_VOL_EVENT_CODE", group=G_VOL, display=display.none)
+
+float heruDirSrc = input.source(close, "AL_HERU_DIR_CODE", group=G_HERU, display=display.none)
+float heruScoreSrc = input.source(close, "AL_HERU_SCORE", group=G_HERU, display=display.none)
+float heruRiskSrc = input.source(close, "AL_HERU_RISK_CODE", group=G_HERU, display=display.none)
+float heruEventSrc = input.source(close, "AL_HERU_EVENT_CODE", group=G_HERU, display=display.none)
+
+float wenutDirSrc = input.source(close, "AL_WENUT_DIR_CODE", group=G_WENUT, display=display.none)
+float wenutScoreSrc = input.source(close, "AL_WENUT_SCORE", group=G_WENUT, display=display.none)
+float wenutRiskSrc = input.source(close, "AL_WENUT_RISK_CODE", group=G_WENUT, display=display.none)
+float wenutEventSrc = input.source(close, "AL_WENUT_EVENT_CODE", group=G_WENUT, display=display.none)
+
+float rsiDirSrc = input.source(close, "AL_RSI_DIR_CODE", group=G_RSI, display=display.none)
+float rsiScoreSrc = input.source(close, "AL_RSI_SCORE", group=G_RSI, display=display.none)
+float rsiRiskSrc = input.source(close, "AL_RSI_RISK_CODE", group=G_RSI, display=display.none)
+float rsiEventSrc = input.source(close, "AL_RSI_EVENT_CODE", group=G_RSI, display=display.none)
+
+bool showMaatTable = input.bool(true, "표 표시", group=grpTable, display=display.none)
+bool showBg = input.bool(true, "배경 강조", group=grpTable, display=display.none)
+string tablePosOpt = input.string("우측 상단", "표 위치", options=["좌측 상단", "중앙 상단", "우측 상단", "좌측 중앙", "정중앙", "우측 중앙", "좌측 하단", "중앙 하단", "우측 하단"], group=grpTable, display=display.none)
+int tableSizeScale = input.int(4, "표 크기 1~10", minval=1, maxval=10, group=grpTable, display=display.none)
+int cellWidthOpt = input.int(0, "셀 너비 (0 = 자동)", minval=0, maxval=100, group=grpTable, display=display.none)
+int cellHeightOpt = input.int(0, "셀 높이 (0 = 자동)", minval=0, maxval=100, group=grpTable, display=display.none)
+bool showTableFrame = input.bool(true, "표 외곽선 ON/OFF", group=grpTable, display=display.none)
+bool showTableGrid = input.bool(true, "표 내부 그리드 ON/OFF", group=grpTable, display=display.none)
+int frameWidthOpt = input.int(1, "외곽선 두께", minval=0, maxval=5, group=grpTable, display=display.none)
+int gridWidthOpt = input.int(1, "그리드 두께", minval=0, maxval=5, group=grpTable, display=display.none)
+color frameColorOpt = input.color(color.new(color.white, 70), "표 외곽선 색상", group=grpTable, display=display.none)
+color gridColorOpt = input.color(color.new(color.white, 85), "표 테두리 색상", group=grpTable, display=display.none)
+color headerBgColorOpt = input.color(color.rgb(28, 34, 42), "헤더 배경색", group=grpTable, display=display.none)
+color bodyBgColorOpt = input.color(color.black, "본문 배경색", group=grpTable, display=display.none)
+color summaryBgColorOpt = input.color(color.rgb(28, 34, 42), "종합 행 배경색", group=grpTable, display=display.none)
+color baseTextColorOpt = input.color(color.white, "기본 글자색", group=grpTable, display=display.none)
+color upTextColorOpt = input.color(color.lime, "UP 글자색", group=grpTable, display=display.none)
+color downTextColorOpt = input.color(color.red, "DOWN 글자색", group=grpTable, display=display.none)
+color warnTextColorOpt = input.color(color.orange, "경고 글자색", group=grpTable, display=display.none)
+color neutralTextColorOpt = input.color(color.silver, "중립 글자색", group=grpTable, display=display.none)
+color upPressureBgColorOpt = input.color(color.lime, "UP 압력 배경색", group=grpTable, display=display.none)
+color downPressureBgColorOpt = input.color(color.red, "DOWN 압력 배경색", group=grpTable, display=display.none)
+color neutralStateBgColorOpt = input.color(color.gray, "중립 상태 배경색", group=grpTable, display=display.none)
+color lieRowBgColorOpt = input.color(color.red, "LIE 행 배경색", group=grpTable, display=display.none)
+color whyRowBgColorOpt = input.color(color.orange, "WHY 행 배경색", group=grpTable, display=display.none)
+color finalRowBgColorOpt = input.color(color.rgb(28, 34, 42), "FINAL 행 배경색", group=grpTable, display=display.none)
+int tableBgTransp = input.int(20, "표 배경 투명도", minval=0, maxval=100, group=grpTable, display=display.none)
+int headerBgTransp = input.int(35, "헤더 배경 투명도", minval=0, maxval=100, group=grpTable, display=display.none)
+int riskBgTransp = input.int(35, "위험/경고 배경 투명도", minval=0, maxval=100, group=grpTable, display=display.none)
+int lieWhyBgTransp = input.int(35, "LIE/WHY 배경 투명도", minval=0, maxval=100, group=grpTable, display=display.none)
+bool compactRows = input.bool(true, "행 간격 압축", group=grpTable, display=display.none)
+string columnMode = input.string("NORMAL", "열 표시 모드", options=["COMPACT", "NORMAL", "GPT", "DEBUG"], group=grpTable, display=display.none)
+string langMode = input.string("EN", "상태 언어", options=["KR", "EN", "CODE"], group=grpTable, display=display.none)
+bool debugMode = input.bool(false, "디버그 모드", group=grpTable, display=display.none)
+
+bool showRpcRow = input.bool(true, "FORCE 행 표시", group=grpRows, display=display.none)
+bool showStructRow = input.bool(true, "STRUCT 행 표시", group=grpRows, display=display.none)
+bool showVolRow = input.bool(true, "VOL 행 표시", group=grpRows, display=display.none)
+bool showHeruRow = input.bool(true, "HERU 행 표시", group=grpRows, display=display.none)
+bool showWenutRow = input.bool(true, "WENUT 행 표시", group=grpRows, display=display.none)
+bool showRsiRow = input.bool(true, "RSI 행 표시", group=grpRows, display=display.none)
+bool showCountRow = input.bool(true, "COUNT 행 표시", group=grpRows, display=display.none)
+bool showLieRow = input.bool(true, "LIE 행 표시", group=grpRows, display=display.none)
+bool showWhyRow = input.bool(true, "WHY 행 표시", group=grpRows, display=display.none)
+bool showFinalRow = input.bool(true, "FINAL 행 표시", group=grpRows, display=display.none)
+
+bool useLieAlerts = input.bool(true, "LIE 알림 사용", group=grpAlert, display=display.none)
+
+bool showStopwatchTable = input.bool(true, "Show Stopwatch Table", group=G_STOPWATCH, display=display.none)
+bool enableStopwatchAlerts = input.bool(false, "Enable Stopwatch Alerts", group=G_STOPWATCH, display=display.none)
+string stopwatchMode = input.string("CURRENT_TF_GATE", "Stopwatch Mode", options=["OFF", "CURRENT_TF_GATE", "MANUAL_GATE"], group=G_STOPWATCH, display=display.none)
+string parentGateMode = input.string("NEXT_13_GATE", "Parent Gate Mode", options=["NEXT_13_GATE", "MAJOR_GATE"], group=G_STOPWATCH, display=display.none)
+int manualMainTfMin = input.int(470, "Manual Main TF Min", minval=1, group=G_STOPWATCH, display=display.none)
+int manualParentGateMin = input.int(480, "Manual Parent Gate Min", minval=1, group=G_STOPWATCH, display=display.none)
+int windowBeforeMin = input.int(50, "Window Before Min", minval=1, group=G_STOPWATCH, display=display.none)
+int windowAfterMin = input.int(50, "Window After Min", minval=1, group=G_STOPWATCH, display=display.none)
+float minRvolForEvent = input.float(2.5, "Min RVOL For Event", minval=0.0, group=G_STOPWATCH, display=display.none)
+int minVolRiskForEvent = input.int(4, "Min VOL Risk For Event", minval=0, maxval=5, group=G_STOPWATCH, display=display.none)
+bool sendWatchStartAlert = input.bool(true, "Send Watch Start Alert", group=G_STOPWATCH, display=display.none)
+bool sendWindowOpenAlert = input.bool(true, "Send Window Open Alert", group=G_STOPWATCH, display=display.none)
+bool sendVolEventAlert = input.bool(true, "Send VOL Event Alert", group=G_STOPWATCH, display=display.none)
+bool sendWatchResetAlert = input.bool(true, "Send Watch Reset Alert", group=G_STOPWATCH, display=display.none)
+bool sendMissAlert = input.bool(false, "Send Miss Alert", group=G_STOPWATCH, display=display.none)
+bool useConfirmedBarOnly = input.bool(true, "Use Confirmed Bar Only", group=G_STOPWATCH, display=display.none)
+
+float swVolRelSrc = input.source(close, "AL_VOLUME_RELATIVE_VOLUME", group=G_STOPWATCH, display=display.none)
+float swVolBuyClimaxSrc = input.source(close, "AL_VOLUME_BUY_CLIMAX_FLAG", group=G_STOPWATCH, display=display.none)
+float swVolSellClimaxSrc = input.source(close, "AL_VOLUME_SELL_CLIMAX_FLAG", group=G_STOPWATCH, display=display.none)
+float swVolBuyAbsorbSrc = input.source(close, "AL_VOLUME_BUY_ABSORB_FLAG", group=G_STOPWATCH, display=display.none)
+float swVolSellAbsorbSrc = input.source(close, "AL_VOLUME_SELL_ABSORB_FLAG", group=G_STOPWATCH, display=display.none)
+float swVolDrySrc = input.source(close, "AL_VOLUME_DRY_FLAG", group=G_STOPWATCH, display=display.none)
+float swVolDeltaSrc = input.source(close, "AL_VOLUME_DELTA_BAR", group=G_STOPWATCH, display=display.none)
+float swVolCvdSrc = input.source(close, "AL_VOLUME_CVD_ZSCORE", group=G_STOPWATCH, display=display.none)
+float swVolBodySrc = input.source(close, "AL_VOLUME_BODY_RATIO", group=G_STOPWATCH, display=display.none)
+bool useManualVolDebug = input.bool(false, "Use Manual VOL Debug Inputs", group=G_STOPWATCH, display=display.none)
+float manualRvol = input.float(0.0, "Manual RVOL", minval=0.0, group=G_STOPWATCH, display=display.none)
+string manualVolType = input.string("-", "Manual VOL Type", options=["-", "RVOL", "CLIMAX BUY", "CLIMAX SELL", "ABSORB BUY", "ABSORB SELL", "DRY", "RISK"], group=G_STOPWATCH, display=display.none)
+string manualClimaxSide = input.string("-", "Manual Climax Side", options=["-", "BUY", "SELL"], group=G_STOPWATCH, display=display.none)
+bool manualAbsorbFlag = input.bool(false, "Manual Absorb Flag", group=G_STOPWATCH, display=display.none)
+float manualDeltaValue = input.float(0.0, "Manual Delta", group=G_STOPWATCH, display=display.none)
+string manualCvdState = input.string("-", "Manual CVD State", options=["-", "BULL", "BEAR", "NEUT", "STRONG"], group=G_STOPWATCH, display=display.none)
+float manualBodyPct = input.float(0.0, "Manual Body Pct", minval=0.0, maxval=100.0, group=G_STOPWATCH, display=display.none)
+
+f_clamp(float v, float lo, float hi) =>
+    math.max(lo, math.min(hi, v))
+
+f_linked(float v) =>
+    not na(v) and math.abs(v - close) > 0.000001
+
+f_linked4(float d, float s, float r, float e) =>
+    f_linked(d) or f_linked(s) or f_linked(r) or f_linked(e)
+
+f_valid(float d, float s, float r, float e) =>
+    math.abs(nz(d, 99)) <= 1.5 and nz(s, 999) >= 0 and nz(s, 999) <= 100 and nz(r, 999) >= 0 and nz(r, 999) <= 5 and nz(e, 999) >= 0 and nz(e, 999) <= 9
+
+f_dir(float d, bool ok) =>
+    ok ? int(f_clamp(math.round(d), -1, 1)) : 0
+
+f_score(float s, bool ok) =>
+    ok ? f_clamp(s, 0, 100) : 50.0
+
+f_risk(float r, bool ok) =>
+    ok ? int(f_clamp(math.round(r), 0, 5)) : 0
+
+f_event(float e, bool ok) =>
+    ok ? int(f_clamp(math.round(e), 0, 9)) : 0
+
+f_num(float v) =>
+    str.tostring(int(math.round(v)))
+
+f_rawNum(float v) =>
+    string txt = "na"
+    if not na(v)
+        txt := str.tostring(v)
+    txt
+
+f_pos(string opt) =>
+    p = position.top_right
+    if opt == "좌측 상단"
+        p := position.top_left
+    else if opt == "중앙 상단"
+        p := position.top_center
+    else if opt == "우측 상단"
+        p := position.top_right
+    else if opt == "좌측 중앙"
+        p := position.middle_left
+    else if opt == "정중앙"
+        p := position.middle_center
+    else if opt == "우측 중앙"
+        p := position.middle_right
+    else if opt == "좌측 하단"
+        p := position.bottom_left
+    else if opt == "중앙 하단"
+        p := position.bottom_center
+    else if opt == "우측 하단"
+        p := position.bottom_right
+    p
+
+f_sizeFromScale(int scale) =>
+    s = size.small
+    if scale <= 2
+        s := size.tiny
+    else if scale <= 5
+        s := size.small
+    else if scale <= 7
+        s := size.normal
+    else if scale <= 9
+        s := size.large
+    else
+        s := size.huge
+    s
+
+f_dirCode(int d) =>
+    string txt = "N"
+    if d > 0
+        txt := "B"
+    else if d < 0
+        txt := "S"
+    txt
+
+f_dirText(int d, bool ok, string lang) =>
+    string txt = "MISS"
+    if not ok
+        if lang == "KR"
+            txt := "연결확인"
+        else if lang == "CODE"
+            txt := "M"
+        else
+            txt := "MISS"
+    else
+        if lang == "KR"
+            if d > 0
+                txt := "상승"
+            else if d < 0
+                txt := "하락"
+            else
+                txt := "중립"
+        else if lang == "CODE"
+            txt := f_dirCode(d)
+        else
+            if d > 0
+                txt := "BULL"
+            else if d < 0
+                txt := "BEAR"
+            else
+                txt := "NEUT"
+    txt
+
+f_eventText(string sensorKey, int eventCode, string lang, bool compactMode) =>
+    bool codeMode = lang == "CODE"
+    string txt = "-"
+    if codeMode
+        if eventCode == 1
+            txt := "S"
+        else if eventCode == 2
+            txt := "CF"
+        else if eventCode == 3
+            txt := "NE"
+        else if eventCode == 4
+            txt := "W"
+        else if eventCode == 5
+            txt := "OH"
+        else if eventCode == 6
+            txt := "AB"
+        else if eventCode == 7
+            txt := "DV"
+        else if eventCode == 8
+            txt := "BL"
+        else if eventCode == 9
+            txt := "OP"
+    else if lang == "KR"
+        if eventCode == 1
+            txt := "활성"
+        else if eventCode == 2
+            txt := "충돌"
+        else if eventCode == 3
+            txt := "무에너지"
+        else if eventCode == 4
+            txt := "감시"
+        else if eventCode == 5
+            txt := "과열"
+        else if eventCode == 6
+            txt := "흡수"
+        else if eventCode == 7
+            txt := "다이버"
+        else if eventCode == 8
+            txt := "차단"
+        else if eventCode == 9
+            txt := "개방"
+    else
+        if eventCode == 1
+            txt := "SYNC"
+        else if eventCode == 2
+            txt := "CONFLICT"
+        else if eventCode == 3
+            txt := "NO ENERGY"
+        else if eventCode == 4
+            txt := "WATCH"
+        else if eventCode == 5
+            txt := "OVERHEAT"
+        else if eventCode == 6
+            txt := "ABSORB"
+        else if eventCode == 7
+            txt := "DIV"
+        else if eventCode == 8
+            txt := "BLOCK"
+        else if eventCode == 9
+            txt := "OPEN"
+    if sensorKey == "VOL"
+        if eventCode == 3
+            txt := lang == "KR" and not codeMode ? "건조" : "DRY"
+        else if eventCode == 6
+            txt := lang == "KR" and not codeMode ? "흡수" : "ABSORB"
+        else if eventCode == 5
+            txt := lang == "KR" and not codeMode ? "클라이맥스" : "CLIMAX"
+    else if sensorKey == "FORCE"
+        if eventCode == 3
+            txt := lang == "KR" and not codeMode ? "약함" : "WEAK"
+        else if eventCode == 8
+            txt := lang == "KR" and not codeMode ? "차단" : "BLOCK"
+        else if eventCode == 9
+            txt := lang == "KR" and not codeMode ? "밀기" : "PUSH"
+    else if sensorKey == "STRUCT"
+        if eventCode == 3
+            txt := lang == "KR" and not codeMode ? "대기" : "WAIT"
+        else if eventCode == 8
+            txt := lang == "KR" and not codeMode ? "차단" : "BLOCK"
+        else if eventCode == 9
+            txt := lang == "KR" and not codeMode ? "개방" : "OPEN"
+    else if sensorKey == "HERU"
+        if eventCode == 4
+            txt := lang == "KR" and not codeMode ? "감시" : "WATCH"
+        else if eventCode == 8
+            txt := lang == "KR" and not codeMode ? "기억차단" : "MEM"
+        else if eventCode == 9
+            txt := lang == "KR" and not codeMode ? "기억돌파" : "MEM"
+    else if sensorKey == "WENUT"
+        if eventCode == 3
+            txt := lang == "KR" and not codeMode ? "조용" : "QUIET"
+        else if eventCode == 4
+            txt := lang == "KR" and not codeMode ? "예열" : "PRE-HOT"
+        else if eventCode == 9
+            txt := lang == "KR" and not codeMode ? "가열" : "HOT"
+    else if sensorKey == "RSI"
+        if eventCode == 3
+            txt := lang == "KR" and not codeMode ? "평탄" : "FLAT"
+        else if eventCode == 7
+            txt := lang == "KR" and not codeMode ? "다이버" : "DIV"
+        else if eventCode == 9
+            txt := lang == "KR" and not codeMode ? "개방" : "OPEN"
+    if compactMode and not codeMode and lang == "EN"
+        if txt == "CONFLICT"
+            txt := "CF"
+        else if txt == "NO ENERGY"
+            txt := "NE"
+        else if txt == "OVERHEAT"
+            txt := "OH"
+        else if txt == "ABSORB"
+            txt := "AB"
+        else if txt == "BLOCK"
+            txt := "BL"
+        else if txt == "OPEN"
+            txt := "OP"
+        else if txt == "CLIMAX"
+            txt := "CLX"
+        else if txt == "PRE-HOT"
+            txt := "PRE"
+    txt
+
+f_sensorLabel(string sensorKey, string mode) =>
+    string lbl = sensorKey
+    if mode == "GPT" or mode == "COMPACT"
+        if sensorKey == "FORCE"
+            lbl := "FRC"
+        else if sensorKey == "STRUCT"
+            lbl := "STR"
+        else if sensorKey == "HERU"
+            lbl := "HER"
+        else if sensorKey == "WENUT"
+            lbl := "WEN"
+        else
+            lbl := sensorKey
+    lbl
+
+f_sensorRowText(string sensorKey, bool linked, bool ok, int d, float s, int r, int eventCode, float rawD, float rawS, float rawR, float rawE, string mode, string lang, bool compactMode) =>
+    bool codeLike = mode == "GPT" or mode == "COMPACT" or lang == "CODE"
+    string eventLang = mode == "GPT" ? "CODE" : lang
+    string eventTxt = f_eventText(sensorKey, eventCode, eventLang, compactMode or mode == "GPT" or mode == "COMPACT")
+    string txt = ""
+    if mode == "DEBUG"
+        if ok
+            txt := "DIR " + str.tostring(d) + " / S " + f_num(s) + " / R " + str.tostring(r) + " / E " + str.tostring(eventCode) + " / " + eventTxt
+        else if linked
+            txt := "MISS / DIR " + f_rawNum(rawD) + " / S " + f_rawNum(rawS) + " / R " + f_rawNum(rawR) + " / E " + f_rawNum(rawE)
+        else
+            txt := "OFF"
+    else if not ok
+        if codeLike
+            txt := linked ? "MISS" : "OFF"
+        else if lang == "KR"
+            txt := linked ? "연결확인" : "OFF"
+        else
+            txt := linked ? "MISS" : "OFF"
+    else if mode == "GPT"
+        txt := f_dirCode(d) + f_num(s) + " R" + str.tostring(r) + " E" + str.tostring(eventCode)
+    else if mode == "COMPACT"
+        txt := f_dirCode(d) + f_num(s) + " R" + str.tostring(r) + " " + eventTxt
+    else
+        if compactMode
+            txt := f_dirText(d, ok, lang) + " " + f_num(s) + " R" + str.tostring(r) + " E" + str.tostring(eventCode) + " " + eventTxt
+        else if lang == "KR"
+            txt := f_dirText(d, ok, lang) + " " + f_num(s) + " / 위험 " + str.tostring(r) + " / 이벤트 " + str.tostring(eventCode) + " " + eventTxt
+        else if lang == "CODE"
+            txt := f_dirText(d, ok, lang) + f_num(s) + " R" + str.tostring(r) + " E" + str.tostring(eventCode) + " " + eventTxt
+        else
+            txt := f_dirText(d, ok, lang) + " " + f_num(s) + " / RISK " + str.tostring(r) + " / EVENT " + str.tostring(eventCode) + " " + eventTxt
+    txt
+
+f_stateDisplayText(int stateCode, int riskCode, int eventCode, int lieCodeVal, string lang) =>
+    bool riskWatchOnly = stateCode == 6 and eventCode != 5
+    string txt = ""
+    if lang == "KR"
+        if stateCode < 0
+            txt := "연결확인"
+        else if stateCode == 6 and riskWatchOnly
+            txt := "위험감시"
+        else if stateCode == 6
+            txt := "과열"
+        else if stateCode == 5
+            txt := "감시"
+        else if stateCode == 4
+            txt := "무에너지"
+        else if stateCode == 3
+            txt := "충돌"
+        else if stateCode == 2
+            txt := "하락공명"
+        else if stateCode == 1
+            txt := "상승공명"
+        else
+            txt := "중립"
+    else if lang == "CODE"
+        if stateCode < 0
+            txt := "M"
+        else if stateCode == 6 and riskWatchOnly
+            txt := "RW"
+        else if stateCode == 6
+            txt := "OH"
+        else if stateCode == 5
+            txt := "W"
+        else if stateCode == 4
+            txt := "NE"
+        else if stateCode == 3
+            txt := "CF"
+        else if stateCode == 2
+            txt := "SS"
+        else if stateCode == 1
+            txt := "SB"
+        else
+            txt := "N"
+    else
+        if stateCode < 0
+            txt := "MISS"
+        else if stateCode == 6 and riskWatchOnly
+            txt := "RISK WATCH"
+        else if stateCode == 6
+            txt := "OVERHEAT"
+        else if stateCode == 5
+            txt := "WATCH"
+        else if stateCode == 4
+            txt := "NO ENERGY"
+        else if stateCode == 3
+            txt := "CONFLICT"
+        else if stateCode == 2
+            txt := "SYNC BEAR"
+        else if stateCode == 1
+            txt := "SYNC BULL"
+        else
+            txt := "NEUTRAL"
+    txt
+
+f_lieText(int lieCodeVal, float lieScoreVal, string lang, bool codeLike) =>
+    string scoreTxt = f_num(lieScoreVal)
+    string txt = ""
+    if codeLike
+        if lieCodeVal == 0
+            txt := "L" + scoreTxt
+        else if lieCodeVal == 1
+            txt := "W" + scoreTxt
+        else if lieCodeVal == 2
+            txt := "H" + scoreTxt
+        else
+            txt := "X" + scoreTxt
+    else if lang == "KR"
+        if lieCodeVal == 0
+            txt := "낮음 " + scoreTxt
+        else if lieCodeVal == 1
+            txt := "감시 " + scoreTxt
+        else if lieCodeVal == 2
+            txt := "높음 " + scoreTxt
+        else
+            txt := "극단 " + scoreTxt
+    else
+        if lieCodeVal == 0
+            txt := "LOW " + scoreTxt
+        else if lieCodeVal == 1
+            txt := "WATCH " + scoreTxt
+        else if lieCodeVal == 2
+            txt := "HIGH " + scoreTxt
+        else
+            txt := "EXTREME " + scoreTxt
+    txt
+
+f_whyText(int whyCodeVal, int heruRiskVal, string lang, bool codeLike) =>
+    string txt = "-"
+    if codeLike
+        if whyCodeVal == 1
+            txt := "R↑+V.DRY"
+        else if whyCodeVal == 2
+            txt := "RSI.STR.MM"
+        else if whyCodeVal == 3
+            txt := "DIR.CF"
+        else if whyCodeVal == 4
+            txt := "HER.R" + str.tostring(heruRiskVal)
+        else if whyCodeVal == 5
+            txt := "NO.ENG"
+        else if whyCodeVal == 6
+            txt := "MISS"
+        else if whyCodeVal == 7
+            txt := "SYNC"
+        else if whyCodeVal == 8
+            txt := "OH.RISK"
+        else if whyCodeVal == 9
+            txt := "W.BLK"
+    else if lang == "KR"
+        if whyCodeVal == 1
+            txt := "RSI↑ + VOL건조"
+        else if whyCodeVal == 2
+            txt := "RSI/구조 불일치"
+        else if whyCodeVal == 3
+            txt := "방향충돌"
+        else if whyCodeVal == 4
+            txt := "HERU고위험"
+        else if whyCodeVal == 5
+            txt := "무에너지"
+        else if whyCodeVal == 6
+            txt := "데이터부족"
+        else if whyCodeVal == 7
+            txt := "강공명"
+        else if whyCodeVal == 8
+            txt := "과열위험"
+        else if whyCodeVal == 9
+            txt := "감시/차단"
+    else
+        if whyCodeVal == 1
+            txt := "RSI↑ + VOL DRY"
+        else if whyCodeVal == 2
+            txt := "RSI/STRUCT MISMATCH"
+        else if whyCodeVal == 3
+            txt := "DIR CONFLICT"
+        else if whyCodeVal == 4
+            txt := "HERU RISK"
+        else if whyCodeVal == 5
+            txt := "NO ENERGY"
+        else if whyCodeVal == 6
+            txt := "MISS DATA"
+        else if whyCodeVal == 7
+            txt := "STRONG SYNC"
+        else if whyCodeVal == 8
+            txt := "OVERHEAT RISK"
+        else if whyCodeVal == 9
+            txt := "WATCH/BLOCK"
+    txt
+
+f_countText(int bullCnt, int bearCnt, int neutralCnt, int activeCnt, int missCnt, int offCnt, string mode, string lang) =>
+    bool codeLike = mode == "GPT" or mode == "COMPACT" or lang == "CODE"
+    string txt = ""
+    if mode == "DEBUG"
+        txt := "ACTIVE " + str.tostring(activeCnt) + " / MISS " + str.tostring(missCnt) + " / OFF " + str.tostring(offCnt) + " / BULL " + str.tostring(bullCnt) + " / BEAR " + str.tostring(bearCnt) + " / NEUT " + str.tostring(neutralCnt)
+    else if codeLike
+        txt := "B" + str.tostring(bullCnt) + " S" + str.tostring(bearCnt) + " N" + str.tostring(neutralCnt) + " A" + str.tostring(activeCnt) + " M" + str.tostring(missCnt)
+    else if lang == "KR"
+        txt := "상승 " + str.tostring(bullCnt) + " / 하락 " + str.tostring(bearCnt) + " / 중립 " + str.tostring(neutralCnt) + " / 활성 " + str.tostring(activeCnt) + " / 누락 " + str.tostring(missCnt)
+    else
+        txt := "BULL " + str.tostring(bullCnt) + " / BEAR " + str.tostring(bearCnt) + " / NEUT " + str.tostring(neutralCnt) + " / ACTIVE " + str.tostring(activeCnt) + " / MISS " + str.tostring(missCnt)
+    txt
+
+f_maatMainText(string stateTxt, float scoreVal, int riskVal, int dirVal, int stateVal, int lieScoreVal, string mode, string lang) =>
+    bool codeLike = mode == "GPT" or mode == "COMPACT" or lang == "CODE"
+    string txt = ""
+    if mode == "DEBUG"
+        txt := "ST " + str.tostring(stateVal) + " / DIR " + str.tostring(dirVal) + " / S " + f_num(scoreVal) + " / R " + str.tostring(riskVal) + " / L " + str.tostring(lieScoreVal)
+    else if codeLike
+        txt := stateTxt + " S" + f_num(scoreVal) + " R" + str.tostring(riskVal)
+    else if lang == "KR"
+        txt := stateTxt + " / 점수 " + f_num(scoreVal) + " / 위험 " + str.tostring(riskVal)
+    else
+        txt := stateTxt + " " + f_num(scoreVal) + " R" + str.tostring(riskVal)
+    txt
+
+f_finalText(string stateTxt, int stateVal, int dirVal, float scoreVal, int riskVal, int eventVal, int lieScoreVal, int lieCodeVal, int whyCodeVal, string mode, string lang) =>
+    bool codeLike = mode == "GPT" or mode == "COMPACT" or lang == "CODE"
+    string txt = "BALANCED"
+    if mode == "DEBUG"
+        txt := "DIR " + str.tostring(dirVal) + " / S " + f_num(scoreVal) + " / R " + str.tostring(riskVal) + " / ST " + str.tostring(stateVal) + " / E " + str.tostring(eventVal) + " / L " + str.tostring(lieScoreVal) + " / LC " + str.tostring(lieCodeVal) + " / W " + str.tostring(whyCodeVal)
+    else if codeLike
+        txt := stateTxt + " S" + f_num(scoreVal) + " L" + str.tostring(lieScoreVal) + " W" + str.tostring(whyCodeVal)
+    else if lang == "KR"
+        txt := stateTxt + " / LIE " + str.tostring(lieScoreVal) + " / WHY " + str.tostring(whyCodeVal)
+    else
+        if stateVal == 1
+            txt := "SYNC UP / LOW CONFLICT"
+        else if stateVal == 2
+            txt := "SYNC DOWN / LOW CONFLICT"
+        else if stateVal == 3
+            txt := "CONFLICT CHECK"
+        else if stateVal == 4
+            txt := "LOW ENERGY"
+        else if stateVal == 5
+            txt := "WATCH MODE"
+        else if stateVal == 6
+            txt := stateTxt
+        else
+            txt := "BALANCED"
+    txt
+
+f_tableCell(t, int col, int row, string txt, color txtColor, color bgColor, txtSize) =>
+    if cellWidthOpt > 0 and cellHeightOpt > 0
+        table.cell(t, col, row, txt, width=cellWidthOpt, height=cellHeightOpt, text_color=txtColor, bgcolor=bgColor, text_size=txtSize)
+    else if cellWidthOpt > 0
+        table.cell(t, col, row, txt, width=cellWidthOpt, text_color=txtColor, bgcolor=bgColor, text_size=txtSize)
+    else if cellHeightOpt > 0
+        table.cell(t, col, row, txt, height=cellHeightOpt, text_color=txtColor, bgcolor=bgColor, text_size=txtSize)
+    else
+        table.cell(t, col, row, txt, text_color=txtColor, bgcolor=bgColor, text_size=txtSize)
+
+f_cellPair(t, int row, string leftTxt, string rightTxt, color leftColor, color rightColor, color bgColor, txtSize) =>
+    f_tableCell(t, 0, row, leftTxt, leftColor, bgColor, txtSize)
+    f_tableCell(t, 1, row, rightTxt, rightColor, bgColor, txtSize)
+
+f_flag(float v, bool ok) =>
+    ok and int(math.round(v)) != 0
+
+f_minLabel(int mins) =>
+    string txt = str.tostring(mins) + "M"
+    if mins % 60 == 0
+        txt := str.tostring(int(mins / 60)) + "H"
+    txt
+
+f_parentGateMin(int mainMin, string mode) =>
+    int parentMin = 1440
+    if mode == "MAJOR_GATE"
+        if mainMin <= 60
+            parentMin := 120
+        else if mainMin < 120
+            parentMin := 120
+        else if mainMin < 240
+            parentMin := 240
+        else if mainMin < 360
+            parentMin := 360
+        else if mainMin < 480
+            parentMin := 480
+        else if mainMin < 720
+            parentMin := 720
+        else if mainMin < 960
+            parentMin := 960
+        else if mainMin < 1200
+            parentMin := 1200
+        else
+            parentMin := 1440
+    else
+        if mainMin <= 60
+            parentMin := 120
+        else if mainMin < 120
+            parentMin := 120
+        else if mainMin < 240
+            parentMin := 240
+        else if mainMin < 360
+            parentMin := 360
+        else if mainMin >= 450 and mainMin <= 479
+            parentMin := 480
+        else if mainMin < 480
+            parentMin := 480
+        else if mainMin < 600
+            parentMin := 600
+        else if mainMin < 720
+            parentMin := 720
+        else if mainMin < 840
+            parentMin := 840
+        else if mainMin < 960
+            parentMin := 960
+        else if mainMin < 1080
+            parentMin := 1080
+        else if mainMin < 1200
+            parentMin := 1200
+        else if mainMin < 1320
+            parentMin := 1320
+        else
+            parentMin := 1440
+    parentMin
+
+f_timeText(int unixMs) =>
+    str.format_time(unixMs, "MM-dd HH:mm", syminfo.timezone)
+
+f_countdownText(int ms) =>
+    int safeMs = math.max(ms, 0)
+    int totalMin = int(math.ceil(safeMs / 60000.0))
+    string txt = "0M"
+    if totalMin >= 60
+        int hours = int(math.floor(totalMin / 60))
+        int mins = totalMin - hours * 60
+        txt := str.tostring(hours) + "H " + str.tostring(mins) + "M"
+    else if totalMin > 0
+        txt := str.tostring(totalMin) + "M"
+    txt
+
+f_jsonString(string v) =>
+    string escaped = str.replace_all(v, "\\", "\\\\")
+    escaped := str.replace_all(escaped, "\"", "\\\"")
+    "\"" + escaped + "\""
+
+f_jsonFloat(float v) =>
+    na(v) ? "null" : str.tostring(v)
+
+f_jsonInt(int v) =>
+    na(v) ? "null" : str.tostring(v)
+
+f_jsonBool(bool v) =>
+    v ? "true" : "false"
+
+f_stopwatchJson(string alertType, int mainTfMinVal, string mainTfLabelVal, int parentGateMinVal, string parentGateLabelVal, string phaseVal, int targetTimeVal, int windowStartVal, int windowEndVal, int beforeMinVal, int afterMinVal, float remainingMinVal, int noiseScoreVal, float lieVal, string whyVal, int riskVal, bool volEventVal, string volTypeVal, float rvolVal, string climaxSideVal, bool absorbVal, float deltaVal, float bodyPctVal, string resultVal, int eventTimeVal, int createdAtVal) =>
+    string js = "{"
+    js := js + "\"system\":" + f_jsonString("LYNX")
+    js := js + ",\"module\":" + f_jsonString("MAAT_STOPWATCH")
+    js := js + ",\"alert_type\":" + f_jsonString(alertType)
+    js := js + ",\"symbol\":" + f_jsonString(syminfo.ticker)
+    js := js + ",\"exchange\":" + f_jsonString(syminfo.prefix)
+    js := js + ",\"tf\":" + f_jsonString(timeframe.period)
+    js := js + ",\"main_tf_min\":" + f_jsonInt(mainTfMinVal)
+    js := js + ",\"main_tf_label\":" + f_jsonString(mainTfLabelVal)
+    js := js + ",\"parent_gate_min\":" + f_jsonInt(parentGateMinVal)
+    js := js + ",\"parent_gate_label\":" + f_jsonString(parentGateLabelVal)
+    js := js + ",\"phase\":" + f_jsonString(phaseVal)
+    js := js + ",\"target_time_unix\":" + f_jsonInt(targetTimeVal)
+    js := js + ",\"window_start_unix\":" + f_jsonInt(windowStartVal)
+    js := js + ",\"window_end_unix\":" + f_jsonInt(windowEndVal)
+    js := js + ",\"window_before_min\":" + f_jsonInt(beforeMinVal)
+    js := js + ",\"window_after_min\":" + f_jsonInt(afterMinVal)
+    js := js + ",\"remaining_min\":" + f_jsonFloat(remainingMinVal)
+    js := js + ",\"noise_score\":" + f_jsonInt(noiseScoreVal)
+    js := js + ",\"lie\":" + f_jsonFloat(lieVal)
+    js := js + ",\"why\":" + f_jsonString(whyVal)
+    js := js + ",\"risk\":" + f_jsonInt(riskVal)
+    js := js + ",\"vol_event\":" + f_jsonBool(volEventVal)
+    js := js + ",\"vol_type\":" + f_jsonString(volTypeVal)
+    js := js + ",\"rvol\":" + f_jsonFloat(rvolVal)
+    js := js + ",\"climax_side\":" + f_jsonString(climaxSideVal)
+    js := js + ",\"absorb\":" + f_jsonBool(absorbVal)
+    js := js + ",\"delta\":" + f_jsonFloat(deltaVal)
+    js := js + ",\"body_pct\":" + f_jsonFloat(bodyPctVal)
+    js := js + ",\"result\":" + f_jsonString(resultVal)
+    js := js + ",\"event_time_unix\":" + f_jsonInt(eventTimeVal)
+    js := js + ",\"created_at_unix\":" + f_jsonInt(createdAtVal)
+    js := js + "}"
+    js
+
+bool rpcLinked = f_linked4(rpcDirSrc, rpcScoreSrc, rpcRiskSrc, rpcEventSrc)
+bool structLinked = f_linked4(structDirSrc, structScoreSrc, structRiskSrc, structEventSrc)
+bool volLinked = f_linked4(volDirSrc, volScoreSrc, volRiskSrc, volEventSrc)
+bool heruLinked = f_linked4(heruDirSrc, heruScoreSrc, heruRiskSrc, heruEventSrc)
+bool wenutLinked = f_linked4(wenutDirSrc, wenutScoreSrc, wenutRiskSrc, wenutEventSrc)
+bool rsiLinked = f_linked4(rsiDirSrc, rsiScoreSrc, rsiRiskSrc, rsiEventSrc)
+
+bool rpcOk = rpcLinked and f_valid(rpcDirSrc, rpcScoreSrc, rpcRiskSrc, rpcEventSrc)
+bool structOk = structLinked and f_valid(structDirSrc, structScoreSrc, structRiskSrc, structEventSrc)
+bool volOk = volLinked and f_valid(volDirSrc, volScoreSrc, volRiskSrc, volEventSrc)
+bool heruOk = heruLinked and f_valid(heruDirSrc, heruScoreSrc, heruRiskSrc, heruEventSrc)
+bool wenutOk = wenutLinked and f_valid(wenutDirSrc, wenutScoreSrc, wenutRiskSrc, wenutEventSrc)
+bool rsiOk = rsiLinked and f_valid(rsiDirSrc, rsiScoreSrc, rsiRiskSrc, rsiEventSrc)
+
+int rpcDir = f_dir(rpcDirSrc, rpcOk)
+int structDir = f_dir(structDirSrc, structOk)
+int volDir = f_dir(volDirSrc, volOk)
+int heruDir = f_dir(heruDirSrc, heruOk)
+int wenutDir = f_dir(wenutDirSrc, wenutOk)
+int rsiDir = f_dir(rsiDirSrc, rsiOk)
+
+float rpcScore = f_score(rpcScoreSrc, rpcOk)
+float structScore = f_score(structScoreSrc, structOk)
+float volScore = f_score(volScoreSrc, volOk)
+float heruScore = f_score(heruScoreSrc, heruOk)
+float wenutScore = f_score(wenutScoreSrc, wenutOk)
+float rsiScore = f_score(rsiScoreSrc, rsiOk)
+
+int rpcRisk = f_risk(rpcRiskSrc, rpcOk)
+int structRisk = f_risk(structRiskSrc, structOk)
+int volRisk = f_risk(volRiskSrc, volOk)
+int heruRisk = f_risk(heruRiskSrc, heruOk)
+int wenutRisk = f_risk(wenutRiskSrc, wenutOk)
+int rsiRisk = f_risk(rsiRiskSrc, rsiOk)
+
+int rpcEvent = f_event(rpcEventSrc, rpcOk)
+int structEvent = f_event(structEventSrc, structOk)
+int volEvent = f_event(volEventSrc, volOk)
+int heruEvent = f_event(heruEventSrc, heruOk)
+int wenutEvent = f_event(wenutEventSrc, wenutOk)
+int rsiEvent = f_event(rsiEventSrc, rsiOk)
+
+int availableCount = (rpcOk ? 1 : 0) + (structOk ? 1 : 0) + (volOk ? 1 : 0) + (heruOk ? 1 : 0) + (wenutOk ? 1 : 0) + (rsiOk ? 1 : 0)
+int activeCount = availableCount
+int offCount = (not rpcLinked ? 1 : 0) + (not structLinked ? 1 : 0) + (not volLinked ? 1 : 0) + (not heruLinked ? 1 : 0) + (not wenutLinked ? 1 : 0) + (not rsiLinked ? 1 : 0)
+int missCount = 6 - activeCount
+int bullCount = (rpcOk and rpcDir > 0 ? 1 : 0) + (structOk and structDir > 0 ? 1 : 0) + (volOk and volDir > 0 ? 1 : 0) + (heruOk and heruDir > 0 ? 1 : 0) + (wenutOk and wenutDir > 0 ? 1 : 0) + (rsiOk and rsiDir > 0 ? 1 : 0)
+int bearCount = (rpcOk and rpcDir < 0 ? 1 : 0) + (structOk and structDir < 0 ? 1 : 0) + (volOk and volDir < 0 ? 1 : 0) + (heruOk and heruDir < 0 ? 1 : 0) + (wenutOk and wenutDir < 0 ? 1 : 0) + (rsiOk and rsiDir < 0 ? 1 : 0)
+int neutralCount = (rpcOk and rpcDir == 0 ? 1 : 0) + (structOk and structDir == 0 ? 1 : 0) + (volOk and volDir == 0 ? 1 : 0) + (heruOk and heruDir == 0 ? 1 : 0) + (wenutOk and wenutDir == 0 ? 1 : 0) + (rsiOk and rsiDir == 0 ? 1 : 0)
+
+float scoreSum = (rpcOk ? rpcScore : 0) + (structOk ? structScore : 0) + (volOk ? volScore : 0) + (heruOk ? heruScore : 0) + (wenutOk ? wenutScore : 0) + (rsiOk ? rsiScore : 0)
+float maatScore = availableCount > 0 ? scoreSum / availableCount : 50.0
+int maxRisk = math.max(math.max(math.max(rpcRisk, structRisk), math.max(volRisk, heruRisk)), math.max(wenutRisk, rsiRisk))
+int conflictCount = bullCount > 0 and bearCount > 0 ? math.min(bullCount, bearCount) : 0
+int syncCount = math.max(bullCount, bearCount)
+
+bool hasWatchEvent = rpcEvent == 4 or rpcEvent == 6 or rpcEvent == 7 or structEvent == 4 or structEvent == 6 or structEvent == 7 or volEvent == 4 or volEvent == 6 or volEvent == 7 or heruEvent == 4 or heruEvent == 6 or heruEvent == 7 or wenutEvent == 4 or wenutEvent == 6 or wenutEvent == 7 or rsiEvent == 4 or rsiEvent == 6 or rsiEvent == 7
+bool hasBlockEvent = rpcEvent == 8 or structEvent == 8 or volEvent == 8 or heruEvent == 8 or wenutEvent == 8 or rsiEvent == 8
+bool hasOverheatEvent = rpcEvent == 5 or structEvent == 5 or volEvent == 5 or heruEvent == 5 or wenutEvent == 5 or rsiEvent == 5
+bool overheatState = maxRisk >= 4 or hasOverheatEvent
+bool conflictState = bullCount >= 2 and bearCount >= 2
+bool syncBullState = bullCount >= 4 and bearCount <= 1
+bool syncBearState = bearCount >= 4 and bullCount <= 1
+bool noEnergyState = neutralCount >= 4 or (maatScore >= 45 and maatScore <= 55 and maxRisk <= 1)
+bool watchState = not syncBullState and not syncBearState and hasWatchEvent
+bool watchNow = watchState or hasBlockEvent
+
+int maatState = 0
+if overheatState
+    maatState := 6
+else if conflictState
+    maatState := 3
+else if syncBullState
+    maatState := 1
+else if syncBearState
+    maatState := 2
+else if watchState
+    maatState := 5
+else if noEnergyState
+    maatState := 4
+
+int maatDir = maatState == 1 ? 1 : maatState == 2 ? -1 : 0
+int maatEvent = maatState == 6 ? 5 : maatState == 3 ? 2 : maatState == 4 ? 3 : maatState == 5 ? 4 : (maatState == 1 or maatState == 2) ? 1 : 0
+
+float lieRaw = 0.0
+if rsiDir > 0 and volEvent == 3
+    lieRaw := lieRaw + 20.0
+if rsiDir > 0 and structDir <= 0
+    lieRaw := lieRaw + 12.0
+if rsiDir < 0 and structDir >= 0
+    lieRaw := lieRaw + 12.0
+if volEvent == 9 and volDir > 0 and structDir <= 0
+    lieRaw := lieRaw + 15.0
+if volEvent == 9 and volDir < 0 and structDir >= 0
+    lieRaw := lieRaw + 15.0
+if bullCount >= 2 and bearCount >= 2
+    lieRaw := lieRaw + 20.0
+if heruRisk >= 4
+    lieRaw := lieRaw + 15.0
+if maxRisk >= 4
+    lieRaw := lieRaw + 10.0
+if volEvent == 3 and wenutDir <= 0 and rsiDir == 0
+    lieRaw := lieRaw + 10.0
+if missCount >= 2
+    lieRaw := lieRaw + 10.0
+if missCount >= 3
+    lieRaw := lieRaw + 25.0
+if syncBullState or syncBearState
+    lieRaw := lieRaw - 20.0
+if bullCount >= 4 and bearCount == 0
+    lieRaw := lieRaw - 10.0
+if bearCount >= 4 and bullCount == 0
+    lieRaw := lieRaw - 10.0
+
+float lieScore = f_clamp(lieRaw, 0.0, 100.0)
+int lieCode = 0
+if lieScore < 25
+    lieCode := 0
+else if lieScore < 50
+    lieCode := 1
+else if lieScore < 75
+    lieCode := 2
+else
+    lieCode := 3
+
+int whyCode = 0
+if missCount >= 3
+    whyCode := 6
+else if maxRisk >= 4 and lieScore >= 50
+    whyCode := 8
+else if heruRisk >= 4
+    whyCode := 4
+else if bullCount >= 2 and bearCount >= 2
+    whyCode := 3
+else if rsiDir > 0 and volEvent == 3
+    whyCode := 1
+else if rsiDir != 0 and structDir != rsiDir
+    whyCode := 2
+else if volEvent == 3 and wenutDir <= 0 and rsiDir == 0
+    whyCode := 5
+else if syncBullState or syncBearState
+    whyCode := 7
+else if watchNow
+    whyCode := 9
+else
+    whyCode := 0
+
+int displayStateCode = activeCount == 0 ? -1 : maatState
+int displayEventCode = hasOverheatEvent ? 5 : 0
+string activeColumnMode = debugMode ? "DEBUG" : columnMode
+bool codeDisplay = activeColumnMode == "GPT" or activeColumnMode == "COMPACT" or langMode == "CODE"
+string stateText = f_stateDisplayText(displayStateCode, maxRisk, displayEventCode, lieCode, langMode)
+string lieText = f_lieText(lieCode, lieScore, langMode, codeDisplay)
+string whyText = f_whyText(whyCode, heruRisk, langMode, codeDisplay)
+string countText = f_countText(bullCount, bearCount, neutralCount, activeCount, missCount, offCount, activeColumnMode, langMode)
+string maatMainText = f_maatMainText(stateText, maatScore, maxRisk, maatDir, maatState, int(math.round(lieScore)), activeColumnMode, langMode)
+string finalText = f_finalText(stateText, maatState, maatDir, maatScore, maxRisk, maatEvent, int(math.round(lieScore)), lieCode, whyCode, activeColumnMode, langMode)
+
+bool stopwatchActive = stopwatchMode != "OFF"
+int chartTfSeconds = timeframe.in_seconds(timeframe.period)
+int chartTfMin = math.max(1, int(math.round(float(chartTfSeconds) / 60.0)))
+int mainTfMin = stopwatchMode == "MANUAL_GATE" ? manualMainTfMin : chartTfMin
+int parentGateMin = stopwatchMode == "MANUAL_GATE" ? manualParentGateMin : f_parentGateMin(mainTfMin, parentGateMode)
+string mainTfLabel = f_minLabel(mainTfMin)
+string parentGateLabel = f_minLabel(parentGateMin)
+int targetTimeUnix = na(time_close) ? time : time_close
+int windowStartUnix = targetTimeUnix - windowBeforeMin * 60000
+int windowEndUnix = targetTimeUnix + windowAfterMin * 60000
+int clockUnix = barstate.isrealtime ? timenow : targetTimeUnix
+int remainingMs = stopwatchActive ? int(math.max(targetTimeUnix - clockUnix, 0)) : 0
+float remainingMin = float(remainingMs) / 60000.0
+bool inWindow = stopwatchActive and clockUnix >= windowStartUnix and clockUnix <= windowEndUnix
+bool windowPassed = stopwatchActive and clockUnix > windowEndUnix
+
+bool swVolRelLinked = f_linked(swVolRelSrc)
+bool swVolBuyClimaxLinked = f_linked(swVolBuyClimaxSrc)
+bool swVolSellClimaxLinked = f_linked(swVolSellClimaxSrc)
+bool swVolBuyAbsorbLinked = f_linked(swVolBuyAbsorbSrc)
+bool swVolSellAbsorbLinked = f_linked(swVolSellAbsorbSrc)
+bool swVolDryLinked = f_linked(swVolDrySrc)
+bool swVolDeltaLinked = f_linked(swVolDeltaSrc)
+bool swVolCvdLinked = f_linked(swVolCvdSrc)
+bool swVolBodyLinked = f_linked(swVolBodySrc)
+
+float volRel = swVolRelLinked ? math.max(swVolRelSrc, 0.0) : useManualVolDebug ? manualRvol : 0.0
+bool buyClimaxFlag = f_flag(swVolBuyClimaxSrc, swVolBuyClimaxLinked) or (useManualVolDebug and manualVolType == "CLIMAX BUY")
+bool sellClimaxFlag = f_flag(swVolSellClimaxSrc, swVolSellClimaxLinked) or (useManualVolDebug and manualVolType == "CLIMAX SELL")
+bool buyAbsorbFlag = f_flag(swVolBuyAbsorbSrc, swVolBuyAbsorbLinked) or (useManualVolDebug and manualVolType == "ABSORB BUY")
+bool sellAbsorbFlag = f_flag(swVolSellAbsorbSrc, swVolSellAbsorbLinked) or (useManualVolDebug and manualVolType == "ABSORB SELL")
+bool dryVolFlag = f_flag(swVolDrySrc, swVolDryLinked) or (useManualVolDebug and manualVolType == "DRY")
+float deltaValue = swVolDeltaLinked ? swVolDeltaSrc : useManualVolDebug ? manualDeltaValue : 0.0
+float cvdValue = swVolCvdLinked ? swVolCvdSrc : 0.0
+float bodyPct = swVolBodyLinked ? f_clamp(swVolBodySrc * 100.0, 0.0, 100.0) : useManualVolDebug ? manualBodyPct : 0.0
+string cvdState = useManualVolDebug ? manualCvdState : "-"
+if swVolCvdLinked
+    if math.abs(cvdValue) >= 1.5
+        cvdState := "STRONG"
+    else if cvdValue >= 0.5
+        cvdState := "BULL"
+    else if cvdValue <= -0.5
+        cvdState := "BEAR"
+    else
+        cvdState := "NEUT"
+
+string climaxSide = "-"
+if buyClimaxFlag
+    climaxSide := "BUY"
+else if sellClimaxFlag
+    climaxSide := "SELL"
+else if useManualVolDebug and manualClimaxSide != "-"
+    climaxSide := manualClimaxSide
+else if volEvent == 5 and volDir > 0
+    climaxSide := "BUY"
+else if volEvent == 5 and volDir < 0
+    climaxSide := "SELL"
+
+bool isBusExpansionEvent = volOk and volEvent == 9
+bool isRvolEvent = (swVolRelLinked or useManualVolDebug) and volRel >= minRvolForEvent or isBusExpansionEvent
+bool isClimaxEvent = buyClimaxFlag or sellClimaxFlag or volEvent == 5
+bool absorbFlag = buyAbsorbFlag or sellAbsorbFlag or manualAbsorbFlag or volEvent == 6
+bool isAbsorbCandidate = absorbFlag
+bool isVolEvent = isRvolEvent or isClimaxEvent or isAbsorbCandidate or volRisk >= minVolRiskForEvent
+
+string volType = "-"
+if isClimaxEvent
+    volType := climaxSide == "-" ? "CLIMAX" : "CLIMAX " + climaxSide
+else if isAbsorbCandidate
+    if buyAbsorbFlag
+        volType := "ABSORB BUY"
+    else if sellAbsorbFlag
+        volType := "ABSORB SELL"
+    else
+        volType := "ABSORB"
+else if isRvolEvent
+    volType := "RVOL"
+else if volRisk >= minVolRiskForEvent or (useManualVolDebug and manualVolType == "RISK")
+    volType := "RISK"
+else if dryVolFlag or volEvent == 3
+    volType := "DRY"
+else if useManualVolDebug and manualVolType != "-"
+    volType := manualVolType
+
+bool lowOrDryVol = dryVolFlag or volEvent == 3 or (volOk and volScore <= 40)
+bool bodyCompression = bodyPct > 0.0 and bodyPct <= 25.0
+bool rsiWeakNeutral = rsiOk and ((rsiScore >= 45 and rsiScore <= 55) or rsiRisk >= 2)
+bool lieRiskPresent = lieScore >= 25 or maxRisk >= 3
+bool forceWeakStructUnstable = rpcOk and structOk and rpcScore >= 45 and rpcScore <= 55 and (structRisk >= 3 or structEvent == 8)
+bool structChanged = structOk and not na(structDir[1]) and (structDir != structDir[1] or structEvent != structEvent[1])
+int structFlipCount = (structChanged ? 1 : 0) + (structChanged[1] ? 1 : 0) + (structChanged[2] ? 1 : 0) + (structChanged[3] ? 1 : 0) + (structChanged[4] ? 1 : 0) + (structChanged[5] ? 1 : 0)
+bool repeatedStructChanges = structFlipCount >= 3
+float noiseRaw = 0.0
+if lowOrDryVol
+    noiseRaw := noiseRaw + 18.0
+if bodyCompression
+    noiseRaw := noiseRaw + 16.0
+if rsiWeakNeutral
+    noiseRaw := noiseRaw + 15.0
+if lieRiskPresent
+    noiseRaw := noiseRaw + math.min(25.0, lieScore * 0.25 + float(maxRisk) * 3.0)
+if forceWeakStructUnstable
+    noiseRaw := noiseRaw + 16.0
+if repeatedStructChanges
+    noiseRaw := noiseRaw + 15.0
+int noiseScore = int(math.round(f_clamp(noiseRaw, 0.0, 100.0)))
+bool noiseElevated = noiseScore >= 55
+
+bool structBlocked = structOk and (structEvent == 8 or structRisk >= 4)
+bool structFalseReleaseNow = structBlocked[1] and not structBlocked and (maxRisk >= 3 or lieCode >= 1)
+var bool structReleaseArmed = false
+bool reBlockNow = structBlocked and structReleaseArmed
+if structFalseReleaseNow
+    structReleaseArmed := true
+else if reBlockNow
+    structReleaseArmed := false
+else if not structBlocked and maxRisk <= 1 and lieCode == 0
+    structReleaseArmed := false
+
+bool preBlock = not structBlocked and (structRisk == 3 or hasWatchEvent or whyCode == 9)
+bool recoveryFail = (structRisk >= 4 and rpcScore < 45 and rsiScore < 50) or (maatState == 3 and lieCode >= 2 and not inWindow)
+bool hitThisBar = stopwatchActive and isVolEvent and inWindow
+var int lastHitTarget = na
+if hitThisBar
+    lastHitTarget := targetTimeUnix
+bool targetHadHit = not na(lastHitTarget) and lastHitTarget == targetTimeUnix
+bool earlyVolEvent = stopwatchActive and isVolEvent and clockUnix < windowStartUnix
+bool lateVolEvent = stopwatchActive and isVolEvent and clockUnix > windowEndUnix
+
+string resultStatus = "PENDING"
+if hitThisBar or targetHadHit
+    resultStatus := "HIT"
+else if earlyVolEvent
+    resultStatus := "EARLY"
+else if lateVolEvent
+    resultStatus := "LATE"
+else if windowPassed
+    resultStatus := "MISS"
+else if inWindow
+    resultStatus := "WINDOW_OPEN"
+else if noiseElevated
+    resultStatus := "NOISE_ONLY"
+
+int resultCode = 0
+if resultStatus == "WINDOW_OPEN"
+    resultCode := 1
+else if resultStatus == "HIT"
+    resultCode := 2
+else if resultStatus == "PARTIAL"
+    resultCode := 3
+else if resultStatus == "MISS"
+    resultCode := 4
+else if resultStatus == "EARLY"
+    resultCode := 5
+else if resultStatus == "LATE"
+    resultCode := 6
+else if resultStatus == "NOISE_ONLY"
+    resultCode := 7
+
+string maatPhase = "QUIET"
+if not stopwatchActive
+    maatPhase := "OFF"
+else if hitThisBar
+    maatPhase := "WATCH_RESET"
+else if isClimaxEvent
+    maatPhase := "CLIMAX_EVENT"
+else if isAbsorbCandidate
+    maatPhase := "ABSORB_CANDIDATE"
+else if isVolEvent
+    maatPhase := "VOLUME_TRIGGER"
+else if inWindow
+    maatPhase := "VOL_TRIGGER_WAIT"
+else if recoveryFail
+    maatPhase := "RECOVERY_FAIL"
+else if reBlockNow
+    maatPhase := "RE_BLOCK"
+else if structFalseReleaseNow
+    maatPhase := "FALSE_RELEASE"
+else if structBlocked
+    maatPhase := "STRUCT_BLOCK"
+else if preBlock
+    maatPhase := "PRE_BLOCK"
+else if noiseElevated
+    maatPhase := "NOISE_BUILD"
+else if windowPassed
+    maatPhase := "REBUILD_NEXT_GATE"
+else if remainingMs > 0
+    maatPhase := "COUNTDOWN_GATE"
+else
+    maatPhase := "QUIET"
+
+string modeText = stopwatchActive ? "WATCH" : "OFF"
+string windowText = windowBeforeMin == windowAfterMin ? "+/-" + str.tostring(windowBeforeMin) + "M" : "-" + str.tostring(windowBeforeMin) + "M/+" + str.tostring(windowAfterMin) + "M"
+string countdownText = inWindow ? "OPEN" : f_countdownText(remainingMs)
+string noiseText = noiseElevated ? "BUILD " + str.tostring(noiseScore) : "QUIET " + str.tostring(noiseScore)
+string volDisplayText = isVolEvent ? volType : inWindow ? "WAIT" : "IDLE"
+string resetText = hitThisBar or targetHadHit ? "YES" : windowPassed ? "REBUILD" : "NO"
+int eventTimeUnix = isVolEvent ? clockUnix : targetTimeUnix
+int createdAtUnix = timenow
+
+bool allowStopwatchAlert = enableStopwatchAlerts and stopwatchActive and (not useConfirmedBarOnly or barstate.isconfirmed)
+var int lastWatchStartTarget = na
+var int lastWindowOpenTarget = na
+var int lastVolEventBar = na
+var int lastResetTarget = na
+var int lastMissTarget = na
+bool watchStartPhase = maatPhase == "COUNTDOWN_GATE" or maatPhase == "VOL_TRIGGER_WAIT"
+if allowStopwatchAlert and sendWatchStartAlert and watchStartPhase and (na(lastWatchStartTarget) or lastWatchStartTarget != targetTimeUnix)
+    alert(f_stopwatchJson("MAAT_WATCH_START", mainTfMin, mainTfLabel, parentGateMin, parentGateLabel, maatPhase, targetTimeUnix, windowStartUnix, windowEndUnix, windowBeforeMin, windowAfterMin, remainingMin, noiseScore, lieScore, whyText, maxRisk, isVolEvent, volType, volRel, climaxSide, absorbFlag, deltaValue, bodyPct, resultStatus, eventTimeUnix, createdAtUnix), alert.freq_once_per_bar)
+    lastWatchStartTarget := targetTimeUnix
+if allowStopwatchAlert and sendWindowOpenAlert and inWindow and (na(lastWindowOpenTarget) or lastWindowOpenTarget != targetTimeUnix)
+    alert(f_stopwatchJson("MAAT_WINDOW_OPEN", mainTfMin, mainTfLabel, parentGateMin, parentGateLabel, maatPhase, targetTimeUnix, windowStartUnix, windowEndUnix, windowBeforeMin, windowAfterMin, remainingMin, noiseScore, lieScore, whyText, maxRisk, isVolEvent, volType, volRel, climaxSide, absorbFlag, deltaValue, bodyPct, resultStatus, eventTimeUnix, createdAtUnix), alert.freq_once_per_bar)
+    lastWindowOpenTarget := targetTimeUnix
+if allowStopwatchAlert and sendVolEventAlert and isVolEvent and (na(lastVolEventBar) or lastVolEventBar != bar_index)
+    alert(f_stopwatchJson("MAAT_VOL_EVENT", mainTfMin, mainTfLabel, parentGateMin, parentGateLabel, maatPhase, targetTimeUnix, windowStartUnix, windowEndUnix, windowBeforeMin, windowAfterMin, remainingMin, noiseScore, lieScore, whyText, maxRisk, isVolEvent, volType, volRel, climaxSide, absorbFlag, deltaValue, bodyPct, resultStatus, eventTimeUnix, createdAtUnix), alert.freq_once_per_bar)
+    lastVolEventBar := bar_index
+if allowStopwatchAlert and sendWatchResetAlert and hitThisBar and (na(lastResetTarget) or lastResetTarget != targetTimeUnix)
+    alert(f_stopwatchJson("MAAT_WATCH_RESET", mainTfMin, mainTfLabel, parentGateMin, parentGateLabel, maatPhase, targetTimeUnix, windowStartUnix, windowEndUnix, windowBeforeMin, windowAfterMin, remainingMin, noiseScore, lieScore, whyText, maxRisk, isVolEvent, volType, volRel, climaxSide, absorbFlag, deltaValue, bodyPct, resultStatus, eventTimeUnix, createdAtUnix), alert.freq_once_per_bar)
+    lastResetTarget := targetTimeUnix
+if allowStopwatchAlert and sendMissAlert and windowPassed and not targetHadHit and (na(lastMissTarget) or lastMissTarget != targetTimeUnix)
+    alert(f_stopwatchJson("MAAT_WINDOW_MISS", mainTfMin, mainTfLabel, parentGateMin, parentGateLabel, maatPhase, targetTimeUnix, windowStartUnix, windowEndUnix, windowBeforeMin, windowAfterMin, remainingMin, noiseScore, lieScore, whyText, maxRisk, isVolEvent, volType, volRel, climaxSide, absorbFlag, deltaValue, bodyPct, resultStatus, eventTimeUnix, createdAtUnix), alert.freq_once_per_bar)
+    lastMissTarget := targetTimeUnix
+
+color scoreColor = baseTextColorOpt
+if maatScore >= 60
+    scoreColor := upTextColorOpt
+else if maatScore <= 40
+    scoreColor := downTextColorOpt
+
+color stateColor = baseTextColorOpt
+if lieCode >= 3
+    stateColor := downTextColorOpt
+else if lieCode >= 2
+    stateColor := warnTextColorOpt
+else if maatState == 1
+    stateColor := upTextColorOpt
+else if maatState == 2
+    stateColor := downTextColorOpt
+else if maatState == 3 or maatState == 5
+    stateColor := warnTextColorOpt
+
+color bgCol = na
+if showBg
+    if maatState == 6
+        bgCol := color.new(downPressureBgColorOpt, 88)
+    else if maatState == 3 or maatState == 5
+        bgCol := color.new(warnTextColorOpt, 90)
+    else if maatState == 1
+        bgCol := color.new(upPressureBgColorOpt, 92)
+    else if maatState == 2
+        bgCol := color.new(downPressureBgColorOpt, 92)
+
+plot(maatScore, title="MAAT", color=scoreColor, linewidth=2)
+hline(60, "60 Gate", color=color.new(color.lime, 65))
+hline(50, "50 Center", color=color.new(color.white, 45))
+hline(40, "40 Gate", color=color.new(color.red, 65))
+bgcolor(bgCol, title="MAAT Soft Background")
+
+int T_LAST_COL = 1
+int T_LAST_ROW = 24
+tableTextSize = f_sizeFromScale(tableSizeScale)
+color tableBg = color.new(bodyBgColorOpt, tableBgTransp)
+color headerBg = color.new(headerBgColorOpt, headerBgTransp)
+color rowBg = color.new(bodyBgColorOpt, tableBgTransp)
+color summaryBg = color.new(summaryBgColorOpt, headerBgTransp)
+color riskBg = rowBg
+if lieCode >= 2
+    riskBg := color.new(lieRowBgColorOpt, riskBgTransp)
+else if lieCode == 1
+    riskBg := color.new(warnTextColorOpt, riskBgTransp)
+color lieBg = rowBg
+if lieCode >= 1
+    lieBg := color.new(lieRowBgColorOpt, lieWhyBgTransp)
+if lieCode >= 2
+    lieBg := riskBg
+color whyBg = rowBg
+if whyCode > 0
+    whyBg := color.new(whyRowBgColorOpt, lieWhyBgTransp)
+color finalBg = color.new(finalRowBgColorOpt, headerBgTransp)
+int tableFrameWidth = showTableFrame ? frameWidthOpt : 0
+int tableGridWidth = showTableGrid ? gridWidthOpt : 0
+var table maatTable = table.new(f_pos(tablePosOpt), T_LAST_COL + 1, T_LAST_ROW + 1, bgcolor=tableBg, frame_color=frameColorOpt, frame_width=tableFrameWidth, border_color=gridColorOpt, border_width=tableGridWidth)
+
+if barstate.islast
+    table.clear(maatTable, 0, 0, T_LAST_COL, T_LAST_ROW)
+    if showMaatTable
+        int row = 0
+        f_cellPair(maatTable, row, "MAAT", maatMainText, baseTextColorOpt, stateColor, headerBg, tableTextSize)
+        row := row + 1
+        if showRpcRow
+            f_cellPair(maatTable, row, f_sensorLabel("FORCE", activeColumnMode), f_sensorRowText("FORCE", rpcLinked, rpcOk, rpcDir, rpcScore, rpcRisk, rpcEvent, rpcDirSrc, rpcScoreSrc, rpcRiskSrc, rpcEventSrc, activeColumnMode, langMode, compactRows), neutralTextColorOpt, baseTextColorOpt, rowBg, tableTextSize)
+            row := row + 1
+        if showStructRow
+            f_cellPair(maatTable, row, f_sensorLabel("STRUCT", activeColumnMode), f_sensorRowText("STRUCT", structLinked, structOk, structDir, structScore, structRisk, structEvent, structDirSrc, structScoreSrc, structRiskSrc, structEventSrc, activeColumnMode, langMode, compactRows), neutralTextColorOpt, baseTextColorOpt, rowBg, tableTextSize)
+            row := row + 1
+        if showVolRow
+            f_cellPair(maatTable, row, f_sensorLabel("VOL", activeColumnMode), f_sensorRowText("VOL", volLinked, volOk, volDir, volScore, volRisk, volEvent, volDirSrc, volScoreSrc, volRiskSrc, volEventSrc, activeColumnMode, langMode, compactRows), neutralTextColorOpt, baseTextColorOpt, rowBg, tableTextSize)
+            row := row + 1
+        if showHeruRow
+            f_cellPair(maatTable, row, f_sensorLabel("HERU", activeColumnMode), f_sensorRowText("HERU", heruLinked, heruOk, heruDir, heruScore, heruRisk, heruEvent, heruDirSrc, heruScoreSrc, heruRiskSrc, heruEventSrc, activeColumnMode, langMode, compactRows), neutralTextColorOpt, baseTextColorOpt, rowBg, tableTextSize)
+            row := row + 1
+        if showWenutRow
+            f_cellPair(maatTable, row, f_sensorLabel("WENUT", activeColumnMode), f_sensorRowText("WENUT", wenutLinked, wenutOk, wenutDir, wenutScore, wenutRisk, wenutEvent, wenutDirSrc, wenutScoreSrc, wenutRiskSrc, wenutEventSrc, activeColumnMode, langMode, compactRows), neutralTextColorOpt, baseTextColorOpt, rowBg, tableTextSize)
+            row := row + 1
+        if showRsiRow
+            f_cellPair(maatTable, row, f_sensorLabel("RSI", activeColumnMode), f_sensorRowText("RSI", rsiLinked, rsiOk, rsiDir, rsiScore, rsiRisk, rsiEvent, rsiDirSrc, rsiScoreSrc, rsiRiskSrc, rsiEventSrc, activeColumnMode, langMode, compactRows), neutralTextColorOpt, baseTextColorOpt, rowBg, tableTextSize)
+            row := row + 1
+        if showCountRow
+            f_cellPair(maatTable, row, activeColumnMode == "COMPACT" or activeColumnMode == "GPT" ? "CNT" : "COUNT", countText, neutralTextColorOpt, baseTextColorOpt, summaryBg, tableTextSize)
+            row := row + 1
+        if showLieRow
+            f_cellPair(maatTable, row, "LIE", lieText, neutralTextColorOpt, lieCode >= 2 ? baseTextColorOpt : upTextColorOpt, lieBg, tableTextSize)
+            row := row + 1
+        if showWhyRow
+            f_cellPair(maatTable, row, "WHY", whyText, neutralTextColorOpt, baseTextColorOpt, whyBg, tableTextSize)
+            row := row + 1
+        if showFinalRow
+            f_cellPair(maatTable, row, activeColumnMode == "COMPACT" or activeColumnMode == "GPT" ? "FIN" : "FINAL", finalText, neutralTextColorOpt, baseTextColorOpt, finalBg, tableTextSize)
+            row := row + 1
+        if showStopwatchTable
+            color swBg = rowBg
+            color swTextColor = baseTextColorOpt
+            if resultStatus == "HIT" or maatPhase == "WATCH_RESET"
+                swBg := color.new(upPressureBgColorOpt, riskBgTransp)
+                swTextColor := upTextColorOpt
+            else if resultStatus == "MISS" or resultStatus == "LATE" or resultStatus == "EARLY"
+                swBg := color.new(lieRowBgColorOpt, riskBgTransp)
+                swTextColor := warnTextColorOpt
+            else if inWindow or maatPhase == "VOL_TRIGGER_WAIT"
+                swBg := color.new(warnTextColorOpt, riskBgTransp)
+                swTextColor := warnTextColorOpt
+            f_cellPair(maatTable, row, "MODE", modeText, neutralTextColorOpt, swTextColor, summaryBg, tableTextSize)
+            row := row + 1
+            f_cellPair(maatTable, row, "PHASE", maatPhase, neutralTextColorOpt, swTextColor, swBg, tableTextSize)
+            row := row + 1
+            f_cellPair(maatTable, row, "MAIN_TF", mainTfLabel, neutralTextColorOpt, baseTextColorOpt, rowBg, tableTextSize)
+            row := row + 1
+            f_cellPair(maatTable, row, "PARENT", parentGateLabel, neutralTextColorOpt, baseTextColorOpt, rowBg, tableTextSize)
+            row := row + 1
+            f_cellPair(maatTable, row, "NEXT", f_timeText(targetTimeUnix), neutralTextColorOpt, baseTextColorOpt, rowBg, tableTextSize)
+            row := row + 1
+            f_cellPair(maatTable, row, "WINDOW", windowText, neutralTextColorOpt, baseTextColorOpt, rowBg, tableTextSize)
+            row := row + 1
+            f_cellPair(maatTable, row, "COUNT", countdownText, neutralTextColorOpt, inWindow ? warnTextColorOpt : baseTextColorOpt, rowBg, tableTextSize)
+            row := row + 1
+            f_cellPair(maatTable, row, "NOISE", noiseText, neutralTextColorOpt, noiseElevated ? warnTextColorOpt : baseTextColorOpt, rowBg, tableTextSize)
+            row := row + 1
+            f_cellPair(maatTable, row, "VOL", volDisplayText, neutralTextColorOpt, isVolEvent ? warnTextColorOpt : baseTextColorOpt, rowBg, tableTextSize)
+            row := row + 1
+            f_cellPair(maatTable, row, "RESULT", resultStatus, neutralTextColorOpt, swTextColor, swBg, tableTextSize)
+            row := row + 1
+            f_cellPair(maatTable, row, "RESET", resetText, neutralTextColorOpt, resetText == "YES" ? upTextColorOpt : resetText == "REBUILD" ? warnTextColorOpt : baseTextColorOpt, rowBg, tableTextSize)
+
+alertcondition(useLieAlerts and lieCode >= 2 and barstate.isconfirmed, title="AL MAAT LIE HIGH", message="AL MAAT LIE HIGH")
+alertcondition(useLieAlerts and lieCode >= 3 and barstate.isconfirmed, title="AL MAAT LIE EXTREME", message="AL MAAT LIE EXTREME")
+alertcondition(useLieAlerts and whyCode != whyCode[1] and barstate.isconfirmed, title="AL MAAT WHY CHANGED", message="AL MAAT WHY CHANGED")
+
+plot(float(maatDir), title="AL_MAAT_DIR_CODE", display=display.none)
+plot(maatScore, title="AL_MAAT_SCORE", display=display.none)
+plot(float(maxRisk), title="AL_MAAT_RISK_CODE", display=display.none)
+plot(float(maatState), title="AL_MAAT_STATE_CODE", display=display.none)
+plot(float(syncCount), title="AL_MAAT_SYNC_COUNT", display=display.none)
+plot(float(conflictCount), title="AL_MAAT_CONFLICT_COUNT", display=display.none)
+plot(float(maatEvent), title="AL_MAAT_EVENT_CODE", display=display.none)
+plot(lieScore, title="AL_MAAT_LIE_SCORE", display=display.none)
+plot(float(lieCode), title="AL_MAAT_LIE_CODE", display=display.none)
+plot(float(whyCode), title="AL_MAAT_WHY_CODE", display=display.none)
+plot(float(noiseScore), title="AL_MAAT_STOPWATCH_NOISE_SCORE", display=display.none)
+plot(float(resultCode), title="AL_MAAT_STOPWATCH_RESULT_CODE", display=display.none)
+plot(inWindow ? 1.0 : 0.0, title="AL_MAAT_STOPWATCH_IN_WINDOW", display=display.none)
+plot(isVolEvent ? 1.0 : 0.0, title="AL_MAAT_STOPWATCH_VOL_EVENT", display=display.none)

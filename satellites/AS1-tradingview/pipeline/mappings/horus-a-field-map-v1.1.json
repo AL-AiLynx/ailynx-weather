@@ -1,0 +1,18 @@
+{
+  "layout_id": "HORUS_A",
+  "source_files": ["current/horus-a/AL GENUT A GPT FORCE HETEM GATE.txt", "current/horus-a/AL PER A GPT HETEM MONITOR.txt"],
+  "exporter_candidate": "current/horus-a/AL GENUT A GPT FORCE HETEM GATE.txt (snapshotJsonA, lines 1511-1517)",
+  "common_envelope_mapping": {
+    "schema_version": "new literal as1.v1.1", "satellite_id": "new literal AS1", "platform": "new literal TRADINGVIEW", "layout_id": "new literal HORUS_A", "observer": "current observer=HORUS", "code_version": "current alertVersion",
+    "instrument.ticker_id": "syminfo.tickerid", "instrument.venue": "TBD: derive from syminfo prefix", "instrument.symbol": "TBD: derive from syminfo ticker", "instrument.base_asset": "TBD: operational configuration", "instrument.quote_asset": "TBD: operational configuration", "instrument.source_regime_id": "managed literal coinbase-btcusd-from-2026-07-22; never auto-derived",
+    "timing.timeframe": "timeframe.period", "timing.bar_open_time": "time", "timing.bar_close_time": "TBD: add time_close", "timing.sent_at": "TBD: add exporter timestamp policy",
+    "bar.open": "open", "bar.high": "high", "bar.low": "low", "bar.close": "close", "bar.volume": "volume", "bar.volume_unit": "new literal RAW_EXCHANGE_VOLUME",
+    "packet_type": "new literal BAR_CLOSE_SNAPSHOT", "confirmed": "barstate.isconfirmed", "quality.sensor_quality": "TBD: required source readiness", "quality.freshness": "server-side age evaluation", "quality.valid": "TBD: exporter validation result", "quality.flags": "TBD: collect missing/partial source flags",
+    "dedup_key": "AS1|HORUS_A|ticker_id|source_regime_id|timeframe|bar_close_time|as1.v1.1"
+  },
+  "payload_mapping": {"direction": "AL_GENUT_A_DIRECTION", "state": "AL_GENUT_A_STATE", "risk": "AL_GENUT_A_RISK", "total_score": "AL_GENUT_A_TOTAL_SCORE", "force_score": "AL_GENUT_A_FORCE_SCORE", "force_fade_score": "AL_GENUT_A_FORCE_FADE_SCORE", "flow_shift": "AL_GENUT_A_FLOW_SHIFT", "gate_state": "alertBusGateStateA", "gate_score": "alertBusGateScoreA", "pressure_index": "alertBusPressureIndexA", "block": "AL_GENUT_A_BLOCK_FLAG", "event_code": "AL_GENUT_A_EVENT_CODE", "next_timeframe_hint": "alertBusNextTfA", "mode_code": "alertBusModeCodeA", "active_component_count": "AL_GENUT_A_ACTIVE_COUNT"},
+  "missing_fields": ["venue", "symbol", "base_asset", "quote_asset", "managed source_regime_id", "bar_close_time", "sent_at", "sensor_quality", "freshness", "valid", "flags", "v1.1 dedup_key"],
+  "duplicate_fields": ["GENUT alert() snapshot and alertcondition JSON overlap", "PER A experimental JSON repeats GENUT observation state", "component alertconditions may duplicate GENUT-imported outputs"],
+  "excluded_fields": ["AS2 TrendSpider road/wall/gate calculations", "AS3 OpenMarket order-book and liquidity Zone data", "internal briefing-only GAW and defense metadata"],
+  "notes": ["v1.1 adds envelope structure only; it does not alter HORUS A calculations.", "Use one central exporter and one confirmed-bar snapshot per layout.", "source_regime_id is an operationally managed constant, not a Pine automatic inference."]
+}

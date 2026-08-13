@@ -1,0 +1,10 @@
+{
+  "schema_version": "as1.fusion.v1.1", "satellite_id": "AS1", "instrument_key": "COINBASE:BTCUSD", "source_regime_id": "coinbase-btcusd-from-2026-07-22", "assembly_time": 1785149100000, "fusion_status": "MIXED", "visibility_score": 72,
+  "component_states": [
+    {"layout_id": "HORUS_A", "ticker_id": "COINBASE:BTCUSD", "timeframe": "60", "bar_close_time": 1785148800000, "received_at": 1785148801000, "age_seconds": 300, "sensor_quality": "GOOD", "freshness": "FRESH", "valid": true, "dedup_key": "AS1|HORUS_A|COINBASE:BTCUSD|coinbase-btcusd-from-2026-07-22|60|1785148800000|as1.v1.1"},
+    {"layout_id": "HORUS_B", "ticker_id": "COINBASE:BTCUSD", "timeframe": "60", "bar_close_time": 1785145200000, "received_at": 1785145201500, "age_seconds": 3900, "sensor_quality": "GOOD", "freshness": "AGING", "valid": true, "dedup_key": "AS1|HORUS_B|COINBASE:BTCUSD|coinbase-btcusd-from-2026-07-22|60|1785145200000|as1.v1.1"},
+    {"layout_id": "MAAT", "ticker_id": "COINBASE:BTCUSD", "timeframe": "60", "bar_close_time": 1785148800000, "received_at": 1785148801400, "age_seconds": 300, "sensor_quality": "GOOD", "freshness": "FRESH", "valid": true, "dedup_key": "AS1|MAAT|COINBASE:BTCUSD|coinbase-btcusd-from-2026-07-22|60|1785148800000|as1.v1.1"},
+    {"layout_id": "MAAT2", "ticker_id": "COINBASE:BTCUSD", "timeframe": "240", "bar_close_time": 1785134400000, "received_at": 1785134401600, "age_seconds": 14700, "sensor_quality": "LIMITED", "freshness": "STALE", "valid": true, "dedup_key": "AS1|MAAT2|COINBASE:BTCUSD|coinbase-btcusd-from-2026-07-22|240|1785134400000|as1.v1.1"}
+  ],
+  "stale_layouts": ["MAAT2"], "conflicting_layouts": [], "missing_layouts": []
+}
