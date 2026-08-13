@@ -1,0 +1,29 @@
+{
+  "registry_version": "as1-source-profile-registry.v1.3",
+  "profiles": [
+    {
+      "source_profile_code": "CB_BTCUSD_SPOT_20260722_V1", "canonical_regime_id": "coinbase-btcusd-spot-regime-001", "profile_status": "ACTIVE", "asset_class": "CRYPTO", "instrument_type": "SPOT", "ticker_id": "COINBASE:BTCUSD", "venue": "COINBASE", "symbol": "BTCUSD", "base_asset": "BTC", "quote_asset": "USD",
+      "contract": {"contract_type": "NONE", "contract_id": null, "series_symbol": null, "expiry_kind": "NONE", "expiry_time": null, "settlement_asset": "USD", "contract_multiplier": null, "continuous_series": false, "adjustment_mode": "NONE", "adjustment_applied": false, "roll_state": "NONE", "roll_event": false},
+      "volume_unit": "BASE_ASSET", "volume_basis": "EXCHANGE_NATIVE", "session_calendar_id": "CRYPTO_24_7", "session_timezone": "UTC", "session_policy": {"session_policy_type": "CONTINUOUS_24_7", "session_calendar_id": "CRYPTO_24_7", "session_timezone": "UTC", "default_expectation_state": "EXPECTED", "grace_seconds": 0, "calendar_source": "REGISTRY_STATIC"},
+      "active_from_utc_ms": null, "active_to_utc_ms": null, "active_from_local_date": "2026-07-22", "active_to_local_date": null, "boundary_timezone": "Asia/Seoul", "boundary_precision": "DATE_ONLY", "price_comparison_group": "COINBASE_BTCUSD_SPOT_PRICE_001", "volume_comparison_group": "COINBASE_BTCUSD_SPOT_BASE_VOLUME_001", "allowed_layouts": ["HORUS_A", "HORUS_B", "MAAT", "MAAT2"], "notes": "Production profile copied for fixture resolution."
+    },
+    {
+      "source_profile_code": "OKX_BTCUSDT_PERP_LEGACY_V1", "canonical_regime_id": "okx-btcusdt-perp-regime-001", "profile_status": "HISTORICAL", "asset_class": "CRYPTO", "instrument_type": "PERPETUAL", "ticker_id": "OKX:BTCUSDT.P", "venue": "OKX", "symbol": "BTCUSDT.P", "base_asset": "BTC", "quote_asset": "USDT",
+      "contract": {"contract_type": "LINEAR", "contract_id": null, "series_symbol": null, "expiry_kind": "PERPETUAL", "expiry_time": null, "settlement_asset": "USDT", "contract_multiplier": null, "continuous_series": false, "adjustment_mode": "NONE", "adjustment_applied": false, "roll_state": "NONE", "roll_event": false},
+      "volume_unit": "CONTRACTS", "volume_basis": "EXCHANGE_NATIVE", "session_calendar_id": "CRYPTO_24_7", "session_timezone": "UTC", "session_policy": {"session_policy_type": "CONTINUOUS_24_7", "session_calendar_id": "CRYPTO_24_7", "session_timezone": "UTC", "default_expectation_state": "EXPECTED", "grace_seconds": 0, "calendar_source": "REGISTRY_STATIC"},
+      "active_from_utc_ms": null, "active_to_utc_ms": null, "active_from_local_date": null, "active_to_local_date": "2026-07-21", "boundary_timezone": "Asia/Seoul", "boundary_precision": "DATE_ONLY", "price_comparison_group": "OKX_BTCUSDT_PERP_PRICE_001", "volume_comparison_group": "OKX_BTCUSDT_PERP_CONTRACT_VOLUME_001", "allowed_layouts": ["HORUS_A", "HORUS_B", "MAAT", "MAAT2"], "notes": "Production legacy profile copied for fixture resolution."
+    },
+    {
+      "source_profile_code": "TEST_EQUITY_SESSION_V1", "canonical_regime_id": "test-equity-regime-001", "profile_status": "DRAFT", "asset_class": "EQUITY", "instrument_type": "EQUITY", "ticker_id": "NASDAQ:TEST", "venue": "NASDAQ", "symbol": "TEST", "base_asset": "TEST", "quote_asset": "USD",
+      "contract": {"contract_type": "NONE", "contract_id": null, "series_symbol": null, "expiry_kind": "NONE", "expiry_time": null, "settlement_asset": "USD", "contract_multiplier": null, "continuous_series": false, "adjustment_mode": "NONE", "adjustment_applied": false, "roll_state": "NONE", "roll_event": false},
+      "volume_unit": "BASE_ASSET", "volume_basis": "EXCHANGE_NATIVE", "session_calendar_id": "TEST_US_EQUITY", "session_timezone": "America/New_York", "session_policy": {"session_policy_type": "EXCHANGE_CALENDAR", "session_calendar_id": "TEST_US_EQUITY", "session_timezone": "America/New_York", "default_expectation_state": "UNKNOWN", "grace_seconds": 300, "calendar_source": "TEST_FIXTURE"},
+      "active_from_utc_ms": null, "active_to_utc_ms": null, "active_from_local_date": null, "active_to_local_date": null, "boundary_timezone": "America/New_York", "boundary_precision": "UNKNOWN", "price_comparison_group": "TEST_EQ_PRICE", "volume_comparison_group": "TEST_EQ_VOLUME", "allowed_layouts": ["HORUS_A", "HORUS_B", "MAAT", "MAAT2"], "notes": "TEST/DRAFT profile; never production registry data."
+    },
+    {
+      "source_profile_code": "CME_NQ_FRONT_MONTH_V1", "canonical_regime_id": "cme-nq-front-month-regime-001", "profile_status": "DRAFT", "asset_class": "INDEX", "instrument_type": "FUTURE", "ticker_id": "CME_MINI:NQ1!", "venue": "CME_MINI", "symbol": "NQ1!", "base_asset": "NQ", "quote_asset": "USD",
+      "contract": {"contract_type": "LINEAR", "contract_id": null, "series_symbol": "NQ1!", "expiry_kind": "DATED", "expiry_time": null, "settlement_asset": "USD", "contract_multiplier": 20, "continuous_series": true, "adjustment_mode": "BACK_ADJUSTED", "adjustment_applied": true, "roll_state": "NONE", "roll_event": false},
+      "volume_unit": "CONTRACTS", "volume_basis": "EXCHANGE_NATIVE", "session_calendar_id": "CME_EQUITY_INDEX", "session_timezone": "America/Chicago", "session_policy": {"session_policy_type": "EXCHANGE_CALENDAR", "session_calendar_id": "CME_EQUITY_INDEX", "session_timezone": "America/Chicago", "default_expectation_state": "UNKNOWN", "grace_seconds": 300, "calendar_source": "TEST_FIXTURE"},
+      "active_from_utc_ms": null, "active_to_utc_ms": null, "active_from_local_date": null, "active_to_local_date": null, "boundary_timezone": "America/Chicago", "boundary_precision": "UNKNOWN", "price_comparison_group": "TEST_CME_NQ_PRICE", "volume_comparison_group": "TEST_CME_NQ_VOLUME", "allowed_layouts": ["HORUS_A", "HORUS_B", "MAAT", "MAAT2"], "notes": "TEST/DRAFT front-month identity; observation contracts carry lifecycle state."
+    }
+  ]
+}

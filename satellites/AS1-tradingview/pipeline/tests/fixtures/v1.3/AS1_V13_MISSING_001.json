@@ -1,7 +1,254 @@
 {
-  "fixture_id":"AS1_V13_MISSING_001",
-  "raw_events":[{"schema_version":"as1.v1.3","fixture_id":"AS1_V13_MISSING_001","raw_event_id":"raw-missing-a","satellite_id":"AS1","platform":"TRADINGVIEW","layout_id":"HORUS_A","observer":"HORUS","code_version":"fixture-v1.3","source_profile_code":"CB_BTCUSD_SPOT_20260722_V1","instrument":{"ticker_id":"COINBASE:BTCUSD","venue":"COINBASE","symbol":"BTCUSD","base_asset":"BTC","quote_asset":"USD","asset_class":"CRYPTO","instrument_type":"SPOT","contract":{"contract_type":"NONE","contract_id":null,"series_symbol":null,"expiry_kind":"NONE","expiry_time":null,"settlement_asset":"USD","contract_multiplier":null,"continuous_series":false,"adjustment_mode":"NONE","adjustment_applied":false,"roll_state":"NONE","roll_event":false}},"session_hint":{"session_type":"CONTINUOUS_24_7","session_state":"OPEN","is_market_open":true},"timing":{"timeframe":"60","bar_open_time":1785145200000,"bar_close_time":1785148800000,"sent_at":1785148801000},"bar":{"open":100000,"high":100250,"low":99850,"close":100100,"volume":123.45,"volume_unit":"BASE_ASSET","volume_basis":"EXCHANGE_NATIVE"},"packet_type":"BAR_CLOSE_SNAPSHOT","confirmed":true,"quality":{"sensor_quality":"GOOD","valid":true,"flags":[]},"client_event_key":"AS1|HORUS_A|COINBASE:BTCUSD|60|1785148800000|as1.v1.3","payload":{"direction":"UP"}}],
-  "normalized_observations":[{"normalized_schema_version":"as1.normalized.v1.3","source_schema_version":"as1.v1.3","fixture_id":"AS1_V13_MISSING_001","normalized_observation_id":"norm-missing-a","raw_event_id":"raw-missing-a","satellite_id":"AS1","layout_id":"HORUS_A","observer":"HORUS","code_version":"fixture-v1.3","source_profile_code":"CB_BTCUSD_SPOT_20260722_V1","canonical_regime_id":"coinbase-btcusd-spot-regime-001","instrument":{"ticker_id":"COINBASE:BTCUSD","venue":"COINBASE","symbol":"BTCUSD","base_asset":"BTC","quote_asset":"USD","asset_class":"CRYPTO","instrument_type":"SPOT","contract":{"contract_type":"NONE","contract_id":null,"series_symbol":null,"expiry_kind":"NONE","expiry_time":null,"settlement_asset":"USD","contract_multiplier":null,"continuous_series":false,"adjustment_mode":"NONE","adjustment_applied":false,"roll_state":"NONE","roll_event":false}},"canonical_instrument":{"ticker_id":"COINBASE:BTCUSD","venue":"COINBASE","symbol":"BTCUSD","base_asset":"BTC","quote_asset":"USD","asset_class":"CRYPTO","instrument_type":"SPOT","contract":{"contract_type":"NONE","contract_id":null,"series_symbol":null,"expiry_kind":"NONE","expiry_time":null,"settlement_asset":"USD","contract_multiplier":null,"continuous_series":false,"adjustment_mode":"NONE","adjustment_applied":false,"roll_state":"NONE","roll_event":false}},"series_segment_id":null,"registry_snapshot_version":"as1-source-profile-registry.v1.3","session_hint":{"session_type":"CONTINUOUS_24_7","session_state":"OPEN","is_market_open":true},"session_context":{"validated":true,"session_calendar_id":"CRYPTO_24_7","session_timezone":"UTC","canonical_session_state":"OPEN","expectation_state":"EXPECTED","expected_next_observation_at":1785152400000,"freshness_deadline_at":1785152700000,"validation_flags":[]},"timing":{"timeframe":"60","bar_open_time":1785145200000,"bar_close_time":1785148800000,"sent_at":1785148801000},"bar":{"open":100000,"high":100250,"low":99850,"close":100100,"volume":123.45,"volume_unit":"BASE_ASSET","volume_basis":"EXCHANGE_NATIVE"},"quality":{"sensor_quality":"GOOD","valid":true,"flags":[]},"server_evaluation":{"schema_valid":true,"registry_validation_status":"VALID","registry_validation_flags":[],"received_at":1785148801500,"delivery_delay_seconds":0.5,"age_seconds":300,"freshness":"FRESH","accepted":true,"quarantine_reason":null},"dedup_key":"dedup-missing-a","payload":{"direction":"UP"}}],
-  "fusion_snapshot":{"schema_version":"as1.fusion.v1.3","fixture_id":"AS1_V13_MISSING_001","satellite_id":"AS1","instrument_key":"COINBASE:BTCUSD","assembly_time":1785149100000,"fusion_status":"INSUFFICIENT","visibility_score":50,"visibility_state":"INSUFFICIENT","visibility_formula_version":"AS1_VIS_V1","visibility_breakdown":{"expected_count":2,"not_expected_count":2,"fresh_count":1,"aging_count":0,"stale_count":0,"missing_count":1,"invalid_count":0,"base_visibility":50.0,"coherence_factor":1.0,"component_scores":{"HORUS_A":100,"HORUS_B":0,"MAAT":null,"MAAT2":null},"rounding_mode":"DECIMAL_HALF_UP"},"component_states":[{"layout_id":"HORUS_A","normalized_observation_id":"norm-missing-a","raw_event_id":"raw-missing-a","ticker_id":"COINBASE:BTCUSD","canonical_regime_id":"coinbase-btcusd-spot-regime-001","timeframe":"60","bar_close_time":1785148800000,"received_at":1785148801500,"expectation_state":"EXPECTED","age_seconds":300,"sensor_quality":"GOOD","freshness":"FRESH","valid":true,"dedup_key":"dedup-missing-a","contract_id":null,"series_segment_id":null}],"expected_layouts":["HORUS_A","HORUS_B"],"not_expected_layouts":["MAAT","MAAT2"],"missing_layouts":["HORUS_B"],"stale_layouts":[],"invalid_layouts":[],"conflicting_layouts":[],"flags":["PARTIAL_EXPECTED_SET","EXPECTED_COMPONENT_MISSING","INSUFFICIENT_COMPARABLE_COMPONENTS"]},
-  "expected_assertions":{"visibility_score":50,"visibility_state":"INSUFFICIENT"}
+  "fixture_id": "AS1_V13_MISSING_001",
+  "raw_events": [
+    {
+      "schema_version": "as1.v1.3",
+      "satellite_id": "AS1",
+      "platform": "TRADINGVIEW",
+      "layout_id": "HORUS_A",
+      "observer": "HORUS",
+      "code_version": "fixture-v1.3",
+      "source_profile_code": "CB_BTCUSD_SPOT_20260722_V1",
+      "instrument": {
+        "ticker_id": "COINBASE:BTCUSD",
+        "venue": "COINBASE",
+        "symbol": "BTCUSD",
+        "base_asset": "BTC",
+        "quote_asset": "USD",
+        "asset_class": "CRYPTO",
+        "instrument_type": "SPOT",
+        "contract": {
+          "contract_type": "NONE",
+          "contract_id": null,
+          "series_symbol": null,
+          "expiry_kind": "NONE",
+          "expiry_time": null,
+          "settlement_asset": "USD",
+          "contract_multiplier": null,
+          "continuous_series": false,
+          "adjustment_mode": "NONE",
+          "adjustment_applied": false,
+          "roll_state": "NONE",
+          "roll_event": false
+        }
+      },
+      "session_hint": {
+        "session_type": "CONTINUOUS_24_7",
+        "session_state": "OPEN",
+        "is_market_open": true
+      },
+      "timing": {
+        "timeframe": "60",
+        "bar_open_time": 1785145200000,
+        "bar_close_time": 1785148800000,
+        "sent_at": 1785148801000
+      },
+      "bar": {
+        "open": 100000,
+        "high": 100250,
+        "low": 99850,
+        "close": 100100,
+        "volume": 123.45,
+        "volume_unit": "BASE_ASSET",
+        "volume_basis": "EXCHANGE_NATIVE"
+      },
+      "packet_type": "BAR_CLOSE_SNAPSHOT",
+      "confirmed": true,
+      "quality": {
+        "sensor_quality": "GOOD",
+        "valid": true,
+        "flags": []
+      },
+      "client_event_key": "AS1|HORUS_A|COINBASE:BTCUSD|60|1785148800000|as1.v1.3",
+      "payload": {
+        "direction": "UP"
+      }
+    }
+  ],
+  "normalized_observations": [
+    {
+      "normalized_schema_version": "as1.normalized.v1.3",
+      "source_schema_version": "as1.v1.3",
+      "normalized_observation_id": "norm-missing-a",
+      "raw_event_id": "raw-missing-a",
+      "satellite_id": "AS1",
+      "layout_id": "HORUS_A",
+      "observer": "HORUS",
+      "code_version": "fixture-v1.3",
+      "source_profile_code": "CB_BTCUSD_SPOT_20260722_V1",
+      "canonical_regime_id": "coinbase-btcusd-spot-regime-001",
+      "instrument": {
+        "ticker_id": "COINBASE:BTCUSD",
+        "venue": "COINBASE",
+        "symbol": "BTCUSD",
+        "base_asset": "BTC",
+        "quote_asset": "USD",
+        "asset_class": "CRYPTO",
+        "instrument_type": "SPOT",
+        "contract": {
+          "contract_type": "NONE",
+          "contract_id": null,
+          "series_symbol": null,
+          "expiry_kind": "NONE",
+          "expiry_time": null,
+          "settlement_asset": "USD",
+          "contract_multiplier": null,
+          "continuous_series": false,
+          "adjustment_mode": "NONE",
+          "adjustment_applied": false,
+          "roll_state": "NONE",
+          "roll_event": false
+        }
+      },
+      "canonical_instrument": {
+        "ticker_id": "COINBASE:BTCUSD",
+        "venue": "COINBASE",
+        "symbol": "BTCUSD",
+        "base_asset": "BTC",
+        "quote_asset": "USD",
+        "asset_class": "CRYPTO",
+        "instrument_type": "SPOT",
+        "contract": {
+          "contract_type": "NONE",
+          "contract_id": null,
+          "series_symbol": null,
+          "expiry_kind": "NONE",
+          "expiry_time": null,
+          "settlement_asset": "USD",
+          "contract_multiplier": null,
+          "continuous_series": false,
+          "adjustment_mode": "NONE",
+          "adjustment_applied": false,
+          "roll_state": "NONE",
+          "roll_event": false
+        }
+      },
+      "series_segment_id": null,
+      "registry_snapshot_version": "as1-source-profile-registry.v1.3",
+      "session_hint": {
+        "session_type": "CONTINUOUS_24_7",
+        "session_state": "OPEN",
+        "is_market_open": true
+      },
+      "session_context": {
+        "validated": true,
+        "session_calendar_id": "CRYPTO_24_7",
+        "session_timezone": "UTC",
+        "canonical_session_state": "OPEN",
+        "expectation_state": "EXPECTED",
+        "expected_next_observation_at": 1785152400000,
+        "freshness_deadline_at": 1785152700000,
+        "validation_flags": []
+      },
+      "timing": {
+        "timeframe": "60",
+        "bar_open_time": 1785145200000,
+        "bar_close_time": 1785148800000,
+        "sent_at": 1785148801000
+      },
+      "bar": {
+        "open": 100000,
+        "high": 100250,
+        "low": 99850,
+        "close": 100100,
+        "volume": 123.45,
+        "volume_unit": "BASE_ASSET",
+        "volume_basis": "EXCHANGE_NATIVE"
+      },
+      "quality": {
+        "sensor_quality": "GOOD",
+        "valid": true,
+        "flags": []
+      },
+      "server_evaluation": {
+        "schema_valid": true,
+        "registry_validation_status": "VALID",
+        "registry_validation_flags": [],
+        "received_at": 1785148801500,
+        "delivery_delay_seconds": 0.5,
+        "age_seconds": 300,
+        "freshness": "FRESH",
+        "accepted": true,
+        "quarantine_reason": null
+      },
+      "dedup_key": "dedup-missing-a",
+      "payload": {
+        "direction": "UP"
+      }
+    }
+  ],
+  "fusion_snapshot": {
+    "schema_version": "as1.fusion.v1.3",
+    "satellite_id": "AS1",
+    "instrument_key": "COINBASE:BTCUSD",
+    "assembly_time": 1785149100000,
+    "fusion_status": "INSUFFICIENT",
+    "visibility_score": 50,
+    "visibility_state": "INSUFFICIENT",
+    "visibility_formula_version": "AS1_VIS_V1",
+    "visibility_breakdown": {
+      "expected_count": 2,
+      "not_expected_count": 0,
+      "fresh_count": 1,
+      "aging_count": 0,
+      "stale_count": 0,
+      "missing_count": 1,
+      "invalid_count": 0,
+      "base_visibility": 50.0,
+      "coherence_factor": 1.0,
+      "component_scores": {
+        "HORUS_A": 100,
+        "HORUS_B": 0,
+        "MAAT": null,
+        "MAAT2": null
+      },
+      "rounding_mode": "DECIMAL_HALF_UP"
+    },
+    "component_states": [
+      {
+        "layout_id": "HORUS_A",
+        "normalized_observation_id": "norm-missing-a",
+        "raw_event_id": "raw-missing-a",
+        "ticker_id": "COINBASE:BTCUSD",
+        "canonical_regime_id": "coinbase-btcusd-spot-regime-001",
+        "timeframe": "60",
+        "bar_close_time": 1785148800000,
+        "received_at": 1785148801500,
+        "expectation_state": "EXPECTED",
+        "age_seconds": 300,
+        "sensor_quality": "GOOD",
+        "freshness": "FRESH",
+        "valid": true,
+        "dedup_key": "dedup-missing-a",
+        "contract_id": null,
+        "series_segment_id": null
+      }
+    ],
+    "expected_layouts": [
+      "HORUS_A",
+      "HORUS_B"
+    ],
+    "not_expected_layouts": [],
+    "missing_layouts": [
+      "HORUS_B"
+    ],
+    "stale_layouts": [],
+    "invalid_layouts": [],
+    "conflicting_layouts": [],
+    "flags": [
+      "PARTIAL_EXPECTED_SET",
+      "EXPECTED_COMPONENT_MISSING",
+      "INSUFFICIENT_COMPARABLE_COMPONENTS"
+    ]
+  },
+  "expected_assertions": {
+    "visibility_score": 50,
+    "visibility_state": "INSUFFICIENT"
+  },
+  "simulated_ingestion": [
+    {
+      "raw_event_index": 0,
+      "raw_event_id": "raw-missing-a"
+    }
+  ]
 }
