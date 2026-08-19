@@ -1,0 +1,7 @@
+project_id = "ailynx-weather"
+
+[functions.as1-weather-read]
+enabled = true
+verify_jwt = false
+import_map = "./functions/as1-weather-read/deno.json"
+entrypoint = "./functions/as1-weather-read/index.ts"
