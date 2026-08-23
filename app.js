@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_DATA_MODE = "HORUS_SAMPLE";
+const APP_DATA_MODE = "AS1_LIVE";
 
 /*
   AiLynx Bitcoin Weather
@@ -37,8 +37,10 @@ const FALLBACK_DATA = {
 };
 
 let weatherData = FALLBACK_DATA;
+let baselineWeatherData = FALLBACK_DATA;
 let hasLoadedWeatherData = false;
 let freshnessIntervalId = null;
+let as1LiveRequestPromise = null;
 
 const STATUS_CLASSES = [
   "status-fresh",
@@ -102,7 +104,8 @@ async function loadWeatherData() {
       );
     }
 
-    weatherData = data;
+    baselineWeatherData = data;
+    weatherData = baselineWeatherData;
     hasLoadedWeatherData = true;
 
     console.log(
@@ -115,7 +118,8 @@ async function loadWeatherData() {
     );
 
     if (!hasLoadedWeatherData) {
-      weatherData = FALLBACK_DATA;
+      baselineWeatherData = FALLBACK_DATA;
+      weatherData = baselineWeatherData;
     }
   }
 }
@@ -275,6 +279,76 @@ async function applyHorusSampleOverlay() {
 }
 
 
+async function applyAs1LiveOverlay() {
+  if (APP_DATA_MODE !== "AS1_LIVE") {
+    return false;
+  }
+
+  if (as1LiveRequestPromise) {
+    return as1LiveRequestPromise;
+  }
+
+  as1LiveRequestPromise = (async () => {
+    try {
+      const liveClient = await import(
+        "./as1-live-client.js"
+      );
+      const result = await liveClient
+        .fetchAs1LiveObservation();
+
+      if (!result.applied) {
+        console.warn(
+          "AiLynx AS1 Live 데이터 미적용:",
+          result.reason
+        );
+        return false;
+      }
+
+      weatherData = {
+        ...weatherData,
+        mode: "AS1_LIVE",
+        price: result.price,
+        updatedAt: result.receivedAt,
+        mainTimeframe: result.timeframe,
+        as1Live: {
+          freshness: result.freshness,
+          barCloseTime: result.barCloseTime
+        }
+      };
+
+      console.log(
+        "AiLynx AS1 Live 4H 데이터 적용 성공"
+      );
+      return true;
+    } catch {
+      console.warn(
+        "AiLynx AS1 Live client를 사용할 수 없습니다."
+      );
+      return false;
+    }
+  })();
+
+  try {
+    return await as1LiveRequestPromise;
+  } finally {
+    as1LiveRequestPromise = null;
+  }
+}
+
+
+async function applyConfiguredOverlay() {
+  if (APP_DATA_MODE === "AS1_LIVE") {
+    return applyAs1LiveOverlay();
+  }
+
+  if (APP_DATA_MODE === "HORUS_SAMPLE") {
+    await applyHorusSampleOverlay();
+  }
+
+  return false;
+}
+
+
 function formatUpdatedAt(value) {
   const date = parseUpdatedAt(value);
 
@@ -371,6 +445,65 @@ function getFreshnessStatus() {
 
   if (elapsedMinutes === null) {
     return { status: "error", text: "● DATA ERROR" };
+  }
+
+  if (
+    weatherData.mode === "AS1_LIVE" &&
+    weatherData.as1Live
+  ) {
+    const receivedAt =
+      parseUpdatedAt(weatherData.updatedAt);
+    const ageSeconds = receivedAt
+      ? Math.max(
+        0,
+        Math.floor(
+          (Date.now() - receivedAt.getTime()) / 1000
+        )
+      )
+      : null;
+    let liveState =
+      weatherData.as1Live.freshness;
+
+    if (ageSeconds !== null) {
+      let elapsedState;
+
+      if (ageSeconds <= 4.5 * 60 * 60) {
+        elapsedState = "FRESH";
+      } else if (ageSeconds <= 8.5 * 60 * 60) {
+        elapsedState = "AGING";
+      } else if (ageSeconds <= 24 * 60 * 60) {
+        elapsedState = "STALE";
+      } else {
+        elapsedState = "EXPIRED";
+      }
+
+      const freshnessRank = {
+        FRESH: 0,
+        AGING: 1,
+        STALE: 2,
+        EXPIRED: 3
+      };
+
+      if (
+        freshnessRank[elapsedState] >
+        freshnessRank[liveState]
+      ) {
+        liveState = elapsedState;
+      }
+    }
+
+    const liveStatus = {
+      FRESH: "fresh",
+      AGING: "delay",
+      STALE: "stale",
+      EXPIRED: "expired"
+    }[liveState] || "error";
+
+    return {
+      status: liveStatus,
+      text:
+        `● LIVE DATA · ${liveState} · ${formatElapsedTime(elapsedMinutes)}`
+    };
   }
 
   const expectedMinutes = getExpectedUpdateMinutes();
@@ -702,7 +835,7 @@ function startFreshnessTimer() {
 */
 async function initializeApp() {
   await loadWeatherData();
-  await applyHorusSampleOverlay();
+  await applyConfiguredOverlay();
   renderApp();
   startFreshnessTimer();
 }
@@ -714,8 +847,13 @@ async function initializeApp() {
 window.addEventListener(
   "online",
   async () => {
-    await loadWeatherData();
-    await applyHorusSampleOverlay();
+    if (APP_DATA_MODE === "AS1_LIVE") {
+      await applyAs1LiveOverlay();
+    } else {
+      await loadWeatherData();
+      await applyConfiguredOverlay();
+    }
+
     renderApp();
   }
 );
