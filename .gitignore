@@ -12,3 +12,6 @@ Thumbs.db
 
 # 편집기 임시 파일
 .vscode/
+
+# Supabase CLI local state
+supabase/.temp/
