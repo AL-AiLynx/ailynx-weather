@@ -5,3 +5,9 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/as1-weather-read/deno.json"
 entrypoint = "./functions/as1-weather-read/index.ts"
+
+[functions.as1-validation-read]
+enabled = true
+verify_jwt = false
+import_map = "./functions/as1-validation-read/deno.json"
+entrypoint = "./functions/as1-validation-read/index.ts"

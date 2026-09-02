@@ -1,5 +1,15 @@
 # AS1 Pipeline Changelog
 
+## as1.v1.4 - 2026-09-02
+
+- Promotes MAAT validation, MAAT2 Hub state, and MAAT2 Time state into distinct Raw Alert packet types.
+- Inserts `packet_type` into `client_event_key` so Hub and Time snapshots from the same MAAT2 bar cannot collide.
+- Keeps `as1.v1.3` live-readable and leaves its Normalized/Fusion contract frozen.
+- Adds confirmed-bar, realtime-only Pine export blocks for the Coinbase BTCUSD 4H/8H/12H/1D profile; every export input defaults to OFF.
+- Prohibits prediction direction and automatic HIT/MISS assignment. MAAT transmits observed validation state; MAAT2 transmits Hub and Time state separately.
+- Adds a strict read-only Supabase projection and additive PWA validation cards that preserve invalid/stale diagnostics.
+- Does not create TradingView Alerts, write live rows, rewrite historical data, deploy Edge Functions/PWA, change GENUT A/B, or change existing MAAT/MAAT2 calculations.
+
 ## as1.v1.3 - 2026-08-13
 
 ### Freeze Gate Final Patch

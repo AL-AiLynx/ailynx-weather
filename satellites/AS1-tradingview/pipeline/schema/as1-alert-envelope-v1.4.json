@@ -1,0 +1,290 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ailynx.local/schemas/as1-alert-envelope-v1.4.json",
+  "title": "AS1 Raw Alert Envelope v1.4",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "satellite_id",
+    "platform",
+    "layout_id",
+    "observer",
+    "code_version",
+    "source_profile_code",
+    "instrument",
+    "session_hint",
+    "timing",
+    "bar",
+    "packet_type",
+    "confirmed",
+    "quality",
+    "client_event_key",
+    "payload"
+  ],
+  "properties": {
+    "schema_version": {"const": "as1.v1.4"},
+    "satellite_id": {"const": "AS1"},
+    "platform": {"const": "TRADINGVIEW"},
+    "layout_id": {"$ref": "as1-common-types-v1.3.json#/$defs/layoutId"},
+    "observer": {"type": "string", "minLength": 1},
+    "code_version": {"type": "string", "minLength": 1},
+    "source_profile_code": {"type": "string", "minLength": 1},
+    "instrument": {"$ref": "as1-common-types-v1.3.json#/$defs/instrument"},
+    "session_hint": {"$ref": "as1-common-types-v1.3.json#/$defs/sessionHint"},
+    "timing": {"$ref": "as1-common-types-v1.3.json#/$defs/timing"},
+    "bar": {"$ref": "as1-common-types-v1.3.json#/$defs/bar"},
+    "packet_type": {
+      "enum": [
+        "BAR_CLOSE_SNAPSHOT",
+        "VALIDATION_SNAPSHOT",
+        "HUB_STATE_SNAPSHOT",
+        "TIME_ENGINE_SNAPSHOT"
+      ]
+    },
+    "confirmed": {"const": true},
+    "quality": {"$ref": "as1-common-types-v1.3.json#/$defs/quality"},
+    "client_event_key": {
+      "type": "string",
+      "pattern": "^AS1\\|(?:HORUS_A|HORUS_B|MAAT|MAAT2)\\|(?:BAR_CLOSE_SNAPSHOT|VALIDATION_SNAPSHOT|HUB_STATE_SNAPSHOT|TIME_ENGINE_SNAPSHOT)\\|[^|]+\\|[^|]+\\|[0-9]+\\|as1\\.v1\\.4$"
+    },
+    "payload": {"type": "object"}
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "layout_id": {"enum": ["HORUS_A", "HORUS_B"]},
+        "observer": {"const": "HORUS"},
+        "packet_type": {"const": "BAR_CLOSE_SNAPSHOT"}
+      }
+    },
+    {
+      "properties": {
+        "layout_id": {"const": "MAAT"},
+        "observer": {"const": "MAAT"},
+        "packet_type": {"const": "VALIDATION_SNAPSHOT"},
+        "payload": {"$ref": "#/$defs/maatPayload"}
+      }
+    },
+    {
+      "properties": {
+        "layout_id": {"const": "MAAT2"},
+        "observer": {"const": "MAAT2_HUB"},
+        "packet_type": {"const": "HUB_STATE_SNAPSHOT"},
+        "payload": {"$ref": "#/$defs/maat2HubPayload"}
+      }
+    },
+    {
+      "properties": {
+        "layout_id": {"const": "MAAT2"},
+        "observer": {"const": "MAAT2_TIME"},
+        "packet_type": {"const": "TIME_ENGINE_SNAPSHOT"},
+        "payload": {"$ref": "#/$defs/maat2TimePayload"}
+      }
+    }
+  ],
+  "$defs": {
+    "sensorState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["linked", "valid", "direction_state_code", "score", "risk_code", "event_code"],
+      "properties": {
+        "linked": {"type": "boolean"},
+        "valid": {"type": "boolean"},
+        "direction_state_code": {"type": "integer", "minimum": -1, "maximum": 1},
+        "score": {"type": "number", "minimum": 0, "maximum": 100},
+        "risk_code": {"type": "integer", "minimum": 0, "maximum": 5},
+        "event_code": {"type": "integer", "minimum": 0, "maximum": 9}
+      }
+    },
+    "scoreSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["structure", "force", "window", "risk"],
+      "properties": {
+        "structure": {"type": "number", "minimum": 0, "maximum": 100},
+        "force": {"type": "number", "minimum": 0, "maximum": 100},
+        "window": {"type": "number", "minimum": 0, "maximum": 100},
+        "risk": {"type": "number", "minimum": 0, "maximum": 100}
+      }
+    },
+    "maatPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "record_status", "validation_outcome", "automatic_hit_miss", "aggregate", "sensors", "stopwatch"],
+      "properties": {
+        "contract_version": {"const": "maat.validation.v1"},
+        "record_status": {"enum": ["OFF", "WATCH", "WINDOW_OPEN", "EVENT_OBSERVED", "RESET"]},
+        "validation_outcome": {"const": "PENDING"},
+        "automatic_hit_miss": {"const": "SUPPRESSED"},
+        "aggregate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state_code", "score", "risk_code", "event_code", "sync_count", "conflict_count", "lie_score", "lie_code", "why_code", "direction_state_code", "direction_semantics"],
+          "properties": {
+            "state_code": {"type": "integer", "minimum": 0, "maximum": 6},
+            "score": {"type": "number", "minimum": 0, "maximum": 100},
+            "risk_code": {"type": "integer", "minimum": 0, "maximum": 5},
+            "event_code": {"type": "integer", "minimum": 0, "maximum": 9},
+            "sync_count": {"type": "integer", "minimum": 0, "maximum": 6},
+            "conflict_count": {"type": "integer", "minimum": 0, "maximum": 6},
+            "lie_score": {"type": "number", "minimum": 0, "maximum": 100},
+            "lie_code": {"type": "integer", "minimum": 0, "maximum": 3},
+            "why_code": {"type": "integer", "minimum": 0, "maximum": 9},
+            "direction_state_code": {"type": "integer", "minimum": -1, "maximum": 1},
+            "direction_semantics": {"const": "OBSERVED_SENSOR_STATE_NOT_PREDICTION"}
+          }
+        },
+        "sensors": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["rpc", "structure", "volume", "heru", "wenut", "rsi"],
+          "properties": {
+            "rpc": {"$ref": "#/$defs/sensorState"},
+            "structure": {"$ref": "#/$defs/sensorState"},
+            "volume": {"$ref": "#/$defs/sensorState"},
+            "heru": {"$ref": "#/$defs/sensorState"},
+            "wenut": {"$ref": "#/$defs/sensorState"},
+            "rsi": {"$ref": "#/$defs/sensorState"}
+          }
+        },
+        "stopwatch": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["phase", "main_tf_minutes", "parent_tf_minutes", "target_time", "window_start", "window_end", "remaining_minutes", "in_window", "noise_score", "volume_event_observed", "volume_type", "rvol"],
+          "properties": {
+            "phase": {"type": "string", "minLength": 1},
+            "main_tf_minutes": {"type": "integer", "minimum": 1},
+            "parent_tf_minutes": {"type": "integer", "minimum": 1},
+            "target_time": {"type": "integer", "minimum": 0},
+            "window_start": {"type": "integer", "minimum": 0},
+            "window_end": {"type": "integer", "minimum": 0},
+            "remaining_minutes": {"type": "number", "minimum": 0},
+            "in_window": {"type": "boolean"},
+            "noise_score": {"type": "integer", "minimum": 0, "maximum": 100},
+            "volume_event_observed": {"type": "boolean"},
+            "volume_type": {"type": "string"},
+            "rvol": {"type": "number", "minimum": 0}
+          }
+        }
+      }
+    },
+    "maat2HubPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "record_status", "validation_outcome", "scores", "phase", "guards", "alerts", "sources", "diagnostics"],
+      "properties": {
+        "contract_version": {"const": "maat2.hub.v1"},
+        "record_status": {"enum": ["WATCH", "WINDOW_OPEN", "FORCE_EVENT", "NOISE_ONLY", "RESET"]},
+        "validation_outcome": {"const": "PENDING"},
+        "scores": {"$ref": "#/$defs/scoreSet"},
+        "phase": {
+          "type": "object", "additionalProperties": false,
+          "required": ["raw_code", "candidate_result_code", "final_result_code"],
+          "properties": {
+            "raw_code": {"type": "integer", "minimum": 0, "maximum": 11},
+            "candidate_result_code": {"type": "integer", "minimum": 0, "maximum": 4},
+            "final_result_code": {"type": "integer", "minimum": 0, "maximum": 4}
+          }
+        },
+        "guards": {"$ref": "#/$defs/guardState"},
+        "alerts": {"$ref": "#/$defs/alertState"},
+        "sources": {
+          "type": "object", "additionalProperties": false,
+          "required": ["was_valid", "true_vol_valid", "expansion_state_code", "peripheral_state_code", "system_partial", "system_invalid", "heru_mode"],
+          "properties": {
+            "was_valid": {"type": "boolean"},
+            "true_vol_valid": {"type": "boolean"},
+            "expansion_state_code": {"type": "integer", "minimum": 0, "maximum": 3},
+            "peripheral_state_code": {"type": "integer", "minimum": 0, "maximum": 3},
+            "system_partial": {"type": "boolean"},
+            "system_invalid": {"type": "boolean"},
+            "heru_mode": {"const": "EXTERNAL_ONLY"}
+          }
+        },
+        "diagnostics": {
+          "type": "object", "additionalProperties": false,
+          "required": ["note_code", "layer_note_code", "filter_note_code", "background_support", "risk_block", "bridge_valid"],
+          "properties": {
+            "note_code": {"type": "integer", "minimum": 0},
+            "layer_note_code": {"type": "integer", "minimum": 0},
+            "filter_note_code": {"type": "integer", "minimum": 0},
+            "background_support": {"type": "boolean"},
+            "risk_block": {"type": "boolean"},
+            "bridge_valid": {"type": "boolean"}
+          }
+        }
+      }
+    },
+    "guardState": {
+      "type": "object", "additionalProperties": false,
+      "required": ["mask", "window", "force", "noise", "reset"],
+      "properties": {
+        "mask": {"type": "integer", "minimum": 0, "maximum": 15},
+        "window": {"type": "boolean"},
+        "force": {"type": "boolean"},
+        "noise": {"type": "boolean"},
+        "reset": {"type": "boolean"}
+      }
+    },
+    "alertState": {
+      "type": "object", "additionalProperties": false,
+      "required": ["mask", "window_open", "force_event", "noise_only", "reset_required"],
+      "properties": {
+        "mask": {"type": "integer", "minimum": 0, "maximum": 15},
+        "window_open": {"type": "boolean"},
+        "force_event": {"type": "boolean"},
+        "noise_only": {"type": "boolean"},
+        "reset_required": {"type": "boolean"}
+      }
+    },
+    "maat2TimePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "record_status", "validation_outcome", "automatic_hit_miss", "prediction_direction", "scores", "hub", "time"],
+      "properties": {
+        "contract_version": {"const": "maat2.time.v1"},
+        "record_status": {"enum": ["WATCH", "PRE_WINDOW", "WINDOW_CANDIDATE", "WINDOW_OPEN", "FORCE_EXPRESSION_CANDIDATE", "NOISE_ONLY", "FALSE_RELEASE", "RESET_REQUIRED"]},
+        "validation_outcome": {"const": "PENDING"},
+        "automatic_hit_miss": {"const": "NOT_IMPLEMENTED"},
+        "prediction_direction": {"const": "NOT_PROVIDED"},
+        "scores": {"$ref": "#/$defs/scoreSet"},
+        "hub": {
+          "type": "object", "additionalProperties": false,
+          "required": ["phase_code", "result_code", "core_state_code", "peripheral_state_code"],
+          "properties": {
+            "phase_code": {"type": "integer", "minimum": 0, "maximum": 11},
+            "result_code": {"type": "integer", "minimum": 0, "maximum": 9},
+            "core_state_code": {"type": "integer", "minimum": 0, "maximum": 3},
+            "peripheral_state_code": {"type": "integer", "minimum": 0, "maximum": 3}
+          }
+        },
+        "time": {
+          "type": "object", "additionalProperties": false,
+          "required": ["score", "state_code", "role_code", "result_code", "why_code", "noise_score", "candidate_tf_minutes", "parent_tf_minutes", "parent_distance_minutes", "window_flag", "reset_flag", "valid", "guard_mask", "alert_mask", "bars_in_state", "state_change_count", "diag_code", "expected_window_start", "expected_window_end"],
+          "properties": {
+            "score": {"type": "integer", "minimum": 0, "maximum": 100},
+            "state_code": {"type": "integer", "minimum": 0, "maximum": 9},
+            "role_code": {"type": "integer", "minimum": 0, "maximum": 9},
+            "result_code": {"type": "integer", "minimum": 0, "maximum": 7},
+            "why_code": {"type": "integer", "minimum": 0, "maximum": 99},
+            "noise_score": {"type": "integer", "minimum": 0, "maximum": 100},
+            "candidate_tf_minutes": {"type": "integer", "minimum": 0},
+            "parent_tf_minutes": {"type": "integer", "minimum": 0},
+            "parent_distance_minutes": {"type": "integer", "minimum": 0},
+            "window_flag": {"type": "boolean"},
+            "reset_flag": {"type": "boolean"},
+            "valid": {"type": "boolean"},
+            "guard_mask": {"type": "integer", "minimum": 0, "maximum": 15},
+            "alert_mask": {"type": "integer", "minimum": 0, "maximum": 15},
+            "bars_in_state": {"type": "integer", "minimum": 0},
+            "state_change_count": {"type": "number", "minimum": 0},
+            "diag_code": {"type": "integer", "minimum": 0},
+            "expected_window_start": {"type": "null"},
+            "expected_window_end": {"type": "null"}
+          }
+        }
+      }
+    }
+  }
+}

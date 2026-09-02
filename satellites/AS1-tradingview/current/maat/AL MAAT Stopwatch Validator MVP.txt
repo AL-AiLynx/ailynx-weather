@@ -125,6 +125,9 @@ float manualDeltaValue = input.float(0.0, "Manual Delta", group=G_STOPWATCH, dis
 string manualCvdState = input.string("-", "Manual CVD State", options=["-", "BULL", "BEAR", "NEUT", "STRONG"], group=G_STOPWATCH, display=display.none)
 float manualBodyPct = input.float(0.0, "Manual Body Pct", minval=0.0, maxval=100.0, group=G_STOPWATCH, display=display.none)
 
+string G_AS1_V14 = "AS1 v1.4 LIVE Export"
+bool enableAs1V14 = input.bool(false, "Enable AS1 v1.4 validation snapshot", group=G_AS1_V14, display=display.none)
+
 f_clamp(float v, float lo, float hi) =>
     math.max(lo, math.min(hi, v))
 
@@ -711,6 +714,9 @@ f_jsonInt(int v) =>
 f_jsonBool(bool v) =>
     v ? "true" : "false"
 
+f_jsonFlagAdd(string current, string flag, bool include) =>
+    include ? current + (str.length(current) > 1 ? "," : "") + f_jsonString(flag) : current
+
 f_stopwatchJson(string alertType, int mainTfMinVal, string mainTfLabelVal, int parentGateMinVal, string parentGateLabelVal, string phaseVal, int targetTimeVal, int windowStartVal, int windowEndVal, int beforeMinVal, int afterMinVal, float remainingMinVal, int noiseScoreVal, float lieVal, string whyVal, int riskVal, bool volEventVal, string volTypeVal, float rvolVal, string climaxSideVal, bool absorbVal, float deltaVal, float bodyPctVal, string resultVal, int eventTimeVal, int createdAtVal) =>
     string js = "{"
     js := js + "\"system\":" + f_jsonString("LYNX")
@@ -1104,6 +1110,37 @@ string volDisplayText = isVolEvent ? volType : inWindow ? "WAIT" : "IDLE"
 string resetText = hitThisBar or targetHadHit ? "YES" : windowPassed ? "REBUILD" : "NO"
 int eventTimeUnix = isVolEvent ? clockUnix : targetTimeUnix
 int createdAtUnix = timenow
+
+// AS1 v1.4 transport-only snapshot. Legacy HIT/EARLY/LATE/MISS is intentionally excluded.
+bool as1ProfileMatch = syminfo.tickerid == "COINBASE:BTCUSD"
+bool as1SupportedTf = timeframe.period == "240" or timeframe.period == "480" or timeframe.period == "720" or timeframe.period == "D" or timeframe.period == "1D" or timeframe.period == "1440"
+int as1ValidSensorCount = (rpcOk ? 1 : 0) + (structOk ? 1 : 0) + (volOk ? 1 : 0) + (heruOk ? 1 : 0) + (wenutOk ? 1 : 0) + (rsiOk ? 1 : 0)
+bool as1SnapshotValid = as1ValidSensorCount >= 4
+string as1SensorQuality = as1ValidSensorCount == 6 ? "GOOD" : as1ValidSensorCount >= 4 ? "LIMITED" : as1ValidSensorCount > 0 ? "WATCH" : "INVALID"
+string as1Flags = "["
+as1Flags := f_jsonFlagAdd(as1Flags, "INVALID_SENSOR_RPC", not rpcOk)
+as1Flags := f_jsonFlagAdd(as1Flags, "INVALID_SENSOR_STRUCTURE", not structOk)
+as1Flags := f_jsonFlagAdd(as1Flags, "INVALID_SENSOR_VOLUME", not volOk)
+as1Flags := f_jsonFlagAdd(as1Flags, "INVALID_SENSOR_HERU", not heruOk)
+as1Flags := f_jsonFlagAdd(as1Flags, "INVALID_SENSOR_WENUT", not wenutOk)
+as1Flags := f_jsonFlagAdd(as1Flags, "INVALID_SENSOR_RSI", not rsiOk)
+as1Flags := f_jsonFlagAdd(as1Flags, "STOPWATCH_OFF", not stopwatchActive)
+as1Flags := f_jsonFlagAdd(as1Flags, "MISSING_VOLUME", na(volume))
+as1Flags := as1Flags + "]"
+string as1RecordStatus = not stopwatchActive ? "OFF" : isVolEvent ? "EVENT_OBSERVED" : inWindow ? "WINDOW_OPEN" : "WATCH"
+string as1EventKey = "AS1|MAAT|VALIDATION_SNAPSHOT|" + syminfo.tickerid + "|" + timeframe.period + "|" + str.tostring(time_close) + "|as1.v1.4"
+string as1SensorRpc = "{\"linked\":" + f_jsonBool(rpcLinked) + ",\"valid\":" + f_jsonBool(rpcOk) + ",\"direction_state_code\":" + f_jsonInt(rpcDir) + ",\"score\":" + f_jsonFloat(rpcScore) + ",\"risk_code\":" + f_jsonInt(rpcRisk) + ",\"event_code\":" + f_jsonInt(rpcEvent) + "}"
+string as1SensorStruct = "{\"linked\":" + f_jsonBool(structLinked) + ",\"valid\":" + f_jsonBool(structOk) + ",\"direction_state_code\":" + f_jsonInt(structDir) + ",\"score\":" + f_jsonFloat(structScore) + ",\"risk_code\":" + f_jsonInt(structRisk) + ",\"event_code\":" + f_jsonInt(structEvent) + "}"
+string as1SensorVol = "{\"linked\":" + f_jsonBool(volLinked) + ",\"valid\":" + f_jsonBool(volOk) + ",\"direction_state_code\":" + f_jsonInt(volDir) + ",\"score\":" + f_jsonFloat(volScore) + ",\"risk_code\":" + f_jsonInt(volRisk) + ",\"event_code\":" + f_jsonInt(volEvent) + "}"
+string as1SensorHeru = "{\"linked\":" + f_jsonBool(heruLinked) + ",\"valid\":" + f_jsonBool(heruOk) + ",\"direction_state_code\":" + f_jsonInt(heruDir) + ",\"score\":" + f_jsonFloat(heruScore) + ",\"risk_code\":" + f_jsonInt(heruRisk) + ",\"event_code\":" + f_jsonInt(heruEvent) + "}"
+string as1SensorWenut = "{\"linked\":" + f_jsonBool(wenutLinked) + ",\"valid\":" + f_jsonBool(wenutOk) + ",\"direction_state_code\":" + f_jsonInt(wenutDir) + ",\"score\":" + f_jsonFloat(wenutScore) + ",\"risk_code\":" + f_jsonInt(wenutRisk) + ",\"event_code\":" + f_jsonInt(wenutEvent) + "}"
+string as1SensorRsi = "{\"linked\":" + f_jsonBool(rsiLinked) + ",\"valid\":" + f_jsonBool(rsiOk) + ",\"direction_state_code\":" + f_jsonInt(rsiDir) + ",\"score\":" + f_jsonFloat(rsiScore) + ",\"risk_code\":" + f_jsonInt(rsiRisk) + ",\"event_code\":" + f_jsonInt(rsiEvent) + "}"
+string as1Payload = "{\"contract_version\":\"maat.validation.v1\",\"record_status\":" + f_jsonString(as1RecordStatus) + ",\"validation_outcome\":\"PENDING\",\"automatic_hit_miss\":\"SUPPRESSED\",\"aggregate\":{\"state_code\":" + f_jsonInt(maatState) + ",\"score\":" + f_jsonFloat(maatScore) + ",\"risk_code\":" + f_jsonInt(maxRisk) + ",\"event_code\":" + f_jsonInt(maatEvent) + ",\"sync_count\":" + f_jsonInt(syncCount) + ",\"conflict_count\":" + f_jsonInt(conflictCount) + ",\"lie_score\":" + f_jsonFloat(lieScore) + ",\"lie_code\":" + f_jsonInt(lieCode) + ",\"why_code\":" + f_jsonInt(whyCode) + ",\"direction_state_code\":" + f_jsonInt(maatDir) + ",\"direction_semantics\":\"OBSERVED_SENSOR_STATE_NOT_PREDICTION\"},\"sensors\":{\"rpc\":" + as1SensorRpc + ",\"structure\":" + as1SensorStruct + ",\"volume\":" + as1SensorVol + ",\"heru\":" + as1SensorHeru + ",\"wenut\":" + as1SensorWenut + ",\"rsi\":" + as1SensorRsi + "},\"stopwatch\":{\"phase\":" + f_jsonString(maatPhase) + ",\"main_tf_minutes\":" + f_jsonInt(mainTfMin) + ",\"parent_tf_minutes\":" + f_jsonInt(parentGateMin) + ",\"target_time\":" + f_jsonInt(targetTimeUnix) + ",\"window_start\":" + f_jsonInt(windowStartUnix) + ",\"window_end\":" + f_jsonInt(windowEndUnix) + ",\"remaining_minutes\":" + f_jsonFloat(remainingMin) + ",\"in_window\":" + f_jsonBool(inWindow) + ",\"noise_score\":" + f_jsonInt(noiseScore) + ",\"volume_event_observed\":" + f_jsonBool(isVolEvent) + ",\"volume_type\":" + f_jsonString(volType) + ",\"rvol\":" + f_jsonFloat(volRel) + "}}"
+string as1Envelope = "{\"schema_version\":\"as1.v1.4\",\"satellite_id\":\"AS1\",\"platform\":\"TRADINGVIEW\",\"layout_id\":\"MAAT\",\"observer\":\"MAAT\",\"code_version\":\"MAAT_STOPWATCH_AS1_V1_4\",\"source_profile_code\":\"CB_BTCUSD_SPOT_20260722_V1\",\"instrument\":{\"ticker_id\":" + f_jsonString(syminfo.tickerid) + ",\"venue\":" + f_jsonString(syminfo.prefix) + ",\"symbol\":" + f_jsonString(syminfo.ticker) + ",\"base_asset\":" + f_jsonString(syminfo.basecurrency) + ",\"quote_asset\":" + f_jsonString(syminfo.currency) + ",\"asset_class\":\"CRYPTO\",\"instrument_type\":\"SPOT\",\"contract\":{\"contract_type\":\"NONE\",\"contract_id\":null,\"series_symbol\":null,\"expiry_kind\":\"NONE\",\"expiry_time\":null,\"settlement_asset\":" + f_jsonString(syminfo.currency) + ",\"contract_multiplier\":null,\"continuous_series\":false,\"adjustment_mode\":\"NONE\",\"adjustment_applied\":false,\"roll_state\":\"NONE\",\"roll_event\":false}},\"session_hint\":{\"session_type\":\"CONTINUOUS_24_7\",\"session_state\":\"OPEN\",\"is_market_open\":true},\"timing\":{\"timeframe\":" + f_jsonString(timeframe.period) + ",\"bar_open_time\":" + f_jsonInt(time) + ",\"bar_close_time\":" + f_jsonInt(time_close) + ",\"sent_at\":" + f_jsonInt(timenow) + "},\"bar\":{\"open\":" + f_jsonFloat(open) + ",\"high\":" + f_jsonFloat(high) + ",\"low\":" + f_jsonFloat(low) + ",\"close\":" + f_jsonFloat(close) + ",\"volume\":" + f_jsonFloat(volume) + ",\"volume_unit\":\"BASE_ASSET\",\"volume_basis\":\"EXCHANGE_NATIVE\"},\"packet_type\":\"VALIDATION_SNAPSHOT\",\"confirmed\":true,\"quality\":{\"sensor_quality\":" + f_jsonString(as1SensorQuality) + ",\"valid\":" + f_jsonBool(as1SnapshotValid) + ",\"flags\":" + as1Flags + "},\"client_event_key\":" + f_jsonString(as1EventKey) + ",\"payload\":" + as1Payload + "}"
+var string lastAs1EventKey = ""
+if enableAs1V14 and as1ProfileMatch and as1SupportedTf and barstate.isconfirmed and barstate.isrealtime and as1EventKey != lastAs1EventKey
+    alert(as1Envelope, alert.freq_once_per_bar_close)
+    lastAs1EventKey := as1EventKey
 
 bool allowStopwatchAlert = enableStopwatchAlerts and stopwatchActive and (not useConfirmedBarOnly or barstate.isconfirmed)
 var int lastWatchStartTarget = na

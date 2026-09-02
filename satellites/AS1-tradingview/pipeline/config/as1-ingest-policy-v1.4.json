@@ -1,0 +1,5 @@
+{
+  "ingest_policy_version": "as1-ingest.v1.4",
+  "accepted_live_raw_schema_versions": ["as1.v1.3", "as1.v1.4"],
+  "historical_readable_versions": ["as1.v1", "as1.v1.1", "as1.v1.2", "as1.v1.3", "as1.v1.4"]
+}

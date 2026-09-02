@@ -1,0 +1,31 @@
+{
+  "mapping_version": "as1-maat2-map.v1.4",
+  "schema_version": "as1.v1.4",
+  "layout_id": "MAAT2",
+  "status": "IMPLEMENTED_DEFAULT_OFF",
+  "packets": [
+    {
+      "observer": "MAAT2_HUB",
+      "packet_type": "HUB_STATE_SNAPSHOT",
+      "code_version": "MAAT2_HUB_V1_1_AS1_V1_4",
+      "payload_contract": "maat2.hub.v1",
+      "payload_sections": ["scores", "phase", "guards", "alerts", "sources", "diagnostics"],
+      "example": "../examples/maat2-hub-state-envelope-v1.4.json"
+    },
+    {
+      "observer": "MAAT2_TIME",
+      "packet_type": "TIME_ENGINE_SNAPSHOT",
+      "code_version": "MAAT2_TIME_V1_AS1_V1_4",
+      "payload_contract": "maat2.time.v1",
+      "payload_sections": ["scores", "hub", "time"],
+      "example": "../examples/maat2-time-engine-envelope-v1.4.json"
+    }
+  ],
+  "field_ownership": {
+    "pine_direct": ["instrument", "session_hint", "timing", "bar", "quality", "packet-specific payload", "client_event_key"],
+    "pine_constants": ["schema_version=as1.v1.4", "satellite_id=AS1", "platform=TRADINGVIEW", "layout_id=MAAT2", "confirmed=true", "source_profile_code=CB_BTCUSD_SPOT_20260722_V1"],
+    "server": ["received_at", "freshness", "strict projection", "event-key reconstruction"]
+  },
+  "separation_rule": "Hub and Time use distinct observer, packet_type, code_version and client_event_key values even on the same bar.",
+  "forbidden": ["prediction direction other than NOT_PROVIDED", "automatic HIT/MISS", "Hub/Time packet fusion at ingest", "calculation changes"]
+}

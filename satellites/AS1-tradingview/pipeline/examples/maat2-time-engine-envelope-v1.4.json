@@ -1,0 +1,51 @@
+{
+  "schema_version": "as1.v1.4",
+  "satellite_id": "AS1",
+  "platform": "TRADINGVIEW",
+  "layout_id": "MAAT2",
+  "observer": "MAAT2_TIME",
+  "code_version": "MAAT2_TIME_V1_AS1_V1_4",
+  "source_profile_code": "CB_BTCUSD_SPOT_20260722_V1",
+  "instrument": {
+    "ticker_id": "COINBASE:BTCUSD", "venue": "COINBASE", "symbol": "BTCUSD", "base_asset": "BTC", "quote_asset": "USD", "asset_class": "CRYPTO", "instrument_type": "SPOT",
+    "contract": {"contract_type": "NONE", "contract_id": null, "series_symbol": null, "expiry_kind": "NONE", "expiry_time": null, "settlement_asset": "USD", "contract_multiplier": null, "continuous_series": false, "adjustment_mode": "NONE", "adjustment_applied": false, "roll_state": "NONE", "roll_event": false},
+    "extensions": {"feed": "design-example"}
+  },
+  "session_hint": {"session_type": "CONTINUOUS_24_7", "session_state": "OPEN", "is_market_open": true},
+  "timing": {"timeframe": "240", "bar_open_time": 1785131100000, "bar_close_time": 1785145500000, "sent_at": 1785145501000},
+  "bar": {"open": 100000, "high": 100250, "low": 99850, "close": 100100, "volume": 123.45, "volume_unit": "BASE_ASSET", "volume_basis": "EXCHANGE_NATIVE"},
+  "packet_type": "TIME_ENGINE_SNAPSHOT",
+  "confirmed": true,
+  "quality": {"sensor_quality": "LIMITED", "valid": true, "flags": ["HERU_EXTERNAL_ONLY", "CORE_EXPANSION_PARTIAL"]},
+  "client_event_key": "AS1|MAAT2|TIME_ENGINE_SNAPSHOT|COINBASE:BTCUSD|240|1785145500000|as1.v1.4",
+  "payload": {
+    "contract_version": "maat2.time.v1",
+    "record_status": "WINDOW_OPEN",
+    "validation_outcome": "PENDING",
+    "automatic_hit_miss": "NOT_IMPLEMENTED",
+    "prediction_direction": "NOT_PROVIDED",
+    "scores": {"structure": 72, "force": 58, "window": 67, "risk": 31},
+    "hub": {"phase_code": 6, "result_code": 1, "core_state_code": 2, "peripheral_state_code": 1},
+    "time": {
+      "score": 66,
+      "state_code": 5,
+      "role_code": 4,
+      "result_code": 3,
+      "why_code": 40,
+      "noise_score": 19,
+      "candidate_tf_minutes": 240,
+      "parent_tf_minutes": 480,
+      "parent_distance_minutes": 240,
+      "window_flag": true,
+      "reset_flag": false,
+      "valid": true,
+      "guard_mask": 3,
+      "alert_mask": 1,
+      "bars_in_state": 1,
+      "state_change_count": 7,
+      "diag_code": 0,
+      "expected_window_start": null,
+      "expected_window_end": null
+    }
+  }
+}

@@ -1,6 +1,6 @@
 # AS1 TradingView -> Supabase Pipeline
 
-The current active design contract is **as1.v1.3**. The v1, v1.1, and v1.2 files remain preserved as historical records and regression targets.
+The active Raw Alert wire contract is **as1.v1.4**. It additively promotes MAAT validation, MAAT2 Hub, and MAAT2 Time packets while preserving **as1.v1.3** as the frozen Normalized/Fusion baseline. The v1-v1.2 files remain historical regression targets.
 
 ## Current operating profile
 
@@ -14,29 +14,30 @@ Coinbase spot and legacy OKX perpetual must not be automatically price- or volum
 
 ## Current implementation status
 
-This repository contains the v1.3 contract, schemas, Registry/runtime/ingest configuration, mappings, and executable fixtures. Pine Exporter integration, TradingView Alert creation, Supabase Registry storage, Edge Function validation, live data storage, webhook delivery, and credentials are not implemented. The next step is **HORUS A Exporter patch design**.
+This repository contains the v1.4 Raw schema, compatibility policy, executable examples, MAAT/MAAT2 Pine export blocks, a read-only Supabase Edge Function, and additive PWA cards. Export inputs default to OFF. No TradingView Alert, webhook, production deployment, credential, historical-row rewrite, or live row is created by this revision.
 
-- Active contract = `as1.v1.3`
-- Hardening = PASS
-- Final consistency patch = PASS
-- V1_3_FIXTURE_VALIDATION = PASS
-- LEGACY_V1_2_REGRESSION_AUDIT = PASS
-- Contract status = FROZEN
-- Production/Test schema isolation = PASS
-- Fixture registry validation = PASS
-- Async MTF fixture validation = PASS
-- Age recomputation = PASS
-- Negative mutation tests = PASS
-- Pine Exporter = NOT IMPLEMENTED
-- TradingView Alert = NOT CREATED
-- Supabase Edge Function = NOT IMPLEMENTED
-- Live Supabase ingest = NOT STARTED
+- Raw Alert contract = `as1.v1.4`
+- Normalized/Fusion baseline = `as1.v1.3` (FROZEN)
+- Accepted live Raw versions = `as1.v1.3`, `as1.v1.4`
+- Layout/observer/packet matrix validation = PASS
+- Same-bar packet key separation = PASS
+- Prediction and automatic HIT/MISS suppression = PASS
+- v1.3 fixture and v1.2 legacy regression = PASS
+- MAAT/MAAT2 Pine export code = IMPLEMENTED, DEFAULT OFF
+- Supabase validation read function = IMPLEMENTED, NOT DEPLOYED
+- PWA validation cards = IMPLEMENTED, NOT DEPLOYED
+- TradingView Alert/webhook/live ingest = NOT ACTIVATED
 
-Next step: **HORUS A Exporter Patch**.
+## v1.4 Raw promotion files
 
-No Pine source under `archive` or `current` is modified by this revision.
+- `schema/as1-alert-envelope-v1.4.json` — packet-specific Raw envelope
+- `schema/as1-ingest-policy-v1.4.json` and `config/as1-ingest-policy-v1.4.json` — additive live compatibility
+- `examples/*-envelope-v1.4.json` — MAAT, MAAT2 Hub, and MAAT2 Time examples
+- `mappings/*-field-map-v1.4.json` — exporter field ownership
+- `tests/validate-v1.4-alerts.py` — schema, matrix, key, and forbidden-semantics checks
+- `../docs/AS1_MAAT_MAAT2_ALERT_CONTRACT_v1.4.md`
 
-## v1.3 files
+## Preserved v1.3 baseline
 
 - `schema/*-v1.3.json` — common, Raw, Normalized, Fusion, Registry, and ingest-policy schemas
 - `config/*-v1.3.json` — Registry, runtime defaults, and protocol compatibility
