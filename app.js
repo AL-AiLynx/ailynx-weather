@@ -41,6 +41,9 @@ let baselineWeatherData = FALLBACK_DATA;
 let hasLoadedWeatherData = false;
 let freshnessIntervalId = null;
 let as1LiveRequestPromise = null;
+let validationCardsData = null;
+let validationTimeframe = "240";
+let validationRequestPromise = null;
 
 const STATUS_CLASSES = [
   "status-fresh",
@@ -349,6 +352,33 @@ async function applyConfiguredOverlay() {
 }
 
 
+async function applyAs1ValidationCards(timeframe = validationTimeframe) {
+  if (validationRequestPromise) {
+    return validationRequestPromise;
+  }
+
+  validationRequestPromise = (async () => {
+    try {
+      const client = await import("./as1-validation-client.js");
+      validationTimeframe = timeframe;
+      validationCardsData = await client.fetchValidationCards({timeframe});
+      renderValidationCards();
+      return true;
+    } catch {
+      validationCardsData = null;
+      renderValidationCards();
+      return false;
+    }
+  })();
+
+  try {
+    return await validationRequestPromise;
+  } finally {
+    validationRequestPromise = null;
+  }
+}
+
+
 function formatUpdatedAt(value) {
   const date = parseUpdatedAt(value);
 
@@ -373,6 +403,148 @@ function formatUpdatedAt(value) {
 
   return `${values.year}. ${values.month}. ${values.day}. ` +
     `${values.hour}:${values.minute}`;
+}
+
+
+const MAAT_STATE_TEXT = [
+  "균형",
+  "상승 동기화",
+  "하락 동기화",
+  "충돌",
+  "에너지 부족",
+  "관측",
+  "과열"
+];
+
+const TIME_ROLE_TEXT = [
+  "없음",
+  "부모 문맥",
+  "초기 후보",
+  "주인공 후보",
+  "주인공 활성",
+  "미세 확인",
+  "거짓 해제",
+  "노이즈",
+  "리셋",
+  "무효"
+];
+
+const TIME_WHY_TEXT = {
+  0: "특이 사유 없음",
+  10: "구조만 활성",
+  20: "힘 형성",
+  30: "시간창 형성",
+  40: "구조·힘 동기화",
+  41: "힘·시간창 동기화",
+  42: "구조·시간창 동기화",
+  50: "전체 동기화",
+  61: "힘 약함",
+  70: "위험 차단",
+  80: "부모 시간축 불일치",
+  81: "일부 source",
+  82: "source 무효",
+  90: "노이즈",
+  91: "거짓 해제",
+  92: "리셋"
+};
+
+function setValidationText(id, value) {
+  const element = document.getElementById(id);
+  if (element) {
+    element.textContent = value;
+  }
+}
+
+function formatValidationTfMinutes(value) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "—";
+  }
+  if (value % 1440 === 0) {
+    return `${value / 1440}D`;
+  }
+  if (value % 60 === 0) {
+    return `${value / 60}H`;
+  }
+  return `${value}M`;
+}
+
+function renderValidationQuality(id, observation) {
+  const element = document.getElementById(id);
+  if (!element) {
+    return;
+  }
+  element.classList.remove(
+    "quality-good",
+    "quality-limited",
+    "quality-watch",
+    "quality-invalid"
+  );
+  if (!observation?.available) {
+    element.textContent = "데이터 대기";
+    return;
+  }
+  const quality = observation.quality.sensorQuality;
+  element.textContent = `${quality} · ${observation.freshness}`;
+  element.classList.add(`quality-${quality.toLowerCase()}`);
+}
+
+function renderMaatValidationCard(observation) {
+  renderValidationQuality("maatQuality", observation);
+  if (!observation?.available) {
+    setValidationText("maatStatus", "선택한 시간축의 MAAT LIVE 관측을 기다리고 있습니다.");
+    for (const id of ["maatState", "maatScore", "maatRisk", "maatNoise", "maatSensors", "maatWindow", "maatUpdated"]) {
+      setValidationText(id, "—");
+    }
+    return;
+  }
+
+  const payload = observation.payload;
+  const aggregate = payload.aggregate || {};
+  const stopwatch = payload.stopwatch || {};
+  const sensors = payload.sensors && typeof payload.sensors === "object"
+    ? Object.values(payload.sensors)
+    : [];
+  const validSensors = sensors.filter((sensor) => sensor?.valid === true).length;
+  setValidationText("maatStatus", `${payload.record_status || "WATCH"} · 검증 결과는 PENDING으로 분리 기록됩니다.`);
+  setValidationText("maatState", MAAT_STATE_TEXT[aggregate.state_code] || "확인 필요");
+  setValidationText("maatScore", Number.isFinite(aggregate.score) ? Math.round(aggregate.score).toString() : "—");
+  setValidationText("maatRisk", Number.isFinite(aggregate.risk_code) ? `R${aggregate.risk_code}` : "—");
+  setValidationText("maatNoise", Number.isFinite(stopwatch.noise_score) ? stopwatch.noise_score.toString() : "—");
+  setValidationText("maatSensors", `${validSensors}/6 유효 · 동기 ${aggregate.sync_count ?? "—"} · 충돌 ${aggregate.conflict_count ?? "—"}`);
+  setValidationText("maatWindow", `${stopwatch.phase || "—"} · ${formatValidationTfMinutes(stopwatch.main_tf_minutes)} → ${formatValidationTfMinutes(stopwatch.parent_tf_minutes)}`);
+  setValidationText("maatUpdated", formatUpdatedAt(observation.receivedAt) ? `${formatUpdatedAt(observation.receivedAt)} KST` : "시각 확인 불가");
+}
+
+function renderMaat2ValidationCard(maat2) {
+  const time = maat2?.time;
+  const hub = maat2?.hub;
+  const primary = time?.available ? time : hub;
+  renderValidationQuality("maat2Quality", primary);
+  if (!primary?.available) {
+    setValidationText("maat2Status", "선택한 시간축의 MAAT2 Hub/Time LIVE 관측을 기다리고 있습니다.");
+    for (const id of ["maat2Role", "maat2TimeScore", "maat2Timeframes", "maat2Noise", "maat2HubScores", "maat2Why", "maat2Sync"]) {
+      setValidationText(id, "—");
+    }
+    return;
+  }
+
+  const timePayload = time?.available ? time.payload : null;
+  const hubPayload = hub?.available ? hub.payload : null;
+  const timeState = timePayload?.time || {};
+  const scores = hubPayload?.scores || timePayload?.scores || {};
+  setValidationText("maat2Status", `${timePayload?.record_status || hubPayload?.record_status || "WATCH"} · 방향 예측과 HIT/MISS는 제공하지 않습니다.`);
+  setValidationText("maat2Role", TIME_ROLE_TEXT[timeState.role_code] || "—");
+  setValidationText("maat2TimeScore", Number.isFinite(timeState.score) ? timeState.score.toString() : "—");
+  setValidationText("maat2Timeframes", `${formatValidationTfMinutes(timeState.candidate_tf_minutes)} / ${formatValidationTfMinutes(timeState.parent_tf_minutes)}`);
+  setValidationText("maat2Noise", Number.isFinite(timeState.noise_score) ? timeState.noise_score.toString() : "—");
+  setValidationText("maat2HubScores", `구조 ${Math.round(scores.structure ?? 0)} · 힘 ${Math.round(scores.force ?? 0)} · 창 ${Math.round(scores.window ?? 0)} · 위험 ${Math.round(scores.risk ?? 0)}`);
+  setValidationText("maat2Why", `${TIME_WHY_TEXT[timeState.why_code] || "확인 필요"} · ${timeState.reset_flag ? "RESET" : "유지"}`);
+  setValidationText("maat2Sync", hub?.available && time?.available ? (maat2.synchronized ? "같은 봉 확인" : "봉 시각 불일치") : "일부 패킷 대기");
+}
+
+function renderValidationCards() {
+  renderMaatValidationCard(validationCardsData?.maat);
+  renderMaat2ValidationCard(validationCardsData?.maat2);
 }
 
 
@@ -809,6 +981,7 @@ function renderApp() {
   renderDailyForecast();
   renderInfoCards();
   renderLastUpdated();
+  renderValidationCards();
 }
 
 
@@ -838,6 +1011,16 @@ async function initializeApp() {
   await applyConfiguredOverlay();
   renderApp();
   startFreshnessTimer();
+  await applyAs1ValidationCards(validationTimeframe);
+
+  const selector = document.getElementById("validationTimeframe");
+  if (selector) {
+    selector.addEventListener("change", async (event) => {
+      validationCardsData = null;
+      renderValidationCards();
+      await applyAs1ValidationCards(event.target.value);
+    });
+  }
 }
 
 
@@ -853,6 +1036,8 @@ window.addEventListener(
       await loadWeatherData();
       await applyConfiguredOverlay();
     }
+
+    await applyAs1ValidationCards(validationTimeframe);
 
     renderApp();
   }

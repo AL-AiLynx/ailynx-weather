@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ailynx.local/schemas/as1-ingest-policy-v1.4.json",
+  "title": "AS1 protocol ingest policy v1.4",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ingest_policy_version", "accepted_live_raw_schema_versions", "historical_readable_versions"],
+  "properties": {
+    "ingest_policy_version": {"const": "as1-ingest.v1.4"},
+    "accepted_live_raw_schema_versions": {"const": ["as1.v1.3", "as1.v1.4"]},
+    "historical_readable_versions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"enum": ["as1.v1", "as1.v1.1", "as1.v1.2", "as1.v1.3", "as1.v1.4"]},
+      "contains": {"const": "as1.v1.4"}
+    }
+  }
+}

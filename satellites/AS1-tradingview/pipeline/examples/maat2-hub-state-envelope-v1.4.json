@@ -1,0 +1,32 @@
+{
+  "schema_version": "as1.v1.4",
+  "satellite_id": "AS1",
+  "platform": "TRADINGVIEW",
+  "layout_id": "MAAT2",
+  "observer": "MAAT2_HUB",
+  "code_version": "MAAT2_HUB_V1_1_AS1_V1_4",
+  "source_profile_code": "CB_BTCUSD_SPOT_20260722_V1",
+  "instrument": {
+    "ticker_id": "COINBASE:BTCUSD", "venue": "COINBASE", "symbol": "BTCUSD", "base_asset": "BTC", "quote_asset": "USD", "asset_class": "CRYPTO", "instrument_type": "SPOT",
+    "contract": {"contract_type": "NONE", "contract_id": null, "series_symbol": null, "expiry_kind": "NONE", "expiry_time": null, "settlement_asset": "USD", "contract_multiplier": null, "continuous_series": false, "adjustment_mode": "NONE", "adjustment_applied": false, "roll_state": "NONE", "roll_event": false},
+    "extensions": {"feed": "design-example"}
+  },
+  "session_hint": {"session_type": "CONTINUOUS_24_7", "session_state": "OPEN", "is_market_open": true},
+  "timing": {"timeframe": "240", "bar_open_time": 1785131100000, "bar_close_time": 1785145500000, "sent_at": 1785145501000},
+  "bar": {"open": 100000, "high": 100250, "low": 99850, "close": 100100, "volume": 123.45, "volume_unit": "BASE_ASSET", "volume_basis": "EXCHANGE_NATIVE"},
+  "packet_type": "HUB_STATE_SNAPSHOT",
+  "confirmed": true,
+  "quality": {"sensor_quality": "LIMITED", "valid": true, "flags": ["HERU_EXTERNAL_ONLY", "CORE_EXPANSION_PARTIAL"]},
+  "client_event_key": "AS1|MAAT2|HUB_STATE_SNAPSHOT|COINBASE:BTCUSD|240|1785145500000|as1.v1.4",
+  "payload": {
+    "contract_version": "maat2.hub.v1",
+    "record_status": "WINDOW_OPEN",
+    "validation_outcome": "PENDING",
+    "scores": {"structure": 72, "force": 58, "window": 67, "risk": 31},
+    "phase": {"raw_code": 6, "candidate_result_code": 1, "final_result_code": 1},
+    "guards": {"mask": 3, "window": true, "force": true, "noise": false, "reset": false},
+    "alerts": {"mask": 1, "window_open": true, "force_event": false, "noise_only": false, "reset_required": false},
+    "sources": {"was_valid": true, "true_vol_valid": true, "expansion_state_code": 2, "peripheral_state_code": 1, "system_partial": true, "system_invalid": false, "heru_mode": "EXTERNAL_ONLY"},
+    "diagnostics": {"note_code": 2, "layer_note_code": 7, "filter_note_code": 9, "background_support": true, "risk_block": false, "bridge_valid": true}
+  }
+}

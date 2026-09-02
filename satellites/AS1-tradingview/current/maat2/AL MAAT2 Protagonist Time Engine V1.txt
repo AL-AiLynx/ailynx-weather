@@ -96,6 +96,9 @@ bool showTable = input.bool(true, "Show Time Engine table", group=G_TABLE)
 string tablePosition = input.string("top_right", "Table position", options=["top_right", "top_left", "bottom_right", "bottom_left"], group=G_TABLE)
 string tableSize = input.string("small", "Table size", options=["tiny", "small", "normal"], group=G_TABLE)
 
+string G_AS1_V14 = "AS1 v1.4 LIVE Export"
+bool enableAs1V14 = input.bool(false, "Enable AS1 v1.4 Time snapshot", group=G_AS1_V14, display=display.none)
+
 f_clamp(float value, float low, float high) =>
     math.max(low, math.min(high, value))
 
@@ -122,6 +125,23 @@ f_resultText(int code) =>
 
 f_whyText(int code) =>
     code == WHY_STRUCT_ONLY ? "STRUCT_ONLY" : code == WHY_FORCE_BUILD ? "FORCE_BUILD" : code == WHY_WINDOW_BUILD ? "WINDOW_BUILD" : code == WHY_STRUCT_FORCE_SYNC ? "STRUCT_FORCE_SYNC" : code == WHY_FORCE_WINDOW_SYNC ? "FORCE_WINDOW_SYNC" : code == WHY_STRUCT_WINDOW_SYNC ? "STRUCT_WINDOW_SYNC" : code == WHY_FULL_SYNC ? "FULL_SYNC" : code == WHY_FORCE_WEAK ? "FORCE_WEAK" : code == WHY_RISK_BLOCK ? "RISK_BLOCK" : code == WHY_PARENT_MISMATCH ? "PARENT_MISMATCH" : code == WHY_PARTIAL_SOURCE ? "PARTIAL_SOURCE" : code == WHY_INVALID_SOURCE ? "INVALID_SOURCE" : code == WHY_NOISE ? "NOISE" : code == WHY_FALSE_RELEASE ? "FALSE_RELEASE" : code == WHY_RESET ? "RESET" : "NONE"
+
+f_jsonString(string value) =>
+    string escaped = str.replace_all(value, "\\", "\\\\")
+    escaped := str.replace_all(escaped, "\"", "\\\"")
+    "\"" + escaped + "\""
+
+f_jsonFloat(float value) =>
+    na(value) ? "null" : str.tostring(value)
+
+f_jsonInt(int value) =>
+    na(value) ? "null" : str.tostring(value)
+
+f_jsonBool(bool value) =>
+    value ? "true" : "false"
+
+f_jsonFlagAdd(string current, string flag, bool include) =>
+    include ? current + (str.length(current) > 1 ? "," : "") + f_jsonString(flag) : current
 
 bool stateInputAvailable = not na(statePackInput)
 int stateRaw = stateInputAvailable ? int(math.round(statePackInput)) : 0
@@ -354,6 +374,32 @@ else if timeStateCode == TIME_STATE_PROTAGONIST_CANDIDATE
     noteText := "PROTAGONIST CANDIDATE"
 else if timeStateCode == TIME_STATE_PRE_WINDOW or timeStateCode == TIME_STATE_BUILD
     noteText := "WINDOW BUILD"
+
+// AS1 v1.4 transport-only Time Engine snapshot. No prediction or automatic HIT/MISS.
+bool as1ProfileMatch = syminfo.tickerid == "COINBASE:BTCUSD"
+bool as1SupportedTf = timeframe.period == "240" or timeframe.period == "480" or timeframe.period == "720" or timeframe.period == "D" or timeframe.period == "1D" or timeframe.period == "1440"
+bool as1SnapshotValid = engineBridgeValid and not systemInvalid
+string as1SensorQuality = not as1SnapshotValid ? "INVALID" : systemPartial ? "LIMITED" : "GOOD"
+string as1Flags = "["
+as1Flags := f_jsonFlagAdd(as1Flags, "HERU_EXTERNAL_ONLY", true)
+as1Flags := f_jsonFlagAdd(as1Flags, "CORE_EXPANSION_OFF", parsedCoreState == 0)
+as1Flags := f_jsonFlagAdd(as1Flags, "CORE_EXPANSION_PARTIAL", parsedCoreState == 2)
+as1Flags := f_jsonFlagAdd(as1Flags, "CORE_EXPANSION_INVALID", parsedCoreState == 3)
+as1Flags := f_jsonFlagAdd(as1Flags, "PERIPHERAL_OFF", parsedPeripheralState == 0)
+as1Flags := f_jsonFlagAdd(as1Flags, "PERIPHERAL_PARTIAL", parsedPeripheralState == 2)
+as1Flags := f_jsonFlagAdd(as1Flags, "PERIPHERAL_INVALID", parsedPeripheralState == 3)
+as1Flags := f_jsonFlagAdd(as1Flags, "PARENT_MISMATCH", parentMismatch)
+as1Flags := f_jsonFlagAdd(as1Flags, "BRIDGE_DIAG_" + str.tostring(diagCode), diagCode != 0)
+as1Flags := f_jsonFlagAdd(as1Flags, "MISSING_VOLUME", na(volume))
+as1Flags := as1Flags + "]"
+string as1RecordStatus = f_resultText(timeResultCode)
+string as1EventKey = "AS1|MAAT2|TIME_ENGINE_SNAPSHOT|" + syminfo.tickerid + "|" + timeframe.period + "|" + str.tostring(time_close) + "|as1.v1.4"
+string as1Payload = "{\"contract_version\":\"maat2.time.v1\",\"record_status\":" + f_jsonString(as1RecordStatus) + ",\"validation_outcome\":\"PENDING\",\"automatic_hit_miss\":\"NOT_IMPLEMENTED\",\"prediction_direction\":\"NOT_PROVIDED\",\"scores\":{\"structure\":" + f_jsonInt(parsedStructure) + ",\"force\":" + f_jsonInt(parsedForce) + ",\"window\":" + f_jsonInt(parsedWindow) + ",\"risk\":" + f_jsonInt(parsedRisk) + "},\"hub\":{\"phase_code\":" + f_jsonInt(parsedPhase) + ",\"result_code\":" + f_jsonInt(parsedHubResult) + ",\"core_state_code\":" + f_jsonInt(parsedCoreState) + ",\"peripheral_state_code\":" + f_jsonInt(parsedPeripheralState) + "},\"time\":{\"score\":" + f_jsonInt(timeScore) + ",\"state_code\":" + f_jsonInt(timeStateCode) + ",\"role_code\":" + f_jsonInt(timeRoleCode) + ",\"result_code\":" + f_jsonInt(timeResultCode) + ",\"why_code\":" + f_jsonInt(timeWhyCode) + ",\"noise_score\":" + f_jsonInt(timeNoiseScore) + ",\"candidate_tf_minutes\":" + f_jsonInt(chartTfMinutes) + ",\"parent_tf_minutes\":" + f_jsonInt(parentTfMinutes) + ",\"parent_distance_minutes\":" + f_jsonInt(parentDistanceMinutes) + ",\"window_flag\":" + f_jsonBool(alertWindow) + ",\"reset_flag\":" + f_jsonBool(alertReset or guardReset) + ",\"valid\":" + f_jsonBool(as1SnapshotValid) + ",\"guard_mask\":" + f_jsonInt(parsedGuardMask) + ",\"alert_mask\":" + f_jsonInt(parsedAlertMask) + ",\"bars_in_state\":" + f_jsonInt(barsInState) + ",\"state_change_count\":" + f_jsonFloat(stateChangeCount) + ",\"diag_code\":" + f_jsonInt(diagCode) + ",\"expected_window_start\":null,\"expected_window_end\":null}}"
+string as1Envelope = "{\"schema_version\":\"as1.v1.4\",\"satellite_id\":\"AS1\",\"platform\":\"TRADINGVIEW\",\"layout_id\":\"MAAT2\",\"observer\":\"MAAT2_TIME\",\"code_version\":\"MAAT2_TIME_V1_AS1_V1_4\",\"source_profile_code\":\"CB_BTCUSD_SPOT_20260722_V1\",\"instrument\":{\"ticker_id\":" + f_jsonString(syminfo.tickerid) + ",\"venue\":" + f_jsonString(syminfo.prefix) + ",\"symbol\":" + f_jsonString(syminfo.ticker) + ",\"base_asset\":" + f_jsonString(syminfo.basecurrency) + ",\"quote_asset\":" + f_jsonString(syminfo.currency) + ",\"asset_class\":\"CRYPTO\",\"instrument_type\":\"SPOT\",\"contract\":{\"contract_type\":\"NONE\",\"contract_id\":null,\"series_symbol\":null,\"expiry_kind\":\"NONE\",\"expiry_time\":null,\"settlement_asset\":" + f_jsonString(syminfo.currency) + ",\"contract_multiplier\":null,\"continuous_series\":false,\"adjustment_mode\":\"NONE\",\"adjustment_applied\":false,\"roll_state\":\"NONE\",\"roll_event\":false}},\"session_hint\":{\"session_type\":\"CONTINUOUS_24_7\",\"session_state\":\"OPEN\",\"is_market_open\":true},\"timing\":{\"timeframe\":" + f_jsonString(timeframe.period) + ",\"bar_open_time\":" + f_jsonInt(time) + ",\"bar_close_time\":" + f_jsonInt(time_close) + ",\"sent_at\":" + f_jsonInt(timenow) + "},\"bar\":{\"open\":" + f_jsonFloat(open) + ",\"high\":" + f_jsonFloat(high) + ",\"low\":" + f_jsonFloat(low) + ",\"close\":" + f_jsonFloat(close) + ",\"volume\":" + f_jsonFloat(volume) + ",\"volume_unit\":\"BASE_ASSET\",\"volume_basis\":\"EXCHANGE_NATIVE\"},\"packet_type\":\"TIME_ENGINE_SNAPSHOT\",\"confirmed\":true,\"quality\":{\"sensor_quality\":" + f_jsonString(as1SensorQuality) + ",\"valid\":" + f_jsonBool(as1SnapshotValid) + ",\"flags\":" + as1Flags + "},\"client_event_key\":" + f_jsonString(as1EventKey) + ",\"payload\":" + as1Payload + "}"
+var string lastAs1EventKey = ""
+if enableAs1V14 and as1ProfileMatch and as1SupportedTf and barstate.isconfirmed and barstate.isrealtime and as1EventKey != lastAs1EventKey
+    alert(as1Envelope, alert.freq_once_per_bar_close)
+    lastAs1EventKey := as1EventKey
 
 color quietBg = color.new(color.gray, 84)
 color buildBg = color.new(color.blue, 78)

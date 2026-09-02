@@ -1,0 +1,22 @@
+{
+  "mapping_version": "as1-maat-map.v1.4",
+  "schema_version": "as1.v1.4",
+  "layout_id": "MAAT",
+  "observer": "MAAT",
+  "packet_type": "VALIDATION_SNAPSHOT",
+  "code_version": "MAAT_STOPWATCH_AS1_V1_4",
+  "status": "IMPLEMENTED_DEFAULT_OFF",
+  "source_file": "current/maat/AL MAAT Stopwatch Validator MVP.txt",
+  "field_ownership": {
+    "pine_direct": ["instrument", "session_hint", "timing", "bar", "quality", "payload", "client_event_key"],
+    "pine_constants": ["schema_version=as1.v1.4", "satellite_id=AS1", "platform=TRADINGVIEW", "layout_id=MAAT", "observer=MAAT", "packet_type=VALIDATION_SNAPSHOT", "confirmed=true", "source_profile_code=CB_BTCUSD_SPOT_20260722_V1"],
+    "server": ["received_at", "freshness", "strict projection", "event-key reconstruction"]
+  },
+  "payload_sections": {
+    "aggregate": "existing MAAT aggregate state, score, risk, event, sync/conflict, lie/why and observed direction state",
+    "sensors": "existing RPC, structure, volume, HERU, WENUT and RSI link/valid/state/score/risk/event fields",
+    "stopwatch": "existing phase, timeframe, target/window, remaining time, noise and observed volume event fields"
+  },
+  "forbidden": ["prediction direction", "automatic HIT/MISS", "calculation changes"],
+  "example": "../examples/maat-validation-envelope-v1.4.json"
+}

@@ -499,8 +499,184 @@
   text-align: right;
 }
 
+/* =========================
+   MAAT / MAAT2 검증 카드
+========================= */
+
+.validation-title,
+.validation-title > div:first-child,
+.validation-card-head,
+.validation-timeframe-label {
+  display: flex;
+  align-items: center;
+}
+
+.validation-title {
+  gap: 16px;
+}
+
+.validation-title > div:first-child {
+  align-items: baseline;
+  gap: 10px;
+}
+
+.validation-timeframe-label {
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.validation-timeframe-label select {
+  padding: 7px 28px 7px 10px;
+  border: 1px solid rgba(100, 214, 255, 0.24);
+  border-radius: 10px;
+  color: var(--text-main);
+  background: #0b2231;
+}
+
+.validation-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.validation-card {
+  padding: 22px;
+}
+
+.validation-card-head {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.validation-card h3,
+.validation-kicker,
+.validation-status,
+.validation-details {
+  margin: 0;
+}
+
+.validation-card h3 {
+  margin-top: 3px;
+  font-size: 21px;
+}
+
+.validation-kicker {
+  color: var(--cyan);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.validation-quality {
+  padding: 6px 9px;
+  border: 1px solid rgba(183, 202, 214, 0.2);
+  border-radius: 999px;
+  color: var(--text-sub);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.validation-quality.quality-good {
+  border-color: rgba(114, 224, 164, 0.3);
+  color: var(--green);
+}
+
+.validation-quality.quality-limited,
+.validation-quality.quality-watch {
+  border-color: rgba(255, 212, 90, 0.35);
+  color: var(--yellow);
+}
+
+.validation-quality.quality-invalid {
+  border-color: rgba(255, 116, 116, 0.4);
+  color: #ff8d8d;
+}
+
+.validation-status {
+  min-height: 42px;
+  margin-top: 18px;
+  color: var(--text-sub);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.validation-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.validation-metrics > div {
+  min-width: 0;
+  padding: 11px 9px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.validation-metrics span,
+.validation-metrics strong {
+  display: block;
+}
+
+.validation-metrics span {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.validation-metrics strong {
+  margin-top: 7px;
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.validation-details {
+  margin-top: 16px;
+}
+
+.validation-details > div {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  gap: 10px;
+  padding: 9px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.validation-details dt {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.validation-details dd {
+  margin: 0;
+  color: var(--text-sub);
+  font-size: 12px;
+  text-align: right;
+}
+
 /* 모바일 화면 */
 @media (max-width: 760px) {
+  .validation-title {
+    align-items: flex-end;
+  }
+
+  .validation-title > div:first-child {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .validation-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .validation-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .daily-card {
     padding: 6px 10px;
     overflow-x: auto;

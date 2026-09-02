@@ -146,7 +146,74 @@
     </section>
 
 
-    <!-- 2. 시간축별 날씨 -->
+    <!-- 2. MAAT / MAAT2 검증 상태 -->
+    <section class="section validation-section">
+      <div class="section-title validation-title">
+        <div>
+          <h2>검증 상태</h2>
+          <span>예측이 아닌 확정 봉 관측</span>
+        </div>
+
+        <label class="validation-timeframe-label" for="validationTimeframe">
+          시간축
+          <select id="validationTimeframe" aria-label="MAAT 검증 시간축">
+            <option value="240">4H</option>
+            <option value="480">8H</option>
+            <option value="720">12H</option>
+            <option value="D">1D</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="validation-grid" id="validationCards" aria-live="polite">
+        <article class="validation-card card" data-validation-card="maat">
+          <div class="validation-card-head">
+            <div>
+              <p class="validation-kicker">현재 통합 검증</p>
+              <h3>MAAT</h3>
+            </div>
+            <span class="validation-quality" id="maatQuality">불러오는 중</span>
+          </div>
+          <p class="validation-status" id="maatStatus">관측 데이터를 확인하고 있습니다.</p>
+          <div class="validation-metrics">
+            <div><span>상태</span><strong id="maatState">—</strong></div>
+            <div><span>점수</span><strong id="maatScore">—</strong></div>
+            <div><span>위험</span><strong id="maatRisk">—</strong></div>
+            <div><span>노이즈</span><strong id="maatNoise">—</strong></div>
+          </div>
+          <dl class="validation-details">
+            <div><dt>센서</dt><dd id="maatSensors">—</dd></div>
+            <div><dt>시간창</dt><dd id="maatWindow">—</dd></div>
+            <div><dt>관측 시각</dt><dd id="maatUpdated">—</dd></div>
+          </dl>
+        </article>
+
+        <article class="validation-card card" data-validation-card="maat2">
+          <div class="validation-card-head">
+            <div>
+              <p class="validation-kicker">주인공 시간축 검증</p>
+              <h3>MAAT2 TIME</h3>
+            </div>
+            <span class="validation-quality" id="maat2Quality">불러오는 중</span>
+          </div>
+          <p class="validation-status" id="maat2Status">Hub와 Time Engine을 확인하고 있습니다.</p>
+          <div class="validation-metrics">
+            <div><span>역할</span><strong id="maat2Role">—</strong></div>
+            <div><span>시간 점수</span><strong id="maat2TimeScore">—</strong></div>
+            <div><span>후보 / 부모</span><strong id="maat2Timeframes">—</strong></div>
+            <div><span>노이즈</span><strong id="maat2Noise">—</strong></div>
+          </div>
+          <dl class="validation-details">
+            <div><dt>Hub 점수</dt><dd id="maat2HubScores">—</dd></div>
+            <div><dt>WHY / RESET</dt><dd id="maat2Why">—</dd></div>
+            <div><dt>동기화</dt><dd id="maat2Sync">—</dd></div>
+          </dl>
+        </article>
+      </div>
+    </section>
+
+
+    <!-- 3. 시간축별 날씨 -->
     <section class="section">
       <div class="section-title">
         <h2>
