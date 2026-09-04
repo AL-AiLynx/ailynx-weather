@@ -7,7 +7,7 @@ const AS1_LIVE_ENDPOINT =
   "https://ofcvmsbejmwcgdymgkdj.supabase.co/functions/v1/as1-weather-read";
 
 const AS1_VALIDATION_ENDPOINT =
-  "https://ofcvmsbejmwcgdymgkdj.supabase.co/functions/v1/as1-validation-read";
+  "https://jggazwqwalincsjegieo.supabase.co/functions/v1/as1-validation-read";
 
 const APP_SHELL = [
   "./",

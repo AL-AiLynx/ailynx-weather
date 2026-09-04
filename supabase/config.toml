@@ -1,5 +1,10 @@
 project_id = "ailynx-weather"
 
+[functions.as1-ingest]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/as1-ingest/index.ts"
+
 [functions.as1-weather-read]
 enabled = true
 verify_jwt = false
