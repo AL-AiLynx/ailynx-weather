@@ -14,7 +14,7 @@ Coinbase spot and legacy OKX perpetual must not be automatically price- or volum
 
 ## Current implementation status
 
-This repository contains the v1.4 Raw schema, compatibility policy, executable examples, MAAT/MAAT2 Pine export blocks, a read-only Supabase Edge Function, and additive PWA cards. Export inputs default to OFF. No TradingView Alert, webhook, production deployment, credential, historical-row rewrite, or live row is created by this revision.
+This repository contains the v1.4 Raw schema, compatibility policy, executable examples, MAAT/MAAT2 Pine export blocks, a read-only Supabase Edge Function, and additive PWA cards. Export inputs default to OFF. The production ingest and read functions are deployed to `ailynx-core-prod`; no TradingView Alert, credential change, historical-row rewrite, or authenticated test/live row has been created by this revision.
 
 - Raw Alert contract = `as1.v1.4`
 - Normalized/Fusion baseline = `as1.v1.3` (FROZEN)
@@ -24,9 +24,12 @@ This repository contains the v1.4 Raw schema, compatibility policy, executable e
 - Prediction and automatic HIT/MISS suppression = PASS
 - v1.3 fixture and v1.2 legacy regression = PASS
 - MAAT/MAAT2 Pine export code = IMPLEMENTED, DEFAULT OFF
-- Supabase validation read function = IMPLEMENTED, NOT DEPLOYED
+- Supabase `as1-ingest` v1.4 promotion = DEPLOYED, ACTIVE (function v6)
+- Supabase validation read function = DEPLOYED, ACTIVE (function v2)
 - PWA validation cards = IMPLEMENTED, NOT DEPLOYED
-- TradingView Alert/webhook/live ingest = NOT ACTIVATED
+- Unauthenticated ingest rejection = VERIFIED (`401 UNAUTHORIZED`)
+- Authenticated MAAT 4H test row/read projection = VERIFIED (`202` / `200`)
+- TradingView Alert/webhook = NOT ACTIVATED
 
 ## v1.4 Raw promotion files
 

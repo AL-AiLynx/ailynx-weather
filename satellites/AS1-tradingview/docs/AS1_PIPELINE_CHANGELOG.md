@@ -8,7 +8,9 @@
 - Adds confirmed-bar, realtime-only Pine export blocks for the Coinbase BTCUSD 4H/8H/12H/1D profile; every export input defaults to OFF.
 - Prohibits prediction direction and automatic HIT/MISS assignment. MAAT transmits observed validation state; MAAT2 transmits Hub and Time state separately.
 - Adds a strict read-only Supabase projection and additive PWA validation cards that preserve invalid/stale diagnostics.
-- Does not create TradingView Alerts, write live rows, rewrite historical data, deploy Edge Functions/PWA, change GENUT A/B, or change existing MAAT/MAAT2 calculations.
+- Deploys `as1-ingest` function v6 and confirms `as1-validation-read` function v2 on `ailynx-core-prod`; ingest v6 adds strict nested payload type/range validation before enqueue. The Secret rotation advanced the hosted function environment versions.
+- Rotates `AS1_WEBHOOK_TOKEN` to the approved value and verifies no token `401`, wrong token `401`, authenticated valid packet `202`, nested schema violation `400`, and read projection `200`.
+- Writes only flagged MAAT 4H manual test observations; it does not create TradingView Alerts, rewrite historical data, deploy the PWA, change GENUT A/B, or change existing MAAT/MAAT2 calculations.
 
 ## as1.v1.3 - 2026-08-13
 

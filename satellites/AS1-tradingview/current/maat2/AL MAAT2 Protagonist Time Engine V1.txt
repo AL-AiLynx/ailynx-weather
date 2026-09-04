@@ -379,22 +379,42 @@ else if timeStateCode == TIME_STATE_PRE_WINDOW or timeStateCode == TIME_STATE_BU
 bool as1ProfileMatch = syminfo.tickerid == "COINBASE:BTCUSD"
 bool as1SupportedTf = timeframe.period == "240" or timeframe.period == "480" or timeframe.period == "720" or timeframe.period == "D" or timeframe.period == "1D" or timeframe.period == "1440"
 bool as1SnapshotValid = engineBridgeValid and not systemInvalid
+// Keep invalid/partial observations transportable without presenting malformed bridge bytes as scores or state.
+// This is a validity-gated neutral projection, not a clamp of the Time Engine calculations.
+bool as1StatePacketSafe = parsedMagic == BRIDGE_MAGIC and stateRoundTripOk
+bool as1MetricsPacketSafe = metricsRoundTripOk
+int as1ExportStructure = as1MetricsPacketSafe ? parsedStructure : 0
+int as1ExportForce = as1MetricsPacketSafe ? parsedForce : 0
+int as1ExportWindow = as1MetricsPacketSafe ? parsedWindow : 0
+int as1ExportRisk = as1MetricsPacketSafe ? parsedRisk : 0
+int as1ExportPhase = as1StatePacketSafe ? parsedPhase : PHASE_QUIET
+int as1ExportHubResult = as1StatePacketSafe ? parsedHubResult : HUB_RESULT_WATCH
+int as1ExportCoreState = as1StatePacketSafe ? parsedCoreState : 3
+int as1ExportPeripheralState = as1StatePacketSafe ? parsedPeripheralState : 3
+int as1ExportGuardMask = as1StatePacketSafe ? parsedGuardMask : 0
+int as1ExportAlertMask = as1StatePacketSafe ? parsedAlertMask : 0
+bool as1ExportWindowFlag = as1StatePacketSafe and alertWindow
+bool as1ExportResetFlag = as1StatePacketSafe and (alertReset or guardReset)
+int as1ExportNoiseScore = as1StatePacketSafe and as1MetricsPacketSafe ? timeNoiseScore : 0
 string as1SensorQuality = not as1SnapshotValid ? "INVALID" : systemPartial ? "LIMITED" : "GOOD"
 string as1Flags = "["
 as1Flags := f_jsonFlagAdd(as1Flags, "HERU_EXTERNAL_ONLY", true)
-as1Flags := f_jsonFlagAdd(as1Flags, "CORE_EXPANSION_OFF", parsedCoreState == 0)
-as1Flags := f_jsonFlagAdd(as1Flags, "CORE_EXPANSION_PARTIAL", parsedCoreState == 2)
-as1Flags := f_jsonFlagAdd(as1Flags, "CORE_EXPANSION_INVALID", parsedCoreState == 3)
-as1Flags := f_jsonFlagAdd(as1Flags, "PERIPHERAL_OFF", parsedPeripheralState == 0)
-as1Flags := f_jsonFlagAdd(as1Flags, "PERIPHERAL_PARTIAL", parsedPeripheralState == 2)
-as1Flags := f_jsonFlagAdd(as1Flags, "PERIPHERAL_INVALID", parsedPeripheralState == 3)
+as1Flags := f_jsonFlagAdd(as1Flags, "CORE_EXPANSION_OFF", as1StatePacketSafe and parsedCoreState == 0)
+as1Flags := f_jsonFlagAdd(as1Flags, "CORE_EXPANSION_PARTIAL", as1StatePacketSafe and parsedCoreState == 2)
+as1Flags := f_jsonFlagAdd(as1Flags, "CORE_EXPANSION_INVALID", as1StatePacketSafe and parsedCoreState == 3)
+as1Flags := f_jsonFlagAdd(as1Flags, "PERIPHERAL_OFF", as1StatePacketSafe and parsedPeripheralState == 0)
+as1Flags := f_jsonFlagAdd(as1Flags, "PERIPHERAL_PARTIAL", as1StatePacketSafe and parsedPeripheralState == 2)
+as1Flags := f_jsonFlagAdd(as1Flags, "PERIPHERAL_INVALID", as1StatePacketSafe and parsedPeripheralState == 3)
 as1Flags := f_jsonFlagAdd(as1Flags, "PARENT_MISMATCH", parentMismatch)
+as1Flags := f_jsonFlagAdd(as1Flags, "BRIDGE_INVALID", not as1SnapshotValid)
+as1Flags := f_jsonFlagAdd(as1Flags, "BRIDGE_STATE_PACKET_INVALID", not as1StatePacketSafe)
+as1Flags := f_jsonFlagAdd(as1Flags, "BRIDGE_METRICS_PACKET_INVALID", not as1MetricsPacketSafe)
 as1Flags := f_jsonFlagAdd(as1Flags, "BRIDGE_DIAG_" + str.tostring(diagCode), diagCode != 0)
 as1Flags := f_jsonFlagAdd(as1Flags, "MISSING_VOLUME", na(volume))
 as1Flags := as1Flags + "]"
 string as1RecordStatus = f_resultText(timeResultCode)
 string as1EventKey = "AS1|MAAT2|TIME_ENGINE_SNAPSHOT|" + syminfo.tickerid + "|" + timeframe.period + "|" + str.tostring(time_close) + "|as1.v1.4"
-string as1Payload = "{\"contract_version\":\"maat2.time.v1\",\"record_status\":" + f_jsonString(as1RecordStatus) + ",\"validation_outcome\":\"PENDING\",\"automatic_hit_miss\":\"NOT_IMPLEMENTED\",\"prediction_direction\":\"NOT_PROVIDED\",\"scores\":{\"structure\":" + f_jsonInt(parsedStructure) + ",\"force\":" + f_jsonInt(parsedForce) + ",\"window\":" + f_jsonInt(parsedWindow) + ",\"risk\":" + f_jsonInt(parsedRisk) + "},\"hub\":{\"phase_code\":" + f_jsonInt(parsedPhase) + ",\"result_code\":" + f_jsonInt(parsedHubResult) + ",\"core_state_code\":" + f_jsonInt(parsedCoreState) + ",\"peripheral_state_code\":" + f_jsonInt(parsedPeripheralState) + "},\"time\":{\"score\":" + f_jsonInt(timeScore) + ",\"state_code\":" + f_jsonInt(timeStateCode) + ",\"role_code\":" + f_jsonInt(timeRoleCode) + ",\"result_code\":" + f_jsonInt(timeResultCode) + ",\"why_code\":" + f_jsonInt(timeWhyCode) + ",\"noise_score\":" + f_jsonInt(timeNoiseScore) + ",\"candidate_tf_minutes\":" + f_jsonInt(chartTfMinutes) + ",\"parent_tf_minutes\":" + f_jsonInt(parentTfMinutes) + ",\"parent_distance_minutes\":" + f_jsonInt(parentDistanceMinutes) + ",\"window_flag\":" + f_jsonBool(alertWindow) + ",\"reset_flag\":" + f_jsonBool(alertReset or guardReset) + ",\"valid\":" + f_jsonBool(as1SnapshotValid) + ",\"guard_mask\":" + f_jsonInt(parsedGuardMask) + ",\"alert_mask\":" + f_jsonInt(parsedAlertMask) + ",\"bars_in_state\":" + f_jsonInt(barsInState) + ",\"state_change_count\":" + f_jsonFloat(stateChangeCount) + ",\"diag_code\":" + f_jsonInt(diagCode) + ",\"expected_window_start\":null,\"expected_window_end\":null}}"
+string as1Payload = "{\"contract_version\":\"maat2.time.v1\",\"record_status\":" + f_jsonString(as1RecordStatus) + ",\"validation_outcome\":\"PENDING\",\"automatic_hit_miss\":\"NOT_IMPLEMENTED\",\"prediction_direction\":\"NOT_PROVIDED\",\"scores\":{\"structure\":" + f_jsonInt(as1ExportStructure) + ",\"force\":" + f_jsonInt(as1ExportForce) + ",\"window\":" + f_jsonInt(as1ExportWindow) + ",\"risk\":" + f_jsonInt(as1ExportRisk) + "},\"hub\":{\"phase_code\":" + f_jsonInt(as1ExportPhase) + ",\"result_code\":" + f_jsonInt(as1ExportHubResult) + ",\"core_state_code\":" + f_jsonInt(as1ExportCoreState) + ",\"peripheral_state_code\":" + f_jsonInt(as1ExportPeripheralState) + "},\"time\":{\"score\":" + f_jsonInt(timeScore) + ",\"state_code\":" + f_jsonInt(timeStateCode) + ",\"role_code\":" + f_jsonInt(timeRoleCode) + ",\"result_code\":" + f_jsonInt(timeResultCode) + ",\"why_code\":" + f_jsonInt(timeWhyCode) + ",\"noise_score\":" + f_jsonInt(as1ExportNoiseScore) + ",\"candidate_tf_minutes\":" + f_jsonInt(chartTfMinutes) + ",\"parent_tf_minutes\":" + f_jsonInt(parentTfMinutes) + ",\"parent_distance_minutes\":" + f_jsonInt(parentDistanceMinutes) + ",\"window_flag\":" + f_jsonBool(as1ExportWindowFlag) + ",\"reset_flag\":" + f_jsonBool(as1ExportResetFlag) + ",\"valid\":" + f_jsonBool(as1SnapshotValid) + ",\"guard_mask\":" + f_jsonInt(as1ExportGuardMask) + ",\"alert_mask\":" + f_jsonInt(as1ExportAlertMask) + ",\"bars_in_state\":" + f_jsonInt(barsInState) + ",\"state_change_count\":" + f_jsonFloat(stateChangeCount) + ",\"diag_code\":" + f_jsonInt(diagCode) + ",\"expected_window_start\":null,\"expected_window_end\":null}}"
 string as1Envelope = "{\"schema_version\":\"as1.v1.4\",\"satellite_id\":\"AS1\",\"platform\":\"TRADINGVIEW\",\"layout_id\":\"MAAT2\",\"observer\":\"MAAT2_TIME\",\"code_version\":\"MAAT2_TIME_V1_AS1_V1_4\",\"source_profile_code\":\"CB_BTCUSD_SPOT_20260722_V1\",\"instrument\":{\"ticker_id\":" + f_jsonString(syminfo.tickerid) + ",\"venue\":" + f_jsonString(syminfo.prefix) + ",\"symbol\":" + f_jsonString(syminfo.ticker) + ",\"base_asset\":" + f_jsonString(syminfo.basecurrency) + ",\"quote_asset\":" + f_jsonString(syminfo.currency) + ",\"asset_class\":\"CRYPTO\",\"instrument_type\":\"SPOT\",\"contract\":{\"contract_type\":\"NONE\",\"contract_id\":null,\"series_symbol\":null,\"expiry_kind\":\"NONE\",\"expiry_time\":null,\"settlement_asset\":" + f_jsonString(syminfo.currency) + ",\"contract_multiplier\":null,\"continuous_series\":false,\"adjustment_mode\":\"NONE\",\"adjustment_applied\":false,\"roll_state\":\"NONE\",\"roll_event\":false}},\"session_hint\":{\"session_type\":\"CONTINUOUS_24_7\",\"session_state\":\"OPEN\",\"is_market_open\":true},\"timing\":{\"timeframe\":" + f_jsonString(timeframe.period) + ",\"bar_open_time\":" + f_jsonInt(time) + ",\"bar_close_time\":" + f_jsonInt(time_close) + ",\"sent_at\":" + f_jsonInt(timenow) + "},\"bar\":{\"open\":" + f_jsonFloat(open) + ",\"high\":" + f_jsonFloat(high) + ",\"low\":" + f_jsonFloat(low) + ",\"close\":" + f_jsonFloat(close) + ",\"volume\":" + f_jsonFloat(volume) + ",\"volume_unit\":\"BASE_ASSET\",\"volume_basis\":\"EXCHANGE_NATIVE\"},\"packet_type\":\"TIME_ENGINE_SNAPSHOT\",\"confirmed\":true,\"quality\":{\"sensor_quality\":" + f_jsonString(as1SensorQuality) + ",\"valid\":" + f_jsonBool(as1SnapshotValid) + ",\"flags\":" + as1Flags + "},\"client_event_key\":" + f_jsonString(as1EventKey) + ",\"payload\":" + as1Payload + "}"
 var string lastAs1EventKey = ""
 if enableAs1V14 and as1ProfileMatch and as1SupportedTf and barstate.isconfirmed and barstate.isrealtime and as1EventKey != lastAs1EventKey

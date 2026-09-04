@@ -1,5 +1,5 @@
 export const AS1_VALIDATION_ENDPOINT =
-  "https://ofcvmsbejmwcgdymgkdj.supabase.co/functions/v1/as1-validation-read";
+  "https://jggazwqwalincsjegieo.supabase.co/functions/v1/as1-validation-read";
 export const AS1_VALIDATION_TIMEOUT_MS = 5000;
 
 const API_SCHEMA_VERSION = "as1-validation-read.v1";

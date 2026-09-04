@@ -46,4 +46,4 @@ Invalid or partial sensors are transmitted with `quality.valid=false` and flags;
 
 `as1-validation-read` accepts only `view` and `timeframe` selectors from fixed allowlists. It reads `as1_raw_events`, revalidates flattened columns against the Raw envelope, reconstructs the event key, and returns only the PWA field projection. It never exposes `id`, `client_event_key`, `raw_envelope`, credentials, or arbitrary payload additions.
 
-The endpoint and PWA code in this revision are local implementation artifacts. TradingView Alert creation, webhook activation, live ingestion, Supabase deployment, and PWA deployment are separate operational actions.
+The ingest and read endpoints are deployed to `ailynx-core-prod`. `as1-ingest` function v6 strictly validates nested v1.4 payload types and ranges before enqueue; `as1-validation-read` is active at function v2. Token rotation and the no-token `401`, wrong-token `401`, valid authenticated `202`, nested-schema `400`, and read-projection `200` paths are verified. The PWA code remains a local implementation artifact. TradingView Alert creation/webhook activation and PWA deployment remain separate operational actions.
