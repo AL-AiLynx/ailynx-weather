@@ -1,4 +1,4 @@
-import {fetchValidationObservation} from "./as1-validation-client.js";
+import {fetchValidationObservation} from "./as1-validation-client.js?v=10";
 
 // Public reader selection. The currently deployed validation API only exposes
 // BTCUSD MAAT/MAAT2 observations; unsupported selections fail closed.

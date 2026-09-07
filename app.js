@@ -301,7 +301,7 @@ async function applyAs1LiveOverlay() {
 
   as1ObservationRequestPromise = (async () => {
     try {
-      const observationClient = await import("./as1-observation-client.js");
+      const observationClient = await import("./as1-observation-client.js?v=10");
       const result = await observationClient.fetchAs1Observation({
         asset: "COINBASE:BTCUSD",
         observer: "MAAT",
@@ -369,7 +369,7 @@ async function applyAs1ValidationCards(timeframe = validationTimeframe) {
 
   validationRequestPromise = (async () => {
     try {
-      const client = await import("./as1-validation-client.js");
+      const client = await import("./as1-validation-client.js?v=10");
       validationTimeframe = timeframe;
       validationCardsData = await client.fetchValidationCards({timeframe});
       renderValidationCards();
