@@ -23,12 +23,12 @@
     content="telephone=no"
   />
 
-  <title>AiLynx Bitcoin Weather</title>
+  <title>AiLynx · Lynx Weather</title>
 
   <!-- 기본 디자인 -->
   <link
     rel="stylesheet"
-    href="./styles.css"
+    href="./styles.css?v=11"
   />
 
   <!-- PWA 매니페스트 -->
@@ -90,63 +90,51 @@
 
         <div class="brand-text">
           <h1>
-            AiLynx Bitcoin Weather
+            AiLynx
           </h1>
 
           <p>
-            비트코인 금융 기상청
+            Lynx Weather · timeframe observation
           </p>
         </div>
       </div>
 
       <div class="live-badge">
-        ● SAMPLE DATA
+        ● CONNECTING
       </div>
     </header>
 
 
-    <!-- 1. 현재 BTC 날씨 -->
     <section class="hero card">
-      <div>
-        <p class="eyebrow">
-          BTC 현재 날씨
-        </p>
-
-        <h2 class="price">
-          $65,240
-        </h2>
-
-        <span class="price-change">
-          +1.48% · 24시간
-        </span>
-
-        <p class="headline">
-          단기 힘은 유지되고 있지만 상위 시간축의 길은 아직 완전히
-          열리지 않았습니다. 지금은 작은 흔들림보다 다음 확인 시각을
-          기다리는 편이 안전합니다.
-        </p>
+      <div class="hero-heading">
+        <p class="eyebrow">BTCUSD · LYNX WEATHER</p>
+        <div class="hero-weather"><span class="weather-icon" id="heroWeatherIcon" aria-hidden="true">◌</span><h2 class="weather-name" id="heroWeatherName">CALCULATING</h2></div>
+        <p class="hero-note" id="heroWeatherNote">Weather score is waiting for a public LIVE contract.</p>
+        <div class="hero-price-line"><span class="hero-price-label">BTC price</span><strong class="price">—</strong><span class="price-change">LIVE reference</span></div>
       </div>
-
-      <div class="weather-summary">
-        <div
-          class="weather-icon"
-          aria-hidden="true"
-        >
-          🌤️
-        </div>
-
-        <p class="weather-name">
-          구름 조금
-        </p>
-
-        <p class="energy">
-          현재 시장 에너지 69°
-        </p>
-      </div>
+      <dl class="hero-signals" aria-label="Lynx observation signals">
+        <div><dt>날씨 유지력</dt><dd id="heroPersistence">CALCULATING</dd></div>
+        <div><dt>날씨 변화율</dt><dd id="heroChange">CALCULATING</dd></div>
+        <div><dt>주인공 시간축</dt><dd id="heroTimeframe">WAITING</dd></div>
+        <div><dt>관측 상태</dt><dd id="heroObservationState">WAITING</dd></div>
+      </dl>
     </section>
 
+    <section class="section lynx-frames-section" aria-labelledby="dailyFramesTitle">
+      <div class="section-title"><div><h2 id="dailyFramesTitle">일간 시간축</h2><span>상위 시간축 날씨판</span></div><span class="plan-chip">PREMIUM</span></div>
+      <div class="daily-frame-strip" id="dailyFrameStrip" aria-live="polite"></div>
+    </section>
 
-    <!-- 2. MAAT / MAAT2 검증 상태 -->
+    <section class="section lynx-frames-section" aria-labelledby="intradayFramesTitle">
+      <div class="section-title"><div><h2 id="intradayFramesTitle">시간축 매트릭스</h2><span>1H ~ 24H · Lynx observation grid</span></div><span class="plan-chip">PRO</span></div>
+      <div class="timeframe-matrix" id="timeframeMatrix" aria-live="polite"></div>
+    </section>
+
+    <section class="section asset-access-section" aria-labelledby="assetAccessTitle">
+      <div class="section-title"><div><h2 id="assetAccessTitle">관측 자산</h2><span>현재 플랜: FREE</span></div></div>
+      <div class="asset-access-list" id="assetAccessList"></div>
+    </section>
+
     <section class="section validation-section">
       <div class="section-title validation-title">
         <div>
@@ -470,6 +458,7 @@
   </main>
 
   <script src="./weather-engine.js"></script>
-  <script src="./app.js?v=10"></script>
+  <script src="./lynx-dashboard-config.js?v=11"></script>
+  <script src="./app.js?v=11"></script>
 </body>
 </html>

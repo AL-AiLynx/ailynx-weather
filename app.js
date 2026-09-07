@@ -44,6 +44,7 @@ let as1ObservationRequestPromise = null;
 let validationCardsData = null;
 let validationTimeframe = "240";
 let validationRequestPromise = null;
+const dashboardConfig = window.LynxDashboardConfig;
 
 const STATUS_CLASSES = [
   "status-fresh",
@@ -373,10 +374,12 @@ async function applyAs1ValidationCards(timeframe = validationTimeframe) {
       validationTimeframe = timeframe;
       validationCardsData = await client.fetchValidationCards({timeframe});
       renderValidationCards();
+      renderLynxDashboard();
       return true;
     } catch {
       validationCardsData = null;
       renderValidationCards();
+      renderLynxDashboard();
       return false;
     }
   })();
@@ -555,6 +558,109 @@ function renderMaat2ValidationCard(maat2) {
 function renderValidationCards() {
   renderMaatValidationCard(validationCardsData?.maat);
   renderMaat2ValidationCard(validationCardsData?.maat2);
+}
+
+function dashboardText(id, value) {
+  const element = document.getElementById(id);
+  if (element) element.textContent = value;
+}
+
+function currentPlan() {
+  return dashboardConfig?.plans?.[dashboardConfig.activePlan] ?? null;
+}
+
+function weatherPresentation(score) {
+  if (!Number.isFinite(score)) return {icon: "◌", label: "CALCULATING", note: "Weather score is waiting for a public LIVE contract."};
+  const band = dashboardConfig?.weatherBands?.find((item) => score >= item.min && score <= item.max);
+  return band ? {...band, note: "LIVE weather score"} : {icon: "◌", label: "NO DATA", note: "Weather score is outside the public contract."};
+}
+
+function observedHeroState() {
+  const maat = validationCardsData?.maat;
+  const time = validationCardsData?.maat2?.time;
+  const stopwatch = maat?.available ? maat.payload?.stopwatch : null;
+  const timePayload = time?.available ? time.payload : null;
+  const parentMinutes = timePayload?.time?.parent_tf_minutes ?? stopwatch?.parent_tf_minutes;
+  const state = timePayload?.record_status ?? (maat?.available ? maat.payload?.record_status : null);
+  return {
+    timeframe: Number.isFinite(parentMinutes) ? formatValidationTfMinutes(parentMinutes) : weatherData.mainTimeframe || "WAITING",
+    state: typeof state === "string" ? state : "WAITING",
+  };
+}
+
+function planAllows(timeframe, kind) {
+  const plan = currentPlan();
+  return Boolean(plan && plan[kind]?.includes(timeframe));
+}
+
+function makeFrameCell(timeframe, kind) {
+  const allowed = planAllows(timeframe, kind);
+  const cell = document.createElement("article");
+  cell.className = `frame-cell ${allowed ? "is-waiting" : "is-locked"}`;
+  const label = document.createElement("strong");
+  label.textContent = timeframe;
+  const icon = document.createElement("span");
+  icon.className = "frame-icon";
+  icon.textContent = allowed ? "◌" : "🔒";
+  const persistence = document.createElement("small");
+  persistence.textContent = allowed ? "WAITING" : "LOCKED";
+  const change = document.createElement("small");
+  change.className = "frame-change";
+  change.textContent = allowed ? "—" : dashboardConfig?.activePlan === "FREE" ? "UPGRADE" : "NO DATA";
+  cell.append(label, icon, persistence, change);
+  return cell;
+}
+
+function renderAssetAccess() {
+  const container = document.getElementById("assetAccessList");
+  if (!container || !dashboardConfig) return;
+  container.replaceChildren();
+  const plan = currentPlan();
+  for (const asset of dashboardConfig.assets) {
+    const allowed = Boolean(plan?.assets?.includes(asset.id));
+    const item = document.createElement("article");
+    item.className = `asset-access ${allowed ? "is-live" : "is-locked"}`;
+    const name = document.createElement("strong");
+    name.textContent = asset.label;
+    const state = document.createElement("span");
+    state.textContent = allowed && asset.status === "LIVE" ? "LIVE" : allowed ? asset.status : `LOCKED · ${asset.requiredPlan}`;
+    item.append(name, state);
+    container.appendChild(item);
+  }
+}
+
+function hideLegacyWeatherPanels() {
+  for (const selector of [".hourly-card", ".daily-card"]) {
+    document.querySelector(selector)?.closest(".section")?.setAttribute("hidden", "");
+  }
+  document.querySelector(".info-grid")?.setAttribute("hidden", "");
+}
+
+function renderLynxDashboard() {
+  if (!dashboardConfig) return;
+  const presentation = weatherPresentation(null);
+  const hero = observedHeroState();
+  dashboardText("heroWeatherIcon", presentation.icon);
+  dashboardText("heroWeatherName", presentation.label);
+  dashboardText("heroWeatherNote", presentation.note);
+  dashboardText("heroPersistence", "CALCULATING");
+  dashboardText("heroChange", "CALCULATING");
+  dashboardText("heroTimeframe", hero.timeframe);
+  dashboardText("heroObservationState", hero.state);
+  const price = document.querySelector(".hero-price-line .price");
+  if (price) price.textContent = weatherData.mode === "AS1_LIVE" ? formatPrice(weatherData.price) : "—";
+
+  const daily = document.getElementById("dailyFrameStrip");
+  if (daily) {
+    daily.replaceChildren();
+    dashboardConfig.dailyTimeframes.forEach((timeframe) => daily.appendChild(makeFrameCell(timeframe, "daily")));
+  }
+  const intraday = document.getElementById("timeframeMatrix");
+  if (intraday) {
+    intraday.replaceChildren();
+    dashboardConfig.intradayTimeframes.forEach((timeframe) => intraday.appendChild(makeFrameCell(timeframe, "intraday")));
+  }
+  renderAssetAccess();
 }
 
 
@@ -992,6 +1098,7 @@ function renderApp() {
   renderInfoCards();
   renderLastUpdated();
   renderValidationCards();
+  renderLynxDashboard();
 }
 
 
@@ -1017,6 +1124,7 @@ function startFreshnessTimer() {
   앱 시작
 */
 async function initializeApp() {
+  hideLegacyWeatherPanels();
   await loadWeatherData();
   await applyConfiguredOverlay();
   renderApp();
