@@ -787,6 +787,11 @@
 }
 
 @media (max-width: 390px) {
+  .top-bar { gap: 8px; }
+  .brand { gap: 8px; min-width: 0; }
+  .logo { width: 42px; height: 42px; border-radius: 14px; font-size: 22px; }
+  .brand-text p { max-width: 108px; line-height: 1.25; }
+  .live-badge { max-width: 158px; overflow: hidden; text-overflow: ellipsis; }
   .hero { padding: 18px 15px; }
   .hero .weather-name { font-size: 27px; }
   .hero-signals { gap: 6px; }

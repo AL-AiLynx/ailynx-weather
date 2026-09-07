@@ -25,6 +25,6 @@ test("dashboard provides a config-driven Lynx timeframe board without invented m
   assert.match(app, /hideLegacyWeatherPanels/);
   assert.match(css, /\.timeframe-matrix/);
   assert.match(css, /@media \(max-width: 390px\)/);
-  assert.match(worker, /ailynx-weather-v11/);
+  assert.match(worker, /ailynx-weather-v12/);
   assert.match(worker, /lynx-dashboard-config\.js\?v=11/);
 });
