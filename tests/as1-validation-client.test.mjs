@@ -11,9 +11,9 @@ import {
 
 function responseBody(view = "MAAT", timeframe = "240") {
   const identity = {
-    MAAT: {layout_id: "MAAT", observer: "MAAT", packet_type: "VALIDATION_SNAPSHOT"},
-    MAAT2_HUB: {layout_id: "MAAT2", observer: "MAAT2_HUB", packet_type: "HUB_STATE_SNAPSHOT"},
-    MAAT2_TIME: {layout_id: "MAAT2", observer: "MAAT2_TIME", packet_type: "TIME_ENGINE_SNAPSHOT"},
+    MAAT: {layout_id: "MAAT", observer: "MAAT", code_version: "MAAT_STOPWATCH_AS1_V1_4", packet_type: "VALIDATION_SNAPSHOT"},
+    MAAT2_HUB: {layout_id: "MAAT2", observer: "MAAT2_HUB", code_version: "MAAT2_HUB_V1_1_AS1_V1_4", packet_type: "HUB_STATE_SNAPSHOT"},
+    MAAT2_TIME: {layout_id: "MAAT2", observer: "MAAT2_TIME", code_version: "MAAT2_TIME_V1_AS1_V1_4", packet_type: "TIME_ENGINE_SNAPSHOT"},
   }[view];
   return {
     ok: true,

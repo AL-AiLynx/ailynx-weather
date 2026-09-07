@@ -40,7 +40,7 @@ let weatherData = FALLBACK_DATA;
 let baselineWeatherData = FALLBACK_DATA;
 let hasLoadedWeatherData = false;
 let freshnessIntervalId = null;
-let as1LiveRequestPromise = null;
+let as1ObservationRequestPromise = null;
 let validationCardsData = null;
 let validationTimeframe = "240";
 let validationRequestPromise = null;
@@ -282,24 +282,34 @@ async function applyHorusSampleOverlay() {
 }
 
 
+function displayAs1Timeframe(timeframe) {
+  if (timeframe === "D" || timeframe === "1D" || timeframe === "1440") return "1D";
+  const minutes = Number(timeframe);
+  return Number.isFinite(minutes) && minutes > 0 && minutes % 60 === 0
+    ? `${minutes / 60}H`
+    : String(timeframe || "-");
+}
+
 async function applyAs1LiveOverlay() {
   if (APP_DATA_MODE !== "AS1_LIVE") {
     return false;
   }
 
-  if (as1LiveRequestPromise) {
-    return as1LiveRequestPromise;
+  if (as1ObservationRequestPromise) {
+    return as1ObservationRequestPromise;
   }
 
-  as1LiveRequestPromise = (async () => {
+  as1ObservationRequestPromise = (async () => {
     try {
-      const liveClient = await import(
-        "./as1-live-client.js"
-      );
-      const result = await liveClient
-        .fetchAs1LiveObservation();
+      const observationClient = await import("./as1-observation-client.js");
+      const result = await observationClient.fetchAs1Observation({
+        asset: "COINBASE:BTCUSD",
+        observer: "MAAT",
+        packetType: "VALIDATION_SNAPSHOT",
+        timeframe: "240",
+      });
 
-      if (!result.applied) {
+      if (!result.available) {
         console.warn(
           "AiLynx AS1 Live 데이터 미적용:",
           result.reason
@@ -310,9 +320,9 @@ async function applyAs1LiveOverlay() {
       weatherData = {
         ...weatherData,
         mode: "AS1_LIVE",
-        price: result.price,
+        price: result.bar.close,
         updatedAt: result.receivedAt,
-        mainTimeframe: result.timeframe,
+        mainTimeframe: displayAs1Timeframe(result.timeframe),
         as1Live: {
           freshness: result.freshness,
           barCloseTime: result.barCloseTime
@@ -332,9 +342,9 @@ async function applyAs1LiveOverlay() {
   })();
 
   try {
-    return await as1LiveRequestPromise;
+    return await as1ObservationRequestPromise;
   } finally {
-    as1LiveRequestPromise = null;
+    as1ObservationRequestPromise = null;
   }
 }
 

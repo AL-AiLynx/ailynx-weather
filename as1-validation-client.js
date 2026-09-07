@@ -1,5 +1,5 @@
 export const AS1_VALIDATION_ENDPOINT =
-  "https://ofcvmsbejmwcgdymgkdj.supabase.co/functions/v1/as1-validation-read";
+  "https://jggazwqwalincsjegieo.supabase.co/functions/v1/as1-validation-read";
 export const AS1_VALIDATION_TIMEOUT_MS = 5000;
 
 const API_SCHEMA_VERSION = "as1-validation-read.v1";
@@ -7,9 +7,9 @@ const SOURCE_PROFILE = "CB_BTCUSD_SPOT_20260722_V1";
 const TICKER_ID = "COINBASE:BTCUSD";
 const TIMEFRAMES = new Set(["240", "480", "720", "D", "1D", "1440"]);
 const VIEW_IDENTITY = Object.freeze({
-  MAAT: {layout_id: "MAAT", observer: "MAAT", packet_type: "VALIDATION_SNAPSHOT"},
-  MAAT2_HUB: {layout_id: "MAAT2", observer: "MAAT2_HUB", packet_type: "HUB_STATE_SNAPSHOT"},
-  MAAT2_TIME: {layout_id: "MAAT2", observer: "MAAT2_TIME", packet_type: "TIME_ENGINE_SNAPSHOT"},
+  MAAT: {layout_id: "MAAT", observer: "MAAT", code_version: "MAAT_STOPWATCH_AS1_V1_4", packet_type: "VALIDATION_SNAPSHOT"},
+  MAAT2_HUB: {layout_id: "MAAT2", observer: "MAAT2_HUB", code_version: "MAAT2_HUB_V1_1_AS1_V1_4", packet_type: "HUB_STATE_SNAPSHOT"},
+  MAAT2_TIME: {layout_id: "MAAT2", observer: "MAAT2_TIME", code_version: "MAAT2_TIME_V1_AS1_V1_4", packet_type: "TIME_ENGINE_SNAPSHOT"},
 });
 const FRESHNESS = new Set(["FRESH", "AGING", "STALE", "EXPIRED", "INVALID_CLOCK"]);
 const QUALITY = new Set(["GOOD", "LIMITED", "WATCH", "INVALID"]);
@@ -52,6 +52,7 @@ export function validateValidationResponse(value, view, timeframe) {
     available: true,
     view,
     timeframe,
+    bar: {openTime: value.bar.open_time, closeTime: value.bar.close_time, close: value.bar.close},
     barCloseTime: value.bar.close_time,
     receivedAt: value.received_at,
     quality: {

@@ -1,20 +1,17 @@
 "use strict";
 
 const CACHE_NAME =
-  "ailynx-weather-v8";
-
-const AS1_LIVE_ENDPOINT =
-  "https://ofcvmsbejmwcgdymgkdj.supabase.co/functions/v1/as1-weather-read";
+  "ailynx-weather-v9";
 
 const AS1_VALIDATION_ENDPOINT =
-  "https://ofcvmsbejmwcgdymgkdj.supabase.co/functions/v1/as1-validation-read";
+  "https://jggazwqwalincsjegieo.supabase.co/functions/v1/as1-validation-read";
 
 const APP_SHELL = [
   "./",
   "./index.html",
   "./styles.css",
   "./weather-engine.js",
-  "./as1-live-client.js",
+  "./as1-observation-client.js",
   "./as1-validation-client.js",
   "./app.js",
   "./weather-data.json",
@@ -76,11 +73,6 @@ self.addEventListener(
       event.request;
 
     if (request.method !== "GET") {
-      return;
-    }
-
-    if (request.url === AS1_LIVE_ENDPOINT) {
-      event.respondWith(fetch(request));
       return;
     }
 
