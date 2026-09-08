@@ -510,8 +510,8 @@
     </section>
 
     <footer>
-      <p id="lastObservation">마지막 관측: 불러오는 중</p>
-      <p class="visit-stats" id="visitStats">TOTAL VISITS · WAITING</p>
+      <p id="lastObservation" data-i18n="loading">Loading</p>
+      <p class="visit-stats" id="visitStats" data-i18n="totalVisitsWaiting">Total visits · waiting</p>
       <nav class="footer-links" aria-label="Footer links">
         <button type="button" class="footer-link" data-inquiry-status>고객문의</button>
         <span>Privacy</span>
@@ -536,7 +536,7 @@
   <script src="./market-advisory-config.js?v=1"></script>
   <script src="./market-advisory.js?v=1"></script>
   <script src="./auth-gate.js?v=2"></script>
-  <script src="./app.js?v=20"></script>
+  <script src="./app.js?v=21"></script>
 
   <dialog class="account-dialog" id="accountDialog" aria-labelledby="accountDialogTitle">
     <form method="dialog"><button class="dialog-close" type="button" data-dialog-close aria-label="Close">×</button></form>

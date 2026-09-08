@@ -909,7 +909,7 @@ function renderLynxDashboard() {
   dashboardText("heroPersistence", Number.isFinite(durability) ? `${durability}%` : result ? tr("waiting") : tr("calculating"));
   dashboardText("heroChange", Number.isFinite(changeRate) ? `${changeRate >= 0 ? "+" : ""}${changeRate}` : result ? tr("waiting") : tr("calculating"));
   dashboardText("heroTimeframe", hero.timeframe);
-  dashboardText("heroObservationState", hero.state);
+  dashboardText("heroObservationState", displayState(hero.state));
   renderMarketPrice();
 
   const daily = document.getElementById("dailyFrameStrip");
@@ -954,30 +954,28 @@ function getElapsedMinutes(value) {
 
 function formatElapsedTime(minutes) {
   if (!Number.isFinite(minutes) || minutes < 1) {
-    return "방금 전";
+    return window.AiLynxI18n?.language === "ko" ? "방금 전" : "just now";
   }
 
   const totalMinutes = Math.floor(minutes);
 
   if (totalMinutes < 60) {
-    return `${totalMinutes}분 전`;
+    return window.AiLynxI18n?.language === "ko" ? `${totalMinutes}분 전` : `${totalMinutes}m ago`;
   }
 
   if (totalMinutes < 1440) {
     const hours = Math.floor(totalMinutes / 60);
     const remainingMinutes = totalMinutes % 60;
 
-    return remainingMinutes
-      ? `${hours}시간 ${remainingMinutes}분 전`
-      : `${hours}시간 전`;
+    if (window.AiLynxI18n?.language === "ko") return remainingMinutes ? `${hours}시간 ${remainingMinutes}분 전` : `${hours}시간 전`;
+    return remainingMinutes ? `${hours}h ${remainingMinutes}m ago` : `${hours}h ago`;
   }
 
   const days = Math.floor(totalMinutes / 1440);
   const hours = Math.floor((totalMinutes % 1440) / 60);
 
-  return hours
-    ? `${days}일 ${hours}시간 전`
-    : `${days}일 전`;
+  if (window.AiLynxI18n?.language === "ko") return hours ? `${days}일 ${hours}시간 전` : `${days}일 전`;
+  return hours ? `${days}d ${hours}h ago` : `${days}d ago`;
 }
 
 
@@ -1354,15 +1352,13 @@ function renderLastUpdated() {
 
   if (!updatedAt) {
     footerFirstLine.textContent =
-      "LAST OBSERVATION: TIME UNAVAILABLE";
+      tr("lastObservationUnavailable");
 
     return;
   }
 
   footerFirstLine.textContent =
-    `LAST OBSERVATION: ${updatedAt} KST · ${formatElapsedTime(
-      getElapsedMinutes(weatherData.updatedAt)
-    )}`;
+    tr("lastObservation", {time: updatedAt, elapsed: formatElapsedTime(getElapsedMinutes(weatherData.updatedAt))});
 }
 
 

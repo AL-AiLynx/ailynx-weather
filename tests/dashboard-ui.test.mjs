@@ -35,7 +35,7 @@ test("dashboard provides a config-driven Lynx timeframe board without invented m
   assert.match(css, /\.market-dominance-strip/);
   assert.match(css, /\.app-tabs/);
   assert.match(css, /@media \(max-width: 390px\)/);
-  assert.match(worker, /ailynx-weather-v24/);
+  assert.match(worker, /ailynx-weather-v25/);
   assert.match(worker, /market-dominance-client\.js\?v=15/);
   assert.match(worker, /visit-counter-client\.js\?v=15/);
   assert.match(worker, /lynx-dashboard-config\.js\?v=17/);
@@ -47,7 +47,7 @@ test("dashboard provides a config-driven Lynx timeframe board without invented m
   assert.match(worker, /market-advisory-config\.js\?v=1/);
   assert.match(worker, /auth-gate\.js\?v=2/);
   assert.match(worker, /i18n\.js\?v=2/);
-  assert.match(worker, /app\.js\?v=20/);
+  assert.match(worker, /app\.js\?v=21/);
   assert.match(app, /activePlan !== "PRO"/);
   assert.match(app, /precisionValidation/);
   for (const weatherClass of ["weather--sunny", "weather--partly-cloudy", "weather--cloudy", "weather--rain", "weather--neutral"]) assert.match(css, new RegExp(weatherClass));
