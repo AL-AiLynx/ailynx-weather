@@ -21,6 +21,8 @@ test("member/community MVP is disabled without public Auth configuration", async
   assert.match(i18n, /ko:/);
   assert.match(i18n, /en:/);
   assert.match(i18n, /const preferred = \(\) => "en"/);
+  assert.match(i18n, /weatherDurability/);
+  assert.match(i18n, /marketAdvisory/);
   assert.match(gate, /BOOTING/);
   assert.match(gate, /UNAUTHENTICATED/);
   assert.match(gate, /AUTHENTICATING/);
@@ -57,6 +59,8 @@ test("community UI has separate posts/chat, provider states, and no upload contr
   assert.match(html, /onboardingDialog/);
   assert.match(html, /JOIN FREE/);
   assert.match(html, /MARKET ADVISORY/);
+  assert.match(html, /manualButton/);
+  assert.match(html, /manualDialog/);
   assert.match(advisory, /active: null/);
   assert.match(advisory, /evidencePlan: "PRO"/);
 });

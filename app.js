@@ -58,6 +58,11 @@ let visitStatsRequestPromise = null;
 let localClockIntervalId = null;
 const dashboardConfig = window.LynxDashboardConfig;
 const liveFetchAllowed = () => window.AiLynxAuthGate?.canFetchLive?.() ?? true;
+const tr = (key, values) => window.AiLynxI18n?.t?.(key, values) ?? key;
+const displayState = (value) => {
+  const key = {WAITING: "waiting", PLANNED: "planned", LOCKED: "locked", LIVE: "live", STALE: "stale", INVALID: "invalid", "NO DATA": "noData", CALCULATING: "calculating", FULL: "fullObservation", CLOUDY: "cloudy", SUNNY: "sunny", PARTLY_CLOUDY: "partlyCloudy", RAINY: "rainy", NOISE_ONLY: "waiting"}[value];
+  return key ? tr(key) : String(value || "").replaceAll("_", " ");
+};
 
 const STATUS_CLASSES = [
   "status-fresh",
@@ -513,7 +518,7 @@ function renderValidationQuality(id, observation) {
     "quality-invalid"
   );
   if (!observation?.available) {
-    element.textContent = "데이터 대기";
+    element.textContent = tr("waiting");
     return;
   }
   const quality = observation.quality.sensorQuality;
@@ -524,7 +529,7 @@ function renderValidationQuality(id, observation) {
 function renderMaatValidationCard(observation) {
   renderValidationQuality("maatQuality", observation);
   if (!observation?.available) {
-    setValidationText("maatStatus", "Waiting for a MAAT LIVE observation in the selected timeframe.");
+    setValidationText("maatStatus", tr("waiting"));
     for (const id of ["maatState", "maatScore", "maatRisk", "maatNoise", "maatSensors", "maatWindow", "maatUpdated"]) {
       setValidationText(id, "—");
     }
@@ -554,7 +559,7 @@ function renderMaat2ValidationCard(maat2) {
   const primary = time?.available ? time : hub;
   renderValidationQuality("maat2Quality", primary);
   if (!primary?.available) {
-    setValidationText("maat2Status", "Waiting for a MAAT2 Hub/Time LIVE observation in the selected timeframe.");
+    setValidationText("maat2Status", tr("waiting"));
     for (const id of ["maat2Role", "maat2TimeScore", "maat2Timeframes", "maat2Noise", "maat2HubScores", "maat2Why", "maat2Sync"]) {
       setValidationText(id, "—");
     }
@@ -578,7 +583,7 @@ function renderMaat2ValidationCard(maat2) {
 function renderValidationCards() {
   if (dashboardConfig?.activePlan !== "PRO") {
     const target = document.getElementById("validationCards");
-    if (target) target.innerHTML = '<article class="validation-card card validation-locked"><p class="validation-kicker">DETAIL VALIDATION</p><h3>PRO</h3><p class="validation-status">MAAT · MAAT2 precision validation</p><p class="validation-lock">PRO에서 확인</p></article>';
+    if (target) target.innerHTML = `<article class="validation-card card validation-locked"><p class="validation-kicker">${tr("detailValidation")}</p><h3>PRO</h3><p class="validation-status">${tr("precisionValidation")}</p><p class="validation-lock">${tr("viewInPro")}</p></article>`;
     return;
   }
   renderMaatValidationCard(validationCardsData?.maat);
@@ -597,20 +602,20 @@ function renderMarketPrice() {
   if (selectedAssetId !== "BTCUSD") {
     const observed = selectedAssetObservation?.latestReceipt;
     price.textContent = Number.isFinite(observed?.bar_close) ? formatPrice(observed.bar_close) : "—";
-    meta.textContent = observed ? `OBSERVED CLOSE · ${observed.freshness}` : "CURRENT PRICE · WAITING";
+    meta.textContent = observed ? tr("observedFreshness", {freshness: displayState(observed.freshness)}) : `${tr("currentPrice")} · ${tr("waiting")}`;
     return;
   }
 
   if (!marketPriceData?.available) {
     price.textContent = "—";
-    meta.textContent = "1 MIN UPDATE · WAITING FOR DATA";
+    meta.textContent = `${tr("oneMinuteUpdate")} · ${tr("waitingForData")}`;
     return;
   }
 
   price.textContent = formatPrice(marketPriceData.price);
   meta.textContent = marketPriceData.stale
-    ? "COINBASE BTC-USD · STALE"
-    : "COINBASE BTC-USD · 1 MIN UPDATE";
+    ? `COINBASE BTC-USD · ${tr("stale")}`
+    : `COINBASE BTC-USD · ${tr("oneMinuteUpdate")}`;
 }
 
 
@@ -697,11 +702,11 @@ function renderMarketDominance() {
     const label = document.createElement("span");
     label.textContent = item.label;
     const value = document.createElement("strong");
-    value.textContent = Number.isFinite(item.value) ? `${item.value.toFixed(1)}%` : "WAITING";
+    value.textContent = Number.isFinite(item.value) ? `${item.value.toFixed(1)}%` : tr("waiting");
     const status = document.createElement("small");
     status.textContent = marketDominanceData?.available
-      ? marketDominanceData.stale ? "STALE" : "FREE · LIVE"
-      : "PUBLIC DATA";
+      ? marketDominanceData.stale ? tr("stale") : `${tr("free")} · ${tr("live")}`
+      : tr("publicData");
     card.append(label, value, status);
     strip.appendChild(card);
   });
@@ -746,12 +751,12 @@ function renderVisitStats() {
   }
 
   if (!visitStatsData?.available) {
-    target.textContent = "TOTAL VISITS · WAITING";
+    target.textContent = tr("totalVisitsWaiting");
     return;
   }
 
   const formatter = new Intl.NumberFormat("en-US");
-  target.textContent = `TOTAL VISITS ${formatter.format(visitStatsData.totalVisits)} · TODAY ${formatter.format(visitStatsData.todayVisits)}`;
+  target.textContent = tr("totalVisits", {total: formatter.format(visitStatsData.totalVisits), today: formatter.format(visitStatsData.todayVisits)});
 }
 
 
@@ -805,9 +810,9 @@ function currentPlan() {
 }
 
 function weatherPresentation(score) {
-  if (!Number.isFinite(score)) return {icon: "◌", label: "CALCULATING", note: "Weather score is waiting for a public LIVE contract."};
+  if (!Number.isFinite(score)) return {icon: "◌", label: tr("calculating"), note: tr("publicContractWaiting")};
   const band = dashboardConfig?.weatherBands?.find((item) => score >= item.min && score <= item.max);
-  return band ? {...band, note: "LIVE weather score"} : {icon: "◌", label: "NO DATA", note: "Weather score is outside the public contract."};
+  return band ? {...band, label: displayState(band.label), note: tr("liveData")} : {icon: "◌", label: tr("noData"), note: tr("publicContractWaiting")};
 }
 
 function observedHeroState() {
@@ -848,11 +853,11 @@ function makeFrameCell(timeframe, kind) {
   icon.className = "frame-icon";
   icon.textContent = status === "FRESH" || status === "AGING" ? "●" : status === "STALE" ? "◐" : status === "INVALID" ? "!" : status === "NO DATA" ? "—" : "…";
   const persistence = document.createElement("small");
-  persistence.textContent = allowed ? status : `LOCKED · ${status}`;
+  persistence.textContent = allowed ? displayState(status) : `${tr("locked")} · ${displayState(status)}`;
   const change = document.createElement("small");
   change.className = "frame-change";
   change.textContent = observation?.available ? `${observation.quality.sensorQuality} · ${observation.quality.valid ? "LIVE" : "INVALID"}`
-    : allowed ? "canonical observation" : dashboardConfig?.activePlan === "FREE" ? "UPGRADE" : "NO DATA";
+    : allowed ? tr("waiting") : dashboardConfig?.activePlan === "FREE" ? tr("upgrade") : tr("noData");
   cell.append(label, icon, persistence, change);
   return cell;
 }
@@ -871,7 +876,7 @@ function renderAssetAccess() {
     name.textContent = asset.label;
     const state = document.createElement("span");
     const liveState = asset.id === "BTCUSD" ? "LIVE" : selectedAssetId === asset.id ? selectedAssetObservation?.status || "PLANNED" : "PLANNED";
-    state.textContent = allowed ? liveState : `LOCKED · ${asset.requiredPlan}`;
+    state.textContent = allowed ? displayState(liveState) : `${tr("locked")} · ${asset.requiredPlan}`;
     item.append(name, state);
     container.appendChild(item);
   }
@@ -890,18 +895,19 @@ function renderLynxDashboard() {
   const durability = window.AiLynxWeatherEngine?.computeDurability?.([]);
   const changeRate = window.AiLynxWeatherEngine?.computeChangeRate?.([]);
   const classified = window.AiLynxWeatherEngine?.classifyWeather?.(result?.score);
-  const presentation = classified ? {icon: getWeatherIcon(classified.icon), label: classified.label, note: `${result.timeframe} FULL observation score · ${result.score}`} : weatherPresentation(null);
+  const presentation = classified ? {icon: getWeatherIcon(classified.icon), label: displayState(classified.state), note: tr("fullObservation", {timeframe: result.timeframe}), score: result.score} : weatherPresentation(null);
   document.body.classList.remove("weather--sunny", "weather--partly-cloudy", "weather--cloudy", "weather--rain", "weather--neutral");
   document.body.classList.add(classified ? `weather--${classified.state.toLowerCase().replace("_", "-")}` : "weather--neutral");
   const hero = observedHeroState();
   const asset = window.AiLynxAssetRegistry?.byId?.(selectedAssetId);
-  const heroLabel = document.querySelector(".hero .eyebrow");
-  if (heroLabel) heroLabel.textContent = `${asset?.label || selectedAssetId} · LYNX WEATHER`;
+  const heroLabel = document.getElementById("heroAssetLabel");
+  if (heroLabel) heroLabel.textContent = `${asset?.label || selectedAssetId} · ${tr("lynxWeather")}`;
   dashboardText("heroWeatherIcon", presentation.icon);
   dashboardText("heroWeatherName", presentation.label);
+  dashboardText("heroWeatherScore", Number.isFinite(presentation.score) ? String(presentation.score) : "—");
   dashboardText("heroWeatherNote", presentation.note);
-  dashboardText("heroPersistence", Number.isFinite(durability) ? `${durability}%` : result ? "WAITING" : "CALCULATING");
-  dashboardText("heroChange", Number.isFinite(changeRate) ? `${changeRate >= 0 ? "+" : ""}${changeRate}` : result ? "WAITING" : "CALCULATING");
+  dashboardText("heroPersistence", Number.isFinite(durability) ? `${durability}%` : result ? tr("waiting") : tr("calculating"));
+  dashboardText("heroChange", Number.isFinite(changeRate) ? `${changeRate >= 0 ? "+" : ""}${changeRate}` : result ? tr("waiting") : tr("calculating"));
   dashboardText("heroTimeframe", hero.timeframe);
   dashboardText("heroObservationState", hero.state);
   renderMarketPrice();
@@ -1507,12 +1513,12 @@ function initializeAssetSelector() {
   selector.replaceChildren(...registry.assets.map((asset) => {
     const option = document.createElement("option");
     option.value = asset.id;
-    option.textContent = `${asset.label} · ${plan?.assets?.includes(asset.id) ? "AVAILABLE" : `LOCKED ${asset.requiredPlan}`}`;
+    option.textContent = `${asset.label} · ${plan?.assets?.includes(asset.id) ? tr("available") : `${tr("locked")} ${asset.requiredPlan}`}`;
     option.disabled = !plan?.assets?.includes(asset.id);
     return option;
   }));
   selector.value = selectedAssetId;
-  selector.addEventListener("change", async (event) => {
+  selector.onchange = async (event) => {
     const next = event.target.value;
     selectedAssetObservation = null;
     selectedAssetId = next;
@@ -1524,7 +1530,7 @@ function initializeAssetSelector() {
       } catch { selectedAssetObservation = null; }
       renderLynxDashboard();
     }
-  });
+  };
 }
 
 window.addEventListener("ailynx-member-preferences", async (event) => {
@@ -1589,6 +1595,15 @@ document.addEventListener(
   "DOMContentLoaded",
   initializeApp
 );
+
+window.addEventListener("ailynx-language", () => {
+  const plan = currentPlan();
+  dashboardText("currentPlanLabel", tr("currentPlan", {plan: plan?.label || "FREE"}));
+  if (document.readyState !== "loading") {
+    initializeAssetSelector();
+    renderApp();
+  }
+});
 
 
 /*

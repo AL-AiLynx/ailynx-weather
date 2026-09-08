@@ -28,7 +28,7 @@
   <!-- 기본 디자인 -->
   <link
     rel="stylesheet"
-    href="./styles.css?v=22"
+    href="./styles.css?v=23"
   />
 
   <!-- PWA 매니페스트 -->
@@ -93,9 +93,7 @@
             AiLynx
           </h1>
 
-          <p>
-            Lynx Weather · timeframe observation
-          </p>
+          <p data-i18n="brandSubtitle">Lynx Weather · timeframe observation</p>
         </div>
       </div>
 
@@ -105,8 +103,9 @@
 
       <time class="local-clock" id="localClock" aria-live="off"></time>
       <div class="member-controls" aria-label="Member controls">
-        <span class="plan-status-chip" id="planStatusChip" aria-label="Current plan">JOIN FREE</span>
+        <span class="plan-status-chip" id="planStatusChip" aria-label="Current plan" data-i18n="joinFree">JOIN FREE</span>
         <div class="language-toggle" aria-label="Language"><button type="button" data-language="ko">KO</button><span aria-hidden="true">|</span><button type="button" data-language="en">EN</button></div>
+        <button class="manual-button" id="manualButton" type="button" data-i18n="manual">MANUAL</button>
         <button class="member-profile" id="memberProfile" type="button" hidden><span aria-hidden="true">◌</span> <span id="memberProfileLabel">로그인</span></button>
       </div>
     </header>
@@ -118,61 +117,61 @@
     </aside>
 
     <nav class="app-tabs" aria-label="AiLynx sections">
-      <button class="app-tab is-active" type="button" data-tab="weather" aria-controls="weatherPanel" aria-selected="true">WEATHER</button>
-      <button class="app-tab" type="button" data-tab="ai" aria-controls="aiPanel" aria-selected="false">AI</button>
-      <button class="app-tab" type="button" data-tab="community" aria-controls="communityPanel" aria-selected="false">COMMUNITY</button>
+      <button class="app-tab is-active" type="button" data-tab="weather" aria-controls="weatherPanel" aria-selected="true" data-i18n="weather">WEATHER</button>
+      <button class="app-tab" type="button" data-tab="ai" aria-controls="aiPanel" aria-selected="false" data-i18n="ai">AI</button>
+      <button class="app-tab" type="button" data-tab="community" aria-controls="communityPanel" aria-selected="false" data-i18n="community">COMMUNITY</button>
     </nav>
 
     <div class="app-panel" id="weatherPanel" data-tab-panel="weather">
 
     <section class="hero card">
       <div class="hero-market">
-        <div class="hero-asset-select"><label for="assetSelector">ASSET</label><select id="assetSelector" aria-label="Selected asset"></select></div>
+        <div class="hero-asset-select"><label for="assetSelector" data-i18n="selectAsset">SELECT ASSET</label><select id="assetSelector" aria-label="Selected asset"></select></div>
         <div class="hero-heading">
-        <p class="eyebrow">BTCUSD · LYNX WEATHER</p>
-        <div class="hero-price-line"><span class="hero-price-label">BTC CURRENT PRICE</span><strong class="price" id="marketPrice">—</strong><span class="price-change" id="marketPriceMeta">1 MIN UPDATE · WAITING FOR DATA</span></div>
+        <p class="eyebrow" id="heroAssetLabel">BTCUSD · LYNX WEATHER</p>
+        <div class="hero-price-line"><span class="hero-price-label" data-i18n="currentPrice">CURRENT PRICE</span><strong class="price" id="marketPrice">—</strong><span class="price-change" id="marketPriceMeta">1 MIN UPDATE · WAITING FOR DATA</span></div>
         </div>
       </div>
       <div class="hero-weather-panel" aria-live="polite">
         <span class="weather-icon" id="heroWeatherIcon" aria-hidden="true">◌</span>
-        <div class="hero-weather-copy"><p class="hero-weather-label">LYNX WEATHER</p><h2 class="weather-name" id="heroWeatherName">CALCULATING</h2><p class="hero-note" id="heroWeatherNote">Weather score is waiting for a public LIVE contract.</p></div>
+        <div class="hero-weather-copy"><h2 class="weather-name" id="heroWeatherName">CALCULATING</h2><strong class="hero-weather-score" id="heroWeatherScore">—</strong><p class="hero-note" id="heroWeatherNote">WAITING</p></div>
       </div>
       <dl class="hero-signals" aria-label="Lynx observation signals">
-        <div><dt>WEATHER DURABILITY</dt><dd id="heroPersistence">CALCULATING</dd></div>
-        <div><dt>WEATHER CHANGE</dt><dd id="heroChange">CALCULATING</dd></div>
-        <div class="hero-timeframe-state"><dt>PRIMARY TIMEFRAME</dt><dd><span id="heroTimeframe">WAITING</span><span aria-hidden="true"> · </span><span id="heroObservationState">WAITING</span></dd></div>
+        <div><dt data-i18n="weatherDurability">WEATHER DURABILITY</dt><dd id="heroPersistence">CALCULATING</dd></div>
+        <div><dt data-i18n="weatherChangeRate">WEATHER CHANGE RATE</dt><dd id="heroChange">CALCULATING</dd></div>
+        <div class="hero-timeframe-state"><dt data-i18n="primaryTimeframe">MAIN TIMEFRAME</dt><dd><span id="heroTimeframe">WAITING</span><span aria-hidden="true"> · </span><span id="heroObservationState">WAITING</span></dd></div>
       </dl>
     </section>
 
     <section class="section lynx-frames-section" aria-labelledby="dailyFramesTitle">
-      <div class="section-title"><div><h2 id="dailyFramesTitle">DAILY TIMEFRAMES</h2><span>Higher-timeframe weather board</span></div><span class="plan-chip">PREMIUM</span></div>
+      <div class="section-title"><div><h2 id="dailyFramesTitle" data-i18n="dailyTimeframes">DAILY TIMEFRAMES</h2><span data-i18n="dailySubtitle">Higher-timeframe weather board</span></div><span class="plan-chip">PREMIUM</span></div>
       <div class="daily-frame-strip" id="dailyFrameStrip" aria-live="polite"></div>
     </section>
 
     <section class="section lynx-frames-section" aria-labelledby="intradayFramesTitle">
-      <div class="section-title"><div><h2 id="intradayFramesTitle">TIMEFRAME MATRIX</h2><span>1H ~ 24H · Lynx observation grid</span></div><span class="plan-chip">PRO</span></div>
+      <div class="section-title"><div><h2 id="intradayFramesTitle" data-i18n="timeframeMatrix">TIMEFRAME MATRIX</h2><span data-i18n="matrixSubtitle">1H–24H · Lynx observation grid</span></div><span class="plan-chip">PRO</span></div>
       <div class="timeframe-matrix" id="timeframeMatrix" aria-live="polite"></div>
     </section>
 
     <section class="section market-dominance-section" aria-labelledby="marketDominanceTitle">
-      <div class="section-title"><div><h2 id="marketDominanceTitle">MARKET DOMINANCE</h2><span>Public market conditions · FREE</span></div><span class="plan-chip">10 MIN</span></div>
+      <div class="section-title"><div><h2 id="marketDominanceTitle" data-i18n="marketDominance">MARKET DOMINANCE</h2><span data-i18n="dominanceSubtitle">Public market conditions · FREE</span></div><span class="plan-chip">10 MIN</span></div>
       <div class="market-dominance-strip" id="marketDominanceStrip" aria-live="polite"></div>
     </section>
 
     <section class="section asset-access-section" aria-labelledby="assetAccessTitle">
-      <div class="section-title"><div><h2 id="assetAccessTitle">OBSERVED MARKETS</h2><span>CURRENT PLAN: FREE</span></div></div>
+      <div class="section-title"><div><h2 id="assetAccessTitle" data-i18n="observedMarkets">OBSERVED MARKETS</h2><span id="currentPlanLabel">CURRENT PLAN: FREE</span></div></div>
       <div class="asset-access-list" id="assetAccessList"></div>
     </section>
 
     <section class="section validation-section">
       <div class="section-title validation-title">
         <div>
-          <h2>VALIDATION STATUS</h2>
-          <span>Closed-bar observation, not prediction</span>
+          <h2 data-i18n="validationStatus">VALIDATION STATUS</h2>
+          <span data-i18n="validationSubtitle">Closed-bar observation, not prediction</span>
         </div>
 
         <label class="validation-timeframe-label" for="validationTimeframe">
-          TIMEFRAME
+          <span data-i18n="timeframe">TIMEFRAME</span>
           <select id="validationTimeframe" aria-label="MAAT validation timeframe">
             <option value="240">4H</option>
             <option value="480">8H</option>
@@ -503,10 +502,10 @@
     </section>
 
     <section class="section market-advisory-section" aria-labelledby="marketAdvisoryTitle">
-      <div class="section-title"><div><h2 id="marketAdvisoryTitle">MARKET ADVISORY</h2><span id="marketAdvisorySubtitle">No active advisory</span></div><span class="plan-chip">LIVE</span></div>
+      <div class="section-title"><div><h2 id="marketAdvisoryTitle" data-i18n="marketAdvisory">MARKET ADVISORY</h2><span id="marketAdvisorySubtitle" data-i18n="noActiveAdvisory">No active advisory</span></div><span class="plan-chip">LIVE</span></div>
       <article class="market-advisory-empty" id="marketAdvisory" aria-live="polite">
         <span class="market-advisory-icon" aria-hidden="true">◌</span>
-        <div><strong id="marketAdvisoryStatus">No active advisory</strong><p id="marketAdvisoryNote">Verified market advisories will appear here when a supported LIVE contract is available.</p></div>
+        <div><strong id="marketAdvisoryStatus" data-i18n="noActiveAdvisory">No active advisory</strong><p id="marketAdvisoryNote" data-i18n="advisoryNote">Verified market advisories will appear here when a supported LIVE contract is available.</p></div>
       </article>
     </section>
 
@@ -531,20 +530,29 @@
   <script src="./lynx-notices.js?v=16"></script>
   <script type="module" src="./asset-registry.js?v=1"></script>
   <script src="./community-config.js?v=1"></script>
-  <script src="./i18n.js?v=1"></script>
+  <script src="./i18n.js?v=2"></script>
   <script src="./community-client.js?v=1"></script>
   <script src="./member-community.js?v=1"></script>
   <script src="./market-advisory-config.js?v=1"></script>
   <script src="./market-advisory.js?v=1"></script>
   <script src="./auth-gate.js?v=2"></script>
-  <script src="./app.js?v=19"></script>
+  <script src="./app.js?v=20"></script>
 
   <dialog class="account-dialog" id="accountDialog" aria-labelledby="accountDialogTitle">
     <form method="dialog"><button class="dialog-close" type="button" data-dialog-close aria-label="Close">×</button></form>
     <p class="eyebrow" data-i18n="account">계정</p><h2 id="accountDialogTitle" data-i18n="login">로그인</h2><p id="authSetupNote" data-i18n="setupRequired">설정 필요</p>
     <div class="provider-list"><button type="button" data-provider="google">Google · SETUP REQUIRED</button><button type="button" data-provider="kakao">Kakao · SETUP REQUIRED</button><button type="button" data-provider="toss">Toss · COMING SOON</button><button type="button" data-provider="chatgpt">ChatGPT · COMING SOON</button></div>
-    <section class="account-settings" aria-labelledby="accountSettingsTitle"><strong id="accountSettingsTitle">Settings</strong><p>Language and main market are saved to your profile after sign-in.</p><div><span>Plan</span><b>FREE</b></div></section>
+    <section class="account-settings" aria-labelledby="accountSettingsTitle"><strong id="accountSettingsTitle" data-i18n="settings">Settings</strong><p data-i18n="profilePreferenceDescription">Language and main market are saved to your profile after sign-in.</p><div><span data-i18n="plan">Plan</span><b>FREE</b></div></section>
     <div class="profile-referral"><strong data-i18n="referral">추천 코드</strong><button type="button" data-copy-referral data-i18n="copy">링크 복사</button></div>
+  </dialog>
+
+  <dialog class="manual-dialog" id="manualDialog" aria-labelledby="manualDialogTitle">
+    <form method="dialog"><button class="dialog-close" type="button" data-dialog-close aria-label="Close">×</button></form>
+    <p class="eyebrow" data-i18n="manual">MANUAL</p>
+    <h2 id="manualDialogTitle" data-i18n="manualTitle">Lynx Weather manual</h2>
+    <p data-i18n="manualIntro">AiLynx shows verified market observations, not predictions.</p>
+    <ol><li data-i18n="manualOne">Weather labels use the supported LIVE contract for each market and timeframe.</li><li data-i18n="manualTwo">Waiting, planned, locked, and no-data states are shown as-is; no value is invented.</li><li data-i18n="manualThree">MAAT and MAAT2 detail validation requires PRO.</li></ol>
+    <form method="dialog"><button type="submit" data-i18n="close">Close</button></form>
   </dialog>
 
   <dialog class="auth-gate-dialog" id="authGateDialog" aria-labelledby="authGateTitle">

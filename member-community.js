@@ -16,7 +16,7 @@ function renderMemberState() {
   setText("memberProfileLabel", enabled ? i18n.t("login") : `${i18n.t("login")} · ${i18n.t("setupRequired")}`);
   document.querySelectorAll("[data-community-auth]").forEach((element) => { element.disabled = true; element.title = i18n.t("setupRequired"); });
   setText("communityAvailability", enabled ? i18n.t("signInRequired") : i18n.t("setupRequired"));
-  setText("planStatusChip", enabled ? "FREE" : "JOIN FREE");
+  setText("planStatusChip", enabled ? i18n.t("free") : i18n.t("joinFree"));
 }
 
 function initializeLanguage() {
@@ -25,6 +25,7 @@ function initializeLanguage() {
 }
 
 function initializeAuthShell() {
+  document.getElementById("manualButton")?.addEventListener("click", () => showDialog("manualDialog"));
   document.getElementById("memberProfile")?.addEventListener("click", () => showDialog("accountDialog"));
   document.querySelectorAll("[data-provider]").forEach((button) => {
     button.addEventListener("click", async () => {
