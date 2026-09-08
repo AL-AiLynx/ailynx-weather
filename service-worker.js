@@ -1,7 +1,7 @@
 +"use strict";
 
 const CACHE_NAME =
-  "ailynx-weather-v42";
+  "ailynx-weather-v43";
 
 const AS1_VALIDATION_ENDPOINT =
   "https://jggazwqwalincsjegieo.supabase.co/functions/v1/as1-validation-read";
@@ -9,7 +9,7 @@ const AS1_VALIDATION_ENDPOINT =
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=30",
+  "./styles.css?v=31",
   "./weather-engine.js",
   "./as1-observation-client.js?v=10",
   "./as1-validation-client.js?v=10",
@@ -42,7 +42,8 @@ const APP_SHELL = [
   "./offline.html",
   "./apple-touch-icon.png",
   "./icons/icon-192.png",
-  "./icons/icon-512.png"
+  "./icons/icon-512.png",
+  "./icons/ailynx-brand.jpg"
 ];
 
 
