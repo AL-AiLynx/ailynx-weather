@@ -41,6 +41,7 @@ let baselineWeatherData = FALLBACK_DATA;
 let hasLoadedWeatherData = false;
 let freshnessIntervalId = null;
 let as1ObservationRequestPromise = null;
+let horusSnapshot = null;
 let validationCardsData = null;
 let validationTimeframe = "240";
 let validationRequestPromise = null;
@@ -311,15 +312,19 @@ async function applyAs1LiveOverlay() {
 
   as1ObservationRequestPromise = (async () => {
     try {
-      const observationClient = await import("./as1-observation-client.js?v=10");
-      const result = await observationClient.fetchAs1Observation({
-        asset: "COINBASE:BTCUSD",
-        observer: "MAAT",
-        packetType: "VALIDATION_SNAPSHOT",
-        timeframe: "240",
-      });
+      const [observationClient, horusClient] = await Promise.all([
+        import("./as1-observation-client.js?v=10"),
+        import("./as1-horus-client.js?v=16"),
+      ]);
+      const [result, horus] = await Promise.all([
+        observationClient.fetchAs1Observation({
+          asset: "COINBASE:BTCUSD", observer: "MAAT", packetType: "VALIDATION_SNAPSHOT", timeframe: "240",
+        }),
+        horusClient.fetchHorusSnapshot(),
+      ]);
+      if (horus.applied) horusSnapshot = horus;
 
-      if (!result.available) {
+      if (!result.available && !horus.applied) {
         console.warn(
           "AiLynx AS1 Live 데이터 미적용:",
           result.reason
@@ -327,15 +332,18 @@ async function applyAs1LiveOverlay() {
         return false;
       }
 
+      const primaryHorus = horus.applied
+        ? horus.timeframes["4H"]?.available ? horus.timeframes["4H"] : Object.values(horus.timeframes).find((item) => item.available)
+        : null;
       weatherData = {
         ...weatherData,
         mode: "AS1_LIVE",
-        price: result.bar.close,
-        updatedAt: result.receivedAt,
-        mainTimeframe: displayAs1Timeframe(result.timeframe),
+        price: primaryHorus?.bar?.close ?? result.bar?.close ?? weatherData.price,
+        updatedAt: primaryHorus?.receivedAt ?? result.receivedAt ?? weatherData.updatedAt,
+        mainTimeframe: primaryHorus?.timeframe ?? (result.available ? displayAs1Timeframe(result.timeframe) : "WAITING"),
         as1Live: {
-          freshness: result.freshness,
-          barCloseTime: result.barCloseTime
+          freshness: primaryHorus?.freshness ?? result.freshness,
+          barCloseTime: primaryHorus?.barCloseTime ?? result.barCloseTime
         }
       };
 
@@ -807,18 +815,25 @@ function planAllows(timeframe, kind) {
 
 function makeFrameCell(timeframe, kind) {
   const allowed = planAllows(timeframe, kind);
+  const canonical = timeframe === "24H" ? "1D" : timeframe;
+  const observation = horusSnapshot?.timeframes?.[canonical];
+  const status = !horusSnapshot ? "WAITING"
+    : !observation?.available ? observation?.reason === "INVALID_OBSERVATION" ? "INVALID" : "NO DATA"
+    : !observation.quality.valid || observation.quality.sensorQuality === "INVALID" ? "INVALID"
+    : observation.freshness;
   const cell = document.createElement("article");
-  cell.className = `frame-cell ${allowed ? "is-waiting" : "is-locked"}`;
+  cell.className = `frame-cell ${allowed ? `is-${status.toLowerCase().replace(" ", "-")}` : "is-locked"}`;
   const label = document.createElement("strong");
-  label.textContent = timeframe;
+  label.textContent = timeframe === "24H" ? "24H / 1D" : timeframe;
   const icon = document.createElement("span");
   icon.className = "frame-icon";
-  icon.textContent = allowed ? "◌" : "🔒";
+  icon.textContent = status === "FRESH" || status === "AGING" ? "●" : status === "STALE" ? "◐" : status === "INVALID" ? "!" : status === "NO DATA" ? "—" : "…";
   const persistence = document.createElement("small");
-  persistence.textContent = allowed ? "WAITING" : "LOCKED";
+  persistence.textContent = allowed ? status : `LOCKED · ${status}`;
   const change = document.createElement("small");
   change.className = "frame-change";
-  change.textContent = allowed ? "—" : dashboardConfig?.activePlan === "FREE" ? "UPGRADE" : "NO DATA";
+  change.textContent = observation?.available ? `${observation.quality.sensorQuality} · ${observation.quality.valid ? "LIVE" : "INVALID"}`
+    : allowed ? "canonical observation" : dashboardConfig?.activePlan === "FREE" ? "UPGRADE" : "NO DATA";
   cell.append(label, icon, persistence, change);
   return cell;
 }
@@ -1362,6 +1377,21 @@ function startMarketDominanceTimer() {
   marketDominanceIntervalId = window.setInterval(refreshMarketDominance, 10 * 60 * 1000);
 }
 
+function initializeAnnouncementTicker() {
+  const target = document.getElementById("announcementTicker");
+  const notices = Array.isArray(window.LynxNotices) ? window.LynxNotices.filter((item) => typeof item === "string" && item.trim()) : [];
+  if (!target || notices.length === 0) return;
+  const message = notices.join(" · ");
+  const primary = document.createElement("span");
+  primary.textContent = message;
+  const copy = primary.cloneNode(true);
+  copy.setAttribute("aria-hidden", "true");
+  target.replaceChildren(primary, copy);
+  target.closest(".announcement-ticker")?.addEventListener("pointerdown", () => {
+    target.closest(".announcement-ticker")?.classList.toggle("is-paused");
+  });
+}
+
 
 function initializeTabs() {
   const tabs = document.querySelectorAll("[data-tab]");
@@ -1402,6 +1432,7 @@ function initializeInquiryStatus() {
 */
 async function initializeApp() {
   hideLegacyWeatherPanels();
+  initializeAnnouncementTicker();
   initializeTabs();
   initializeInquiryStatus();
   startLocalClock();

@@ -5,12 +5,13 @@ import test from "node:test";
 const root = new URL("../", import.meta.url);
 
 test("dashboard provides a config-driven Lynx timeframe board without invented metrics", async () => {
-  const [html, app, config, css, worker] = await Promise.all([
+  const [html, app, config, css, worker, notices] = await Promise.all([
     readFile(new URL("index.html", root), "utf8"),
     readFile(new URL("app.js", root), "utf8"),
     readFile(new URL("lynx-dashboard-config.js", root), "utf8"),
     readFile(new URL("styles.css", root), "utf8"),
     readFile(new URL("service-worker.js", root), "utf8"),
+    readFile(new URL("lynx-notices.js", root), "utf8"),
   ]);
   for (const marker of ["dailyFrameStrip", "timeframeMatrix", "marketDominanceStrip", "assetAccessList", "heroPersistence", "heroChange", "localClock", "weatherPanel", "aiPanel", "communityPanel", "lastObservation", "visitStats"]) {
     assert.ok(html.includes(marker), `missing ${marker}`);
@@ -34,8 +35,12 @@ test("dashboard provides a config-driven Lynx timeframe board without invented m
   assert.match(css, /\.market-dominance-strip/);
   assert.match(css, /\.app-tabs/);
   assert.match(css, /@media \(max-width: 390px\)/);
-  assert.match(worker, /ailynx-weather-v15/);
+  assert.match(worker, /ailynx-weather-v16/);
   assert.match(worker, /market-dominance-client\.js\?v=15/);
   assert.match(worker, /visit-counter-client\.js\?v=15/);
-  assert.match(worker, /lynx-dashboard-config\.js\?v=15/);
+  assert.match(worker, /lynx-dashboard-config\.js\?v=16/);
+  assert.match(html, /announcementTicker/);
+  assert.match(notices, /Lynx Weather Beta/);
+  assert.match(app, /fetchHorusSnapshot/);
+  assert.match(worker, /as1-horus-client\.js\?v=16/);
 });

@@ -1,0 +1,13 @@
+import {API_SCHEMA_VERSION, CANONICAL_TIMEFRAMES, projectHorusResponse, type HorusRows} from "./project-response.ts";
+const TABLE = "as1_raw_events";
+const HEADERS = Object.freeze({"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET, OPTIONS", "Access-Control-Allow-Headers": "content-type", "Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"});
+const COLUMNS = ["received_at", "schema_version", "satellite_id", "platform", "layout_id", "observer", "code_version", "source_profile_code", "ticker_id", "venue", "symbol", "timeframe", "bar_open_time", "bar_close_time", "packet_type", "confirmed", "sensor_quality", "valid", "flags", "raw_envelope"].join(",");
+const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), {status, headers: {...HEADERS, "Content-Type": "application/json; charset=utf-8"}});
+export async function fetchHorusRows(): Promise<HorusRows> {
+  const url = Deno.env.get("SUPABASE_URL"), serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"); if (!url || !serviceRoleKey) throw new Error("SERVER_CONFIGURATION_UNAVAILABLE");
+  const {createClient} = await import("@supabase/supabase-js"); const db = createClient(url, serviceRoleKey, {auth: {persistSession: false, autoRefreshToken: false}}); const aliases = CANONICAL_TIMEFRAMES.flatMap((item) => [...item.aliases]);
+  const {data, error} = await db.from(TABLE).select(COLUMNS).eq("satellite_id", "AS1").eq("platform", "TRADINGVIEW").eq("layout_id", "HORUS_A").eq("observer", "HORUS").eq("packet_type", "BAR_CLOSE_SNAPSHOT").eq("source_profile_code", "CB_BTCUSD_SPOT_20260722_V1").eq("ticker_id", "COINBASE:BTCUSD").eq("venue", "COINBASE").eq("confirmed", true).in("schema_version", ["as1.v1.3", "as1.v1.4"]).in("timeframe", aliases).order("bar_close_time", {ascending: false}).order("received_at", {ascending: false}).limit(2000);
+  if (error) throw new Error("DATABASE_QUERY_FAILED"); return data ?? [];
+}
+export function createHandler(fetchRows = fetchHorusRows, now: () => Date = () => new Date()) { return async (request: Request) => { if (request.method === "OPTIONS") return new Response(null, {status: 204, headers: HEADERS}); if (request.method !== "GET") return response({ok: false, api_schema_version: API_SCHEMA_VERSION, error: "METHOD_NOT_ALLOWED"}, 405); if (new URL(request.url).search) return response({ok: false, api_schema_version: API_SCHEMA_VERSION, error: "QUERY_NOT_ALLOWED"}, 400); try { return response(projectHorusResponse(await fetchRows(), now())); } catch { return response({ok: false, api_schema_version: API_SCHEMA_VERSION, error: "SERVICE_UNAVAILABLE"}, 503); } }; }
+if (import.meta.main) Deno.serve(createHandler());

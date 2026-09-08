@@ -763,6 +763,14 @@
 .frame-cell.is-locked small { color: var(--text-muted); }
 .frame-cell.is-waiting { border-color: rgba(255,212,90,.18); }
 .frame-cell.is-waiting .frame-icon { color: var(--yellow); }
+.frame-cell.is-fresh { border-color: rgba(114,224,164,.28); }
+.frame-cell.is-fresh .frame-icon { color: var(--green); }
+.frame-cell.is-aging { border-color: rgba(255,212,90,.3); }
+.frame-cell.is-aging .frame-icon { color: var(--yellow); }
+.frame-cell.is-stale, .frame-cell.is-expired { border-color: rgba(255,116,116,.28); }
+.frame-cell.is-stale .frame-icon, .frame-cell.is-expired .frame-icon, .frame-cell.is-invalid .frame-icon { color: #ff8d8d; }
+.frame-cell.is-invalid { border-color: rgba(255,116,116,.42); }
+.frame-cell.is-no-data { border-color: rgba(183,202,214,.14); }
 
 .timeframe-matrix { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 7px; }
 .timeframe-matrix .frame-cell { min-height: 104px; min-width: 0; padding: 10px 8px; border-radius: 15px; }
@@ -856,6 +864,59 @@ body {
   background: rgba(8, 24, 38, .86);
   box-shadow: 0 12px 30px rgba(0, 0, 0, .18);
   backdrop-filter: blur(16px);
+}
+
+.announcement-ticker {
+  height: 30px;
+  margin: 0 0 12px;
+  overflow: hidden;
+  border: 1px solid rgba(100, 214, 255, .14);
+  border-radius: 10px;
+  color: var(--text-sub);
+  background: rgba(7, 24, 36, .56);
+}
+
+.announcement-ticker-viewport {
+  height: 100%;
+  overflow: hidden;
+  outline: none;
+}
+
+.announcement-ticker-viewport:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: -2px;
+}
+
+.announcement-ticker-track {
+  display: flex;
+  width: max-content;
+  min-width: 200%;
+  animation: announcement-scroll 28s linear infinite;
+}
+
+.announcement-ticker-track span {
+  flex: 0 0 50%;
+  padding: 7px 28px 0;
+  color: var(--text-sub);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .03em;
+  white-space: nowrap;
+}
+
+.announcement-ticker:hover .announcement-ticker-track,
+.announcement-ticker:focus-within .announcement-ticker-track,
+.announcement-ticker.is-paused .announcement-ticker-track {
+  animation-play-state: paused;
+}
+
+@keyframes announcement-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .announcement-ticker-track { animation: none; }
 }
 .app-tab {
   min-width: 0;

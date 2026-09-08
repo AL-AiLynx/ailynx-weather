@@ -28,7 +28,7 @@
   <!-- 기본 디자인 -->
   <link
     rel="stylesheet"
-    href="./styles.css?v=15"
+    href="./styles.css?v=16"
   />
 
   <!-- PWA 매니페스트 -->
@@ -105,6 +105,12 @@
 
       <time class="local-clock" id="localClock" aria-live="off"></time>
     </header>
+
+    <aside class="announcement-ticker" aria-label="AiLynx announcements">
+      <div class="announcement-ticker-viewport" tabindex="0">
+        <div class="announcement-ticker-track" id="announcementTicker"></div>
+      </div>
+    </aside>
 
     <nav class="app-tabs" aria-label="AiLynx sections">
       <button class="app-tab is-active" type="button" data-tab="weather" aria-controls="weatherPanel" aria-selected="true">WEATHER</button>
@@ -490,7 +496,8 @@
   </main>
 
   <script src="./weather-engine.js"></script>
-  <script src="./lynx-dashboard-config.js?v=15"></script>
-  <script src="./app.js?v=15"></script>
+  <script src="./lynx-dashboard-config.js?v=16"></script>
+  <script src="./lynx-notices.js?v=16"></script>
+  <script src="./app.js?v=16"></script>
 </body>
 </html>
