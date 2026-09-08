@@ -9,4 +9,5 @@ function fullInput() {
 }
 test("FULL weather score is deterministic and bounded", () => { const result = globalThis.AiLynxWeatherEngine.computeWeatherScore(fullInput()); assert.equal(result.coverage, "FULL"); assert.ok(result.score >= 0 && result.score <= 100); });
 test("invalid inputs do not manufacture a score", () => { const input = fullInput(); input.time.quality.valid = false; assert.equal(globalThis.AiLynxWeatherEngine.computeWeatherScore(input), null); });
+test("history metrics wait instead of inventing values", () => { const engine = globalThis.AiLynxWeatherEngine; assert.equal(engine.computeDurability([]), null); assert.equal(engine.computeChangeRate([]), null); });
 test("weather classification honors every boundary", () => { const classify = globalThis.AiLynxWeatherEngine.classifyWeather; assert.equal(classify(0).state, "RAIN"); assert.equal(classify(25).state, "RAIN"); assert.equal(classify(26).state, "CLOUDY"); assert.equal(classify(51).state, "CLOUDY"); assert.equal(classify(52).state, "PARTLY_CLOUDY"); assert.equal(classify(75).state, "PARTLY_CLOUDY"); assert.equal(classify(76).state, "SUNNY"); assert.equal(classify(100).state, "SUNNY"); });

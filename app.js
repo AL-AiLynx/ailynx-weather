@@ -871,6 +871,8 @@ function hideLegacyWeatherPanels() {
 function renderLynxDashboard() {
   if (!dashboardConfig) return;
   const result = currentWeatherEngineResult();
+  const durability = window.AiLynxWeatherEngine?.computeDurability?.([]);
+  const changeRate = window.AiLynxWeatherEngine?.computeChangeRate?.([]);
   const classified = window.AiLynxWeatherEngine?.classifyWeather?.(result?.score);
   const presentation = classified ? {icon: getWeatherIcon(classified.icon), label: classified.label, note: `${result.timeframe} FULL observation score · ${result.score}`} : weatherPresentation(null);
   document.body.classList.remove("weather--sunny", "weather--partly-cloudy", "weather--cloudy", "weather--rain", "weather--neutral");
@@ -879,8 +881,8 @@ function renderLynxDashboard() {
   dashboardText("heroWeatherIcon", presentation.icon);
   dashboardText("heroWeatherName", presentation.label);
   dashboardText("heroWeatherNote", presentation.note);
-  dashboardText("heroPersistence", result ? "WAITING" : "CALCULATING");
-  dashboardText("heroChange", result ? "WAITING" : "CALCULATING");
+  dashboardText("heroPersistence", result && durability === null ? "WAITING" : "CALCULATING");
+  dashboardText("heroChange", result && changeRate === null ? "WAITING" : "CALCULATING");
   dashboardText("heroTimeframe", hero.timeframe);
   dashboardText("heroObservationState", hero.state);
   renderMarketPrice();

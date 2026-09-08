@@ -77,8 +77,21 @@ window.AiLynxWeatherEngine = {
     const horusScore = Number.isFinite(horus.state?.score) ? horus.state.score : horus.state?.gate_score;
     const values = [aggregate?.score, hubScores?.structure, hubScores?.force, hubScores?.window, timeState?.score, timeState?.noise_score, noise, horusScore];
     if (values.some((value) => !Number.isFinite(value))) return null;
+    // This is an observation-alignment score, not a price forecast or direction signal.
+    // It only combines fields carried by the validated LIVE contracts above.
     const score = aggregate.score * .20 + hubScores.structure * .18 + hubScores.force * .16 + hubScores.window * .14 + timeState.score * .10 + horusScore * .12 + sensorCount / 6 * 10 - ((noise + timeState.noise_score) / 2 * .15);
     return Number.isFinite(score) && score >= 0 && score <= 100 ? {score: Math.round(score), coverage: "FULL", confidence: "HIGH", timeframe} : null;
+  },
+  computeDurability(history) {
+    // The public LIVE contract currently provides no prior same-timeframe snapshot.
+    // Return null until enough ordered observations are supplied; never infer it.
+    if (!Array.isArray(history) || history.length < 2) return null;
+    return null;
+  },
+  computeChangeRate(history) {
+    // Change rate has the same history requirement as durability.
+    if (!Array.isArray(history) || history.length < 2) return null;
+    return null;
   },
   classifyWeather(score) {
     if (!Number.isFinite(score)) return null;
