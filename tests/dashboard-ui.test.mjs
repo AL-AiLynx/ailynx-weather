@@ -37,7 +37,7 @@ test("dashboard provides a config-driven Lynx timeframe board without invented m
   assert.match(css, /\.market-dominance-strip/);
   assert.match(css, /\.app-tabs/);
   assert.match(css, /@media \(max-width: 390px\)/);
-  assert.match(worker, /ailynx-weather-v30/);
+  assert.match(worker, /ailynx-weather-v31/);
   assert.match(worker, /market-dominance-client\.js\?v=15/);
   assert.match(worker, /visit-counter-client\.js\?v=15/);
   assert.match(worker, /lynx-dashboard-config\.js\?v=17/);
@@ -48,7 +48,7 @@ test("dashboard provides a config-driven Lynx timeframe board without invented m
   assert.match(html, /marketAdvisory/);
   assert.match(worker, /market-advisory-config\.js\?v=1/);
   assert.match(worker, /auth-gate\.js\?v=2/);
-  assert.match(worker, /i18n\.js\?v=2/);
+  assert.match(worker, /i18n\.js\?v=3/);
   assert.match(worker, /app\.js\?v=25/);
   assert.match(worker, /asset-read-path\.js\?v=1/);
   assert.match(worker, /as1-asset-client\.js\?v=2/);
@@ -60,7 +60,7 @@ test("dashboard provides a config-driven Lynx timeframe board without invented m
   assert.match(app, /currentAssetObservation/);
   assert.match(app, /selectAsset/);
   assert.match(app, /renderFrontlineTimeframe/);
-  assert.match(worker, /frontline-timeframe\.js\?v=1/);
+  assert.match(worker, /frontline-timeframe\.js\?v=2/);
   assert.match(worker, /weather-history\.js\?v=1/);
   assert.match(worker, /weather-dynamics\.js\?v=1/);
   assert.match(css, /frontline-timeframe-strip/);
