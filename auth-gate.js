@@ -1,42 +1,43 @@
 "use strict";
 
-const config = window.AiLynxCommunityConfig;
-let state = "BOOTING";
-let memberId = null;
-const enabled = Boolean(config?.authGateEnabled && window.AiLynxCommunityClient?.canUseCommunity?.());
-
-function canFetchLive() { return !enabled || state === "AUTHENTICATED"; }
-function render() {
-  document.body.dataset.authGate = enabled ? state.toLowerCase() : "ready-but-disabled";
-  document.body.classList.toggle("auth-gate-active", enabled && state === "UNAUTHENTICATED");
-  const gate = document.getElementById("authGateDialog");
-  if (!enabled || !gate) return;
-  if (state === "UNAUTHENTICATED" && !gate.open) gate.showModal();
-}
-function boot() {
-  if (!enabled) { state = "AUTHENTICATED"; render(); return; }
-  state = "UNAUTHENTICATED";
-  window.setTimeout(render, Math.max(1000, Math.min(config.authGateDelayMs || 1500, 2000)));
-}
-function logout() { if (!enabled) return; state = "UNAUTHENTICATED"; render(); }
-function startAuthentication() { if (!enabled) return; state = "AUTHENTICATING"; render(); }
-function startOnboarding(nextMemberId) {
-  if (!enabled) return;
-  memberId = typeof nextMemberId === "string" ? nextMemberId : null;
-  state = "ONBOARDING";
-  document.getElementById("authGateDialog")?.close();
-  document.getElementById("onboardingDialog")?.showModal();
-  render();
-}
-function completeAuthentication(nextMemberId) { startOnboarding(nextMemberId); }
-function completeOnboarding(preferences) {
-  if (!enabled || !memberId || !preferences) return;
-  // The backend profile wins when it is available. This is only a per-member temporary fallback.
-  if (!config.profilePersistenceAvailable) localStorage.setItem(`ailynx-member-preferences:${memberId}`, JSON.stringify(preferences));
-  state = "AUTHENTICATED";
-  document.getElementById("onboardingDialog")?.close();
-  window.dispatchEvent(new CustomEvent("ailynx-member-preferences", {detail: preferences}));
-  render();
-}
-window.AiLynxAuthGate = Object.freeze({get state() { return state; }, get memberId() { return memberId; }, enabled, canFetchLive, boot, logout, startAuthentication, startOnboarding, completeAuthentication, completeOnboarding});
-window.addEventListener("DOMContentLoaded", boot);
+(() => {
+  const config = window.AiLynxCommunityConfig || {};
+  let current = { authenticated: false, plan: "FREE" };
+  const dialog = document.getElementById("authGateDialog");
+  const upgrade = document.getElementById("membershipUpgradeDialog");
+  const open = (node) => node?.showModal?.();
+  const close = (node) => node?.close?.();
+  const sync = async () => {
+    current = await window.AiLynxMembership?.refresh?.() || { authenticated: false, plan: "FREE" };
+    window.dispatchEvent(new CustomEvent("ailynx-auth-ready", { detail: current }));
+    return current;
+  };
+  const requestAssetAccess = (asset) => {
+    if (!current.authenticated) { open(dialog); return "AUTH_REQUIRED"; }
+    const text = upgrade?.querySelector("[data-upgrade-asset]");
+    if (text) text.textContent = asset?.label || asset?.id || "this asset";
+    open(upgrade); return "UPGRADE_REQUIRED";
+  };
+  const signOut = async () => {
+    await window.AiLynxSupabaseAuth?.signOut?.();
+    current = { authenticated: false, plan: "FREE" };
+    window.dispatchEvent(new CustomEvent("ailynx-auth-session"));
+    window.dispatchEvent(new CustomEvent("ailynx-auth-logout"));
+  };
+  window.AiLynxAuthGate = Object.freeze({
+    enabled: () => Boolean(config.authGateEnabled),
+    canFetchLive: () => true,
+    state: () => current,
+    refresh: sync,
+    requestAssetAccess,
+    signOut,
+    openLogin: () => open(dialog),
+    close: () => { close(dialog); close(upgrade); },
+  });
+  window.addEventListener("ailynx-membership", (event) => { current = event.detail || current; });
+  document.addEventListener("click", (event) => {
+    const action = event.target.closest?.("[data-auth-action]")?.dataset.authAction;
+    if (action === "close") window.AiLynxAuthGate.close();
+  });
+  void sync();
+})();

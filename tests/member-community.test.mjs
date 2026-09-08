@@ -5,15 +5,17 @@ import test from "node:test";
 const root = new URL("../", import.meta.url);
 const read = (name) => readFile(new URL(name, root), "utf8");
 
-test("member/community MVP is disabled without public Auth configuration", async () => {
-  const [config, client, i18n, gate, dashboard] = await Promise.all([read("community-config.js"), read("community-client.js"), read("i18n.js"), read("auth-gate.js"), read("lynx-dashboard-config.js")]);
+test("membership runtime uses public Auth configuration with anonymous FREE fallback", async () => {
+  const [config, runtime, authClient, client, i18n, gate, dashboard] = await Promise.all([read("community-config.js"), read("public-runtime-config.js"), read("auth-client.js"), read("community-client.js"), read("i18n.js"), read("auth-gate.js"), read("lynx-dashboard-config.js")]);
   assert.match(config, /enabled: false/);
-  assert.match(config, /publishableKey: ""/);
-  assert.match(config, /google: "SETUP_REQUIRED"/);
+  assert.match(config, /authGateEnabled: true/);
+  assert.match(runtime, /__AILYNX_SUPABASE_PUBLISHABLE_KEY__/);
+  assert.match(authClient, /AUTH_UNAVAILABLE/);
+  assert.match(authClient, /\/auth\/v1\/signup/);
+  assert.match(authClient, /\/auth\/v1\/recover/);
+  assert.match(config, /google: "DISABLED"/);
   assert.match(config, /chatgpt: "COMING_SOON"/);
-  assert.match(config, /authGateReadyButDisabled: true/);
-  assert.match(config, /authGateEnabled: false/);
-  assert.match(config, /profilePersistenceAvailable: false/);
+  assert.match(config, /profilePersistenceAvailable: true/);
   assert.doesNotMatch(config, /service_role/i);
   assert.match(client, /canUseCommunity/);
   assert.match(client, /beginOAuth/);
@@ -23,13 +25,9 @@ test("member/community MVP is disabled without public Auth configuration", async
   assert.match(i18n, /const preferred = \(\) => "en"/);
   assert.match(i18n, /weatherDurability/);
   assert.match(i18n, /marketAdvisory/);
-  assert.match(gate, /BOOTING/);
-  assert.match(gate, /UNAUTHENTICATED/);
-  assert.match(gate, /AUTHENTICATING/);
-  assert.match(gate, /ONBOARDING/);
-  assert.match(gate, /AUTHENTICATED/);
+  assert.match(gate, /requestAssetAccess/);
+  assert.match(gate, /ailynx-auth-logout/);
   assert.match(gate, /canFetchLive/);
-  assert.match(gate, /ailynx-member-preferences/);
   assert.match(dashboard, /assets: \["BTCUSD"\]/);
   assert.doesNotMatch(dashboard, /activePlan|PLUS/);
 });
@@ -45,16 +43,16 @@ test("community migration enforces RLS, text-only content, and referral/Xp invar
   assert.doesNotMatch(sql, /storage\.objects|create bucket|attachment/i);
 });
 
-test("community UI has separate posts/chat, provider states, and no upload control", async () => {
+test("community UI retains posts/chat and adds email Auth controls without upload", async () => {
   const [html, ui, advisory] = await Promise.all([read("index.html"), read("member-community.js"), read("market-advisory-config.js")]);
   assert.match(html, /data-community-tab="posts"/);
   assert.match(html, /data-community-tab="chat"/);
-  assert.match(html, /data-provider="google"/);
-  assert.match(html, /data-provider="kakao"/);
-  assert.match(html, /data-provider="toss"/);
-  assert.match(html, /data-provider="chatgpt"/);
+  assert.match(html, /emailLoginForm/);
+  assert.match(html, /emailSignupForm/);
+  assert.match(html, /passwordResetForm/);
   assert.doesNotMatch(html, /type="file"|<input[^>]+file/i);
   assert.match(ui, /emojiManifest/);
+  assert.match(ui, /resetPasswordForEmail/);
   assert.match(ui, /navigator\.clipboard/);
   assert.match(html, /authGateDialog/);
   assert.match(html, /onboardingDialog/);

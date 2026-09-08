@@ -1,7 +1,7 @@
-"use strict";
++"use strict";
 
 const CACHE_NAME =
-  "ailynx-weather-v35";
+  "ailynx-weather-v36";
 
 const AS1_VALIDATION_ENDPOINT =
   "https://jggazwqwalincsjegieo.supabase.co/functions/v1/as1-validation-read";
@@ -20,18 +20,20 @@ const APP_SHELL = [
   "./weather-history.js?v=1",
   "./as1-asset-client.js?v=2",
   "./asset-read-path.js?v=2",
-  "./community-config.js?v=1",
+  "./public-runtime-config.js?v=1",
+  "./community-config.js?v=2",
+  "./auth-client.js?v=1",
   "./i18n.js?v=4",
   "./community-client.js?v=1",
-  "./membership-client.js?v=1",
-  "./member-community.js?v=1",
+  "./membership-client.js?v=2",
+  "./member-community.js?v=2",
   "./market-advisory-config.js?v=1",
   "./market-advisory.js?v=1",
-  "./auth-gate.js?v=2",
+  "./auth-gate.js?v=3",
   "./market-price-client.js?v=15",
   "./market-dominance-client.js?v=15",
   "./visit-counter-client.js?v=15",
-  "./app.js?v=28",
+  "./app.js?v=29",
   "./weather-data.json",
   "./horus-sample.json",
   "./manifest.webmanifest",
@@ -215,3 +217,4 @@ self.addEventListener(
     );
   }
 );
+

@@ -1,4 +1,4 @@
-"use strict";
++"use strict";
 
 const APP_DATA_MODE = "AS1_LIVE";
 
@@ -1622,7 +1622,11 @@ function initializeAssetSelector() {
     toggle.append(name, ticker, icon);
   };
   const select = async (asset) => {
-    if (!assetEntitled(asset.id)) return;
+    if (!assetEntitled(asset.id)) {
+      close();
+      window.AiLynxAuthGate?.requestAssetAccess?.(asset);
+      return;
+    }
     close();
     await selectAsset(asset.id);
     initializeAssetSelector();
@@ -1634,7 +1638,6 @@ function initializeAssetSelector() {
     option.className = "asset-selector-option";
     option.setAttribute("role", "option");
     option.setAttribute("aria-selected", String(asset.id === selectedAssetId));
-    option.disabled = !allowed;
     const name = document.createElement("strong");
     name.textContent = asset.label;
     const ticker = document.createElement("small");
@@ -1649,7 +1652,7 @@ function initializeAssetSelector() {
     open = !open;
     menu.hidden = !open;
     toggle.setAttribute("aria-expanded", String(open));
-    if (open) menu.querySelector(".asset-selector-option:not(:disabled)")?.focus();
+    if (open) menu.querySelector(".asset-selector-option")?.focus();
   });
   selector.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
@@ -1800,7 +1803,15 @@ window.addEventListener("ailynx-language", () => {
   }
 });
 
+async function enforceFreeSafeSelection() {
+  if (assetEntitled(selectedAssetId)) return;
+  selectedAssetId = "BTCUSD";
+  selectedAssetObservation = null;
+  if (assetReadPath) await assetReadPath.select("BTCUSD");
+}
+
 window.addEventListener("ailynx-membership", () => {
+  void enforceFreeSafeSelection();
   assetReadPath?.reconcileAccess?.();
   if (!hasFeature("viewer.professional_details")) validationCardsData = null;
   const plan = currentPlan();
@@ -1809,6 +1820,12 @@ window.addEventListener("ailynx-membership", () => {
     initializeAssetSelector();
     renderApp();
   }
+});
+
+window.addEventListener("ailynx-auth-logout", () => {
+  selectedAssetObservation = null;
+  validationCardsData = null;
+  void enforceFreeSafeSelection();
 });
 
 
@@ -1838,3 +1855,4 @@ if ("serviceWorker" in navigator) {
     }
   );
 }
+

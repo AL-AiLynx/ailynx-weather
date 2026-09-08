@@ -1,4 +1,4 @@
-"use strict";
++"use strict";
 
 const memberConfig = window.AiLynxCommunityConfig;
 const i18n = window.AiLynxI18n;
@@ -98,3 +98,61 @@ function initializeMemberCommunity() {
 }
 
 window.addEventListener("DOMContentLoaded", initializeMemberCommunity);
+
+
+// C-2 email/password membership UI. It uses the public Auth client only and
+// never writes profiles or subscriptions from the browser.
+(() => {
+  const byId = (id) => document.getElementById(id);
+  const account = () => byId("accountDialog");
+  const note = (message, error = false) => {
+    const target = byId("authSetupNote");
+    if (!target) return;
+    target.textContent = message;
+    target.toggleAttribute("data-auth-error", error);
+  };
+  const redirect = (path) => `${window.location.origin}${path}`;
+  const accountPlan = () => {
+    const target = byId("accountPlanValue");
+    if (target) target.textContent = window.AiLynxMembership?.membership?.().plan || "FREE";
+  };
+  const clearPasswords = () => document.querySelectorAll("[data-auth-password]").forEach((field) => { field.value = ""; });
+  const openAccount = () => account()?.showModal?.();
+  const closeAccount = () => account()?.close?.();
+  const login = async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    try {
+      await window.AiLynxSupabaseAuth.signIn({email: form.email.value.trim(), password: form.password.value});
+      clearPasswords(); await window.AiLynxAuthGate.refresh(); note("Signed in."); closeAccount();
+    } catch { note("Unable to sign in. Check your email and password.", true); }
+  };
+  const signup = async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (form.password.value !== form.passwordConfirm.value) return note("Passwords do not match.", true);
+    try {
+      const result = await window.AiLynxSupabaseAuth.signUp({email: form.email.value.trim(), password: form.password.value, redirectTo: redirect("/auth/callback")});
+      clearPasswords();
+      if (result.confirmationRequired) note("Check your email to confirm your account before signing in.");
+      else { await window.AiLynxAuthGate.refresh(); note("Account created."); closeAccount(); }
+    } catch { note("Unable to create the account. Please try again.", true); }
+  };
+  const reset = async (event) => {
+    event.preventDefault();
+    try {
+      await window.AiLynxSupabaseAuth.resetPasswordForEmail(event.currentTarget.email.value.trim(), redirect("/auth/reset"));
+      note("If this address is registered, a reset email has been sent.");
+    } catch { note("Unable to request a reset email. Please try again.", true); }
+  };
+  window.addEventListener("DOMContentLoaded", () => {
+    document.querySelectorAll("[data-open-account], [data-auth-open]").forEach((button) => button.addEventListener("click", openAccount));
+    byId("emailLoginForm")?.addEventListener("submit", login);
+    byId("emailSignupForm")?.addEventListener("submit", signup);
+    byId("passwordResetForm")?.addEventListener("submit", reset);
+    byId("accountLogout")?.addEventListener("click", async () => { await window.AiLynxAuthGate.signOut(); clearPasswords(); accountPlan(); note("Signed out."); closeAccount(); });
+    window.addEventListener("ailynx-membership", accountPlan);
+    accountPlan();
+  });
+})();
+

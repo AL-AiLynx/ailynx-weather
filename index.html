@@ -1,4 +1,4 @@
-<!DOCTYPE html>
++<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -534,22 +534,38 @@
   <script src="./lynx-notices.js?v=16"></script>
   <script type="module" src="./asset-registry.js?v=4"></script>
   <script type="module" src="./weather-history.js?v=1"></script>
-  <script src="./community-config.js?v=1"></script>
+  <script src="./public-runtime-config.js?v=1"></script>
+  <script src="./community-config.js?v=2"></script>
   <script src="./i18n.js?v=4"></script>
   <script src="./community-client.js?v=1"></script>
-  <script type="module" src="./membership-client.js?v=1"></script>
-  <script src="./member-community.js?v=1"></script>
+  <script type="module" src="./auth-client.js?v=1"></script>
+  <script type="module" src="./membership-client.js?v=2"></script>
+  <script type="module" src="./member-community.js?v=2"></script>
   <script src="./market-advisory-config.js?v=1"></script>
   <script src="./market-advisory.js?v=1"></script>
-  <script src="./auth-gate.js?v=2"></script>
-  <script src="./app.js?v=28"></script>
+  <script type="module" src="./auth-gate.js?v=3"></script>
+  <script src="./app.js?v=29"></script>
 
   <dialog class="account-dialog" id="accountDialog" aria-labelledby="accountDialogTitle">
     <form method="dialog"><button class="dialog-close" type="button" data-dialog-close aria-label="Close">×</button></form>
-    <p class="eyebrow" data-i18n="account">계정</p><h2 id="accountDialogTitle" data-i18n="login">로그인</h2><p id="authSetupNote" data-i18n="setupRequired">설정 필요</p>
-    <div class="provider-list"><button type="button" data-provider="google">Google · SETUP REQUIRED</button><button type="button" data-provider="kakao">Kakao · SETUP REQUIRED</button><button type="button" data-provider="toss">Toss · COMING SOON</button><button type="button" data-provider="chatgpt">ChatGPT · COMING SOON</button></div>
-    <section class="account-settings" aria-labelledby="accountSettingsTitle"><strong id="accountSettingsTitle" data-i18n="settings">Settings</strong><p data-i18n="profilePreferenceDescription">Language and main market are saved to your profile after sign-in.</p><div><span data-i18n="plan">Plan</span><b id="accountPlanValue">FREE</b></div></section>
-    <div class="profile-referral"><strong data-i18n="referral">추천 코드</strong><button type="button" data-copy-referral data-i18n="copy">링크 복사</button></div>
+    <p class="eyebrow">ACCOUNT</p><h2 id="accountDialogTitle">Sign in or create a free account</h2>
+    <p id="authSetupNote">Bitcoin weather remains available without signing in.</p>
+    <form id="emailLoginForm" class="email-auth-form" novalidate>
+      <label>Email<input name="email" type="email" autocomplete="email" required></label>
+      <label>Password<input name="password" data-auth-password type="password" autocomplete="current-password" minlength="6" required></label>
+      <button type="submit">Sign in</button>
+    </form>
+    <form id="emailSignupForm" class="email-auth-form" novalidate>
+      <label>Email<input name="email" type="email" autocomplete="email" required></label>
+      <label>Password<input name="password" data-auth-password type="password" autocomplete="new-password" minlength="6" required></label>
+      <label>Confirm password<input name="passwordConfirm" data-auth-password type="password" autocomplete="new-password" minlength="6" required></label>
+      <button type="submit">Create free account</button>
+    </form>
+    <form id="passwordResetForm" class="email-auth-form" novalidate>
+      <label>Reset password<input name="email" type="email" autocomplete="email" required></label>
+      <button type="submit">Send reset email</button>
+    </form>
+    <section class="account-settings" aria-labelledby="accountSettingsTitle"><strong id="accountSettingsTitle">Membership</strong><div><span>Plan</span><b id="accountPlanValue">FREE</b></div><button id="accountLogout" type="button">Sign out</button></section>
   </dialog>
 
   <dialog class="manual-dialog" id="manualDialog" aria-labelledby="manualDialogTitle">
@@ -562,11 +578,15 @@
   </dialog>
 
   <dialog class="auth-gate-dialog" id="authGateDialog" aria-labelledby="authGateTitle">
-    <p class="eyebrow">AILYNX WEATHER</p>
-    <h2 id="authGateTitle">Your market weather, in one place.</h2>
-    <p>Sign in to save your language and main market. LIVE weather data is available after sign-in.</p>
-    <div class="provider-list"><button type="button" data-gate-provider="google">Continue with Google</button><button type="button" data-gate-provider="kakao">Continue with Kakao</button></div>
-    <p class="auth-gate-footnote">New here? Create a free account to start with Bitcoin and Nasdaq.</p>
+    <form method="dialog"><button class="dialog-close" type="button" data-auth-action="close" aria-label="Close">×</button></form>
+    <p class="eyebrow">AILYNX WEATHER</p><h2 id="authGateTitle">Sign in to unlock WEATHER assets.</h2>
+    <p>Bitcoin weather stays available in FREE mode. Your membership is resolved from the active subscription after sign-in.</p>
+    <button type="button" data-auth-open>Sign in or create account</button>
+  </dialog>
+  <dialog class="auth-gate-dialog" id="membershipUpgradeDialog" aria-labelledby="membershipUpgradeTitle">
+    <form method="dialog"><button class="dialog-close" type="button" data-auth-action="close" aria-label="Close">×</button></form>
+    <p class="eyebrow">WEATHER PLAN</p><h2 id="membershipUpgradeTitle"><span data-upgrade-asset>Asset</span> requires WEATHER</h2>
+    <p>Your FREE membership can use BTCUSD. Upgrade handling is not part of this application.</p>
   </dialog>
   <dialog class="auth-gate-dialog onboarding-dialog" id="onboardingDialog" aria-labelledby="onboardingTitle">
     <p class="eyebrow">WELCOME TO AILYNX</p>
