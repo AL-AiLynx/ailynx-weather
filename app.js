@@ -727,11 +727,15 @@ function startLocalClock() {
 
 function renderMarketDominance() {
   const strip = document.getElementById("marketDominanceStrip");
-  if (!strip) {
+  const context = document.getElementById("marketDominanceContext");
+  if (!strip || !context) {
     return;
   }
 
+  const showForBitcoin = selectedAssetId === "BTCUSD";
+  context.hidden = !showForBitcoin;
   strip.replaceChildren();
+  if (!showForBitcoin) return;
   const values = marketDominanceData?.available
     ? marketDominanceData.values
     : ["BTC.D", "USDT.D", "USDC.D"].map((label) => ({label, value: null}));
@@ -961,29 +965,33 @@ function makeFrameCell(timeframe, kind) {
   return cell;
 }
 
-function renderAssetAccess() {
-  const container = document.getElementById("assetAccessList");
+function renderAssetNavigation() {
+  const container = document.getElementById("assetNavigation");
   if (!container || !dashboardConfig) return;
   container.replaceChildren();
-  const plan = currentPlan();
   const assets = window.AiLynxAssetRegistry?.assets || [];
   for (const asset of assets) {
-    const allowed = Boolean(plan?.assets?.includes(asset.id));
-    const item = document.createElement("article");
-    item.className = `asset-access ${allowed ? "is-live" : "is-locked"}`;
+    const allowed = assetEntitled(asset.id);
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = `asset-navigation-item ${allowed ? "is-live" : "is-locked"} ${asset.id === selectedAssetId ? "is-selected" : ""}`;
+    item.setAttribute("aria-current", String(asset.id === selectedAssetId));
+    item.setAttribute("aria-label", allowed ? `${asset.label} ${asset.id}` : `${asset.label} ${asset.id}, ${asset.requiredPlan} 필요`);
     const name = document.createElement("strong");
     name.textContent = asset.label;
-    const entitlement = document.createElement("span");
-    entitlement.className = "asset-entitlement";
-    const selected = allowed && selectedAssetId === asset.id ? currentAssetObservation() : null;
-    const availability = !allowed ? "LOCKED" : asset.id === "BTCUSD" ? "LIVE" : selected?.status || "PLANNED";
-    entitlement.textContent = allowed ? tr("available") : asset.requiredPlan;
-    const observationState = document.createElement("span");
-    observationState.className = "asset-observation";
-    observationState.textContent = displayState(availability);
     const identity = document.createElement("small");
     identity.textContent = asset.id;
-    item.append(name, entitlement, observationState, identity);
+    const access = document.createElement("span");
+    access.className = "asset-navigation-access";
+    access.textContent = allowed ? (asset.id === "BTCUSD" ? "LIVE" : tr("available")) : asset.requiredPlan;
+    item.append(name, identity, access);
+    item.addEventListener("click", () => {
+      if (!allowed) {
+        window.AiLynxAuthGate?.requestAssetAccess?.(asset);
+        return;
+      }
+      void selectAsset(asset.id);
+    });
     container.appendChild(item);
   }
 }
@@ -1036,7 +1044,7 @@ function renderLynxDashboard() {
     intraday.replaceChildren();
     dashboardConfig.intradayTimeframes.forEach((timeframe) => intraday.appendChild(makeFrameCell(timeframe, "intraday")));
   }
-  renderAssetAccess();
+  renderAssetNavigation();
   renderMarketDominance();
 }
 
@@ -1592,7 +1600,6 @@ async function initializeApp() {
   initializeTabs();
   initializeInquiryStatus();
   initializeCoreDynamicsHelp();
-  initializeAssetSelector();
   startLocalClock();
   if (!liveFetchAllowed()) {
     renderApp();
@@ -1618,84 +1625,6 @@ async function initializeApp() {
       await applyAs1ValidationCards(event.target.value);
     });
   }
-}
-
-function initializeAssetSelector() {
-  const selector = document.getElementById("assetSelector");
-  const registry = window.AiLynxAssetRegistry;
-  if (!selector || !registry) return;
-  selector.replaceChildren();
-  const toggle = document.createElement("button");
-  toggle.type = "button";
-  toggle.className = "asset-selector-toggle";
-  toggle.setAttribute("aria-haspopup", "listbox");
-  toggle.setAttribute("aria-expanded", "false");
-  const menu = document.createElement("div");
-  menu.className = "asset-selector-menu";
-  menu.setAttribute("role", "listbox");
-  menu.hidden = true;
-  let open = false;
-  const close = () => {
-    open = false;
-    menu.hidden = true;
-    toggle.setAttribute("aria-expanded", "false");
-  };
-  const updateToggle = () => {
-    const asset = registry.byId(selectedAssetId) || registry.assets[0];
-    toggle.replaceChildren();
-    const name = document.createElement("strong");
-    name.textContent = asset.label;
-    const ticker = document.createElement("small");
-    ticker.textContent = asset.id;
-    const icon = document.createElement("span");
-    icon.setAttribute("aria-hidden", "true");
-    icon.textContent = "⌄";
-    toggle.append(name, ticker, icon);
-  };
-  const select = async (asset) => {
-    if (!assetEntitled(asset.id)) {
-      close();
-      window.AiLynxAuthGate?.requestAssetAccess?.(asset);
-      return;
-    }
-    close();
-    await selectAsset(asset.id);
-    initializeAssetSelector();
-  };
-  registry.assets.forEach((asset) => {
-    const allowed = assetEntitled(asset.id);
-    const option = document.createElement("button");
-    option.type = "button";
-    option.className = "asset-selector-option";
-    option.setAttribute("role", "option");
-    option.setAttribute("aria-selected", String(asset.id === selectedAssetId));
-    const name = document.createElement("strong");
-    name.textContent = asset.label;
-    const ticker = document.createElement("small");
-    ticker.textContent = asset.id;
-    const badge = document.createElement("span");
-    badge.textContent = allowed ? tr("available") : asset.requiredPlan;
-    option.append(name, ticker, badge);
-    option.addEventListener("click", () => void select(asset));
-    menu.appendChild(option);
-  });
-  toggle.addEventListener("click", () => {
-    open = !open;
-    menu.hidden = !open;
-    toggle.setAttribute("aria-expanded", String(open));
-    if (open) menu.querySelector(".asset-selector-option")?.focus();
-  });
-  selector.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") {
-      close();
-      toggle.focus();
-    }
-  });
-  document.addEventListener("pointerdown", (event) => {
-    if (open && !selector.contains(event.target)) close();
-  });
-  updateToggle();
-  selector.append(toggle, menu);
 }
 
 function recordWeatherObservation(result) {
@@ -1848,7 +1777,6 @@ window.addEventListener("ailynx-language", () => {
   const plan = currentPlan();
   dashboardText("currentPlanLabel", tr("currentPlan", {plan: plan?.label || "FREE"}));
   if (document.readyState !== "loading") {
-    initializeAssetSelector();
     renderApp();
   }
 });
@@ -1867,7 +1795,6 @@ window.addEventListener("ailynx-membership", () => {
   const plan = currentPlan();
   dashboardText("currentPlanLabel", tr("currentPlan", {plan: plan?.label || currentPlanCode()}));
   if (document.readyState !== "loading") {
-    initializeAssetSelector();
     renderApp();
   }
 });

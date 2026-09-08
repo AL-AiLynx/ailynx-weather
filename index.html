@@ -28,7 +28,7 @@
   <!-- 기본 디자인 -->
   <link
     rel="stylesheet"
-    href="./styles.css?v=27"
+    href="./styles.css?v=28"
   />
 
   <!-- PWA 매니페스트 -->
@@ -117,11 +117,12 @@
       <button class="app-tab" type="button" data-tab="community" aria-controls="communityPanel" aria-selected="false" data-i18n="community">COMMUNITY</button>
     </nav>
 
+    <nav class="asset-navigation" id="assetNavigation" aria-label="Weather asset navigation"></nav>
+
     <div class="app-panel" id="weatherPanel" data-tab-panel="weather">
 
     <section class="hero card">
       <div class="hero-market">
-        <div class="hero-asset-select"><span class="asset-select-label">자산</span><div class="asset-selector" id="assetSelector"></div></div>
         <div class="hero-heading">
         <p class="eyebrow" id="heroAssetLabel">BTCUSD · LYNX WEATHER</p>
         <p class="hero-asset-identity" id="heroAssetIdentity">현재 가격 관측을 준비하고 있습니다.</p>
@@ -132,11 +133,10 @@
         <span class="weather-icon" id="heroWeatherIcon" aria-hidden="true">◌</span>
         <div class="hero-weather-copy"><h2 class="weather-name" id="heroWeatherName">계산 중</h2><strong class="hero-weather-score" id="heroWeatherScore">—</strong><p class="hero-note" id="heroWeatherNote">관측 대기</p></div>
       </div>
-    </section>
-
-    <section class="section market-dominance-section" aria-labelledby="marketDominanceTitle">
-      <div class="section-title"><div><h2 id="marketDominanceTitle" data-i18n="marketDominance">MARKET DOMINANCE</h2><span data-i18n="dominanceSubtitle">Public market conditions · FREE</span></div><span class="plan-chip" data-i18n="tenMinuteRefresh">10분 갱신</span></div>
-      <div class="market-dominance-strip" id="marketDominanceStrip" aria-live="polite"></div>
+      <section class="hero-dominance-context" id="marketDominanceContext" aria-labelledby="marketDominanceTitle">
+        <div class="hero-dominance-title"><h2 id="marketDominanceTitle">시장 점유율</h2><span>공개 시장 환경 · 10분 갱신</span></div>
+        <div class="market-dominance-strip" id="marketDominanceStrip" aria-live="polite"></div>
+      </section>
     </section>
 
     <section class="section core-metrics-section" aria-label="핵심 날씨 지표">
@@ -168,11 +168,6 @@
     <section class="section lynx-frames-section" aria-labelledby="intradayFramesTitle">
       <div class="section-title"><div><h2 id="intradayFramesTitle" data-i18n="timeframeMatrix">TIMEFRAME MATRIX</h2><span data-i18n="matrixSubtitle">1H–24H · Lynx observation grid</span></div><span class="plan-chip">PRO</span></div>
       <div class="timeframe-matrix" id="timeframeMatrix" aria-live="polite"></div>
-    </section>
-
-    <section class="section asset-access-section" aria-labelledby="assetAccessTitle">
-      <div class="section-title"><div><h2 id="assetAccessTitle" data-i18n="observedMarkets">OBSERVED MARKETS</h2><span id="currentPlanLabel">CURRENT PLAN: FREE</span></div></div>
-      <div class="asset-access-list" id="assetAccessList"></div>
     </section>
 
     <section class="section validation-section">
@@ -554,7 +549,7 @@
   <script src="./market-advisory-config.js?v=1"></script>
   <script src="./market-advisory.js?v=1"></script>
   <script type="module" src="./auth-gate.js?v=3"></script>
-  <script src="./app.js?v=31"></script>
+  <script src="./app.js?v=32"></script>
 
   <dialog class="account-dialog" id="accountDialog" aria-labelledby="accountDialogTitle">
     <form method="dialog"><button class="dialog-close" type="button" data-dialog-close aria-label="닫기">×</button></form>

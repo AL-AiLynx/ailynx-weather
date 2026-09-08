@@ -22,17 +22,20 @@ test("dashboard retains weather history calculations without a graph renderer", 
   assert.match(history, /mergeWeatherHistory/);
 });
 
-test("market share is immediately after the hero and has all public-feed cards", async () => {
+test("market share is compact inside the BTC hero and has all public-feed cards", async () => {
   const [html, app, dominance, i18n] = await Promise.all([read("index.html"), read("app.js"), read("market-dominance-client.js"), read("i18n.js")]);
   assert.ok(html.indexOf("marketDominanceTitle") > html.indexOf("hero-weather-panel"));
-  assert.ok(html.indexOf("marketDominanceTitle") < html.indexOf("dailyFramesTitle"));
+  assert.ok(html.indexOf("marketDominanceTitle") < html.indexOf("core-metrics-section"));
+  assert.match(html, /id="marketDominanceContext"/);
   for (const label of ["BTC.D", "USDT.D", "USDC.D"]) assert.match(app, new RegExp(label.replace(".", "\\.")));
   assert.match(app, /dominance-occupancy/);
+  assert.match(app, /showForBitcoin = selectedAssetId === "BTCUSD"/);
+  assert.match(app, /context\.hidden = !showForBitcoin/);
   assert.match(app, /item\.value\.toFixed\(1\).*: "—"/);
   assert.match(dominance, /COINGECKO GLOBAL MARKET CAP/);
   assert.match(app, /tr\("free"\)/);
   assert.match(i18n, /free: "무료"/);
-  assert.match(html, /tenMinuteRefresh/);
+  assert.match(html, /공개 시장 환경 · 10분 갱신/);
 });
 
 test("core dynamics show real values or an explicit accumulation state without leader copy", async () => {
@@ -50,7 +53,8 @@ test("core dynamics show real values or an explicit accumulation state without l
 test("the completed hero uses the official app mark and a summarized public BTC receipt", async () => {
   const [html, app, css] = await Promise.all([read("index.html"), read("app.js"), read("styles.css")]);
   assert.match(html, /class="logo brand-mark" src="\.\/icons\/icon-512\.png"/);
-  assert.match(html, /class="asset-select-label">자산/);
+  assert.match(html, /class="asset-navigation" id="assetNavigation"/);
+  assert.doesNotMatch(html, /asset-select-label/);
   assert.match(app, /capturePublicWeatherSnapshot/);
   assert.match(app, /heroWeatherPhase/);
   assert.match(app, /validationCardsData = hasFeature\("viewer\.professional_details"\) \? nextCards : null/);
@@ -58,28 +62,29 @@ test("the completed hero uses the official app mark and a summarized public BTC 
   assert.match(css, /\.brand-mark/);
 });
 
-test("asset selector is a keyboard-accessible custom control with canonical labels", async () => {
+test("asset navigation has four accessible canonical controls and no hero dropdown", async () => {
   const [html, app, registry, css] = await Promise.all([read("index.html"), read("app.js"), read("asset-registry.js"), read("styles.css")]);
-  assert.match(html, /class="asset-selector" id="assetSelector"/);
-  for (const required of ["aria-haspopup", "aria-expanded", "listbox", "Escape", "pointerdown", "focus-visible", "asset-selector-option"]) assert.match(`${app}\n${css}`, new RegExp(required));
+  assert.match(html, /class="asset-navigation" id="assetNavigation"/);
+  assert.doesNotMatch(html, /assetSelector|asset-access-section|assetAccessList/);
+  for (const required of ["renderAssetNavigation", "aria-current", "requestAssetAccess", "asset-navigation-item", "focus-visible"]) assert.match(`${app}\n${css}`, new RegExp(required));
   for (const label of ["비트코인", "금", "달러 인덱스", "나스닥 100"]) assert.match(registry, new RegExp(label));
   assert.doesNotMatch(registry, /label: "GOLD"|label: "NASDAQ"/);
   for (const ticker of ["BTCUSD", "XAUUSD", "DXY", "US100"]) assert.match(registry, new RegExp(ticker));
 });
 
-test("observed market cards separate entitlement from observation state", async () => {
+test("asset navigation separates entitlement from the selected state", async () => {
   const [app, css] = await Promise.all([read("app.js"), read("styles.css")]);
-  assert.match(app, /asset-entitlement/);
-  assert.match(app, /asset-observation/);
-  assert.match(app, /entitlement\.textContent = allowed \? tr\("available"\) : asset\.requiredPlan/);
-  assert.match(app, /observationState\.textContent = displayState\(availability\)/);
-  assert.match(css, /\.asset-access \.asset-entitlement/);
+  assert.match(app, /asset-navigation-access/);
+  assert.match(app, /asset\.id === selectedAssetId/);
+  assert.match(app, /allowed \? \(asset\.id === "BTCUSD" \? "LIVE"/);
+  assert.match(css, /\.asset-navigation-item\.is-selected/);
+  assert.match(css, /content: "🔒"/);
 });
 
 test("dashboard cache shell includes the membership resolver and has no removed UI modules", async () => {
   const [html, worker] = await Promise.all([read("index.html"), read("service-worker.js")]);
-  assert.match(worker, /ailynx-weather-v38/);
-  for (const asset of ["styles.css?v=27", "asset-registry.js?v=4", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "auth-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=4", "app.js?v=31"]) {
+  assert.match(worker, /ailynx-weather-v39/);
+  for (const asset of ["styles.css?v=28", "asset-registry.js?v=4", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "auth-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=4", "app.js?v=32"]) {
     assert.ok(html.includes(asset) || worker.includes(asset), `missing ${asset}`);
   }
   assert.doesNotMatch(worker, /frontline-timeframe|weather-dynamics/);
@@ -102,7 +107,8 @@ test("runtime plan gates use subscription canonical plans and never expose locke
 test("asset selection still delegates through the isolated read path", async () => {
   const app = await read("app.js");
   assert.match(app, /const observationHistory = recordWeatherObservation\(result\)/);
-  assert.match(app, /await selectAsset\(asset\.id\)/);
-  assert.match(app, /initializeAssetSelector\(\)/);
+  assert.match(app, /void selectAsset\(asset\.id\)/);
+  assert.match(app, /renderAssetNavigation\(\)/);
+  assert.doesNotMatch(app, /initializeAssetSelector|asset-selector-toggle/);
   assert.match(app, /currentAssetObservation/);
 });
