@@ -1,4 +1,4 @@
-+<!DOCTYPE html>
+++<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -548,25 +548,38 @@
   <script src="./app.js?v=29"></script>
 
   <dialog class="account-dialog" id="accountDialog" aria-labelledby="accountDialogTitle">
-    <form method="dialog"><button class="dialog-close" type="button" data-dialog-close aria-label="Close">×</button></form>
-    <p class="eyebrow">ACCOUNT</p><h2 id="accountDialogTitle">Sign in or create a free account</h2>
-    <p id="authSetupNote">Bitcoin weather remains available without signing in.</p>
-    <form id="emailLoginForm" class="email-auth-form" novalidate>
-      <label>Email<input name="email" type="email" autocomplete="email" required></label>
-      <label>Password<input name="password" data-auth-password type="password" autocomplete="current-password" minlength="6" required></label>
-      <button type="submit">Sign in</button>
-    </form>
-    <form id="emailSignupForm" class="email-auth-form" novalidate>
-      <label>Email<input name="email" type="email" autocomplete="email" required></label>
-      <label>Password<input name="password" data-auth-password type="password" autocomplete="new-password" minlength="6" required></label>
-      <label>Confirm password<input name="passwordConfirm" data-auth-password type="password" autocomplete="new-password" minlength="6" required></label>
-      <button type="submit">Create free account</button>
-    </form>
-    <form id="passwordResetForm" class="email-auth-form" novalidate>
-      <label>Reset password<input name="email" type="email" autocomplete="email" required></label>
-      <button type="submit">Send reset email</button>
-    </form>
-    <section class="account-settings" aria-labelledby="accountSettingsTitle"><strong id="accountSettingsTitle">Membership</strong><div><span>Plan</span><b id="accountPlanValue">FREE</b></div><button id="accountLogout" type="button">Sign out</button></section>
+    <form method="dialog"><button class="dialog-close" type="button" data-dialog-close aria-label="닫기">×</button></form>
+    <p class="eyebrow">AILYNX WEATHER</p><h2 id="accountDialogTitle">멤버십</h2>
+    <p id="authSetupNote" role="status">BTCUSD 날씨는 로그인 없이 이용할 수 있습니다.</p>
+    <section id="accountAnonymous">
+      <div class="auth-tabs" role="tablist" aria-label="계정 메뉴">
+        <button type="button" role="tab" aria-selected="true" data-auth-view="login">로그인</button>
+        <button type="button" role="tab" aria-selected="false" data-auth-view="signup">무료 회원가입</button>
+      </div>
+      <form id="emailLoginForm" class="email-auth-form" data-auth-panel="login" novalidate>
+        <label>이메일<input name="email" type="email" autocomplete="email" required></label>
+        <label>비밀번호<input name="password" data-auth-password type="password" autocomplete="current-password" minlength="6" required></label>
+        <button type="submit">로그인</button>
+        <button class="auth-link" type="button" data-auth-view="reset">비밀번호 찾기</button>
+      </form>
+      <form id="emailSignupForm" class="email-auth-form" data-auth-panel="signup" hidden novalidate>
+        <label>이메일<input name="email" type="email" autocomplete="email" required></label>
+        <label>비밀번호<input name="password" data-auth-password type="password" autocomplete="new-password" minlength="6" required></label>
+        <label>비밀번호 확인<input name="passwordConfirm" data-auth-password type="password" autocomplete="new-password" minlength="6" required></label>
+        <button type="submit">무료 회원가입</button>
+      </form>
+      <form id="passwordResetForm" class="email-auth-form" data-auth-panel="reset" hidden novalidate>
+        <label>비밀번호 재설정 이메일<input name="email" type="email" autocomplete="email" required></label>
+        <button type="submit">재설정 이메일 보내기</button>
+        <button class="auth-link" type="button" data-auth-view="login">로그인으로 돌아가기</button>
+      </form>
+    </section>
+    <section class="account-settings" id="accountAuthenticated" hidden aria-labelledby="accountSettingsTitle">
+      <strong id="accountSettingsTitle">멤버십</strong>
+      <p id="accountUserEmail"></p>
+      <div><span>현재 플랜</span><b id="accountPlanValue">FREE</b></div>
+      <button id="accountLogout" type="button">로그아웃</button>
+    </section>
   </dialog>
 
   <dialog class="manual-dialog" id="manualDialog" aria-labelledby="manualDialogTitle">
@@ -580,14 +593,14 @@
 
   <dialog class="auth-gate-dialog" id="authGateDialog" aria-labelledby="authGateTitle">
     <form method="dialog"><button class="dialog-close" type="button" data-auth-action="close" aria-label="Close">×</button></form>
-    <p class="eyebrow">AILYNX WEATHER</p><h2 id="authGateTitle">Sign in to unlock WEATHER assets.</h2>
-    <p>Bitcoin weather stays available in FREE mode. Your membership is resolved from the active subscription after sign-in.</p>
-    <button type="button" data-auth-open>Sign in or create account</button>
+    <p class="eyebrow">AILYNX WEATHER</p><h2 id="authGateTitle">WEATHER 자산은 로그인 후 이용할 수 있습니다.</h2>
+    <p>BTCUSD 날씨는 로그인 없이 이용할 수 있습니다.</p>
+    <button type="button" data-auth-open>로그인 / 무료 회원가입</button>
   </dialog>
   <dialog class="auth-gate-dialog" id="membershipUpgradeDialog" aria-labelledby="membershipUpgradeTitle">
     <form method="dialog"><button class="dialog-close" type="button" data-auth-action="close" aria-label="Close">×</button></form>
-    <p class="eyebrow">WEATHER PLAN</p><h2 id="membershipUpgradeTitle"><span data-upgrade-asset>Asset</span> requires WEATHER</h2>
-    <p>Your FREE membership can use BTCUSD. Upgrade handling is not part of this application.</p>
+    <p class="eyebrow">WEATHER 멤버십</p><h2 id="membershipUpgradeTitle"><span data-upgrade-asset>이 자산</span>은 WEATHER 플랜이 필요합니다.</h2>
+    <p>FREE 멤버십에서는 BTCUSD 날씨를 이용할 수 있습니다.</p>
   </dialog>
   <dialog class="auth-gate-dialog onboarding-dialog" id="onboardingDialog" aria-labelledby="onboardingTitle">
     <p class="eyebrow">WELCOME TO AILYNX</p>
@@ -598,3 +611,4 @@
   </dialog>
 </body>
 </html>
+

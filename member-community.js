@@ -1,4 +1,4 @@
-+"use strict";
+"use strict";
 
 const memberConfig = window.AiLynxCommunityConfig;
 const i18n = window.AiLynxI18n;
@@ -100,11 +100,12 @@ function initializeMemberCommunity() {
 window.addEventListener("DOMContentLoaded", initializeMemberCommunity);
 
 
-// C-2 email/password membership UI. It uses the public Auth client only and
-// never writes profiles or subscriptions from the browser.
+
+// C-4 account UX: one visible step at a time and a strict anonymous/member split.
 (() => {
   const byId = (id) => document.getElementById(id);
   const account = () => byId("accountDialog");
+  const membership = () => window.AiLynxMembership?.membership?.() || {authenticated: false, user: null, plan: "FREE"};
   const note = (message, error = false) => {
     const target = byId("authSetupNote");
     if (!target) return;
@@ -112,47 +113,79 @@ window.addEventListener("DOMContentLoaded", initializeMemberCommunity);
     target.toggleAttribute("data-auth-error", error);
   };
   const redirect = (path) => `${window.location.origin}${path}`;
-  const accountPlan = () => {
-    const target = byId("accountPlanValue");
-    if (target) target.textContent = window.AiLynxMembership?.membership?.().plan || "FREE";
-  };
   const clearPasswords = () => document.querySelectorAll("[data-auth-password]").forEach((field) => { field.value = ""; });
-  const openAccount = () => account()?.showModal?.();
+  const showView = (view = "login") => {
+    document.querySelectorAll("[data-auth-panel]").forEach((panel) => { panel.hidden = panel.dataset.authPanel !== view; });
+    document.querySelectorAll("[data-auth-view]").forEach((tab) => tab.setAttribute("aria-selected", String(tab.dataset.authView === view)));
+  };
+  const renderAccount = (state = membership()) => {
+    const authenticated = Boolean(state.authenticated);
+    byId("accountAnonymous")?.toggleAttribute("hidden", authenticated);
+    byId("accountAuthenticated")?.toggleAttribute("hidden", !authenticated);
+    const profile = byId("memberProfile");
+    if (profile) profile.hidden = false;
+    const email = state.user?.email || "";
+    const label = authenticated ? email : "로그인 / 무료 회원가입";
+    const profileLabel = byId("memberProfileLabel");
+    if (profileLabel) profileLabel.textContent = label;
+    const userEmail = byId("accountUserEmail");
+    if (userEmail) userEmail.textContent = email;
+    const plan = String(state.plan || "FREE").toUpperCase();
+    byId("accountPlanValue") && (byId("accountPlanValue").textContent = plan);
+    byId("planStatusChip") && (byId("planStatusChip").textContent = plan);
+    if (!authenticated) showView("login");
+  };
   const closeAccount = () => account()?.close?.();
+  const openAccount = () => { renderAccount(); account()?.showModal?.(); };
   const login = async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
     try {
       await window.AiLynxSupabaseAuth.signIn({email: form.email.value.trim(), password: form.password.value});
-      clearPasswords(); await window.AiLynxAuthGate.refresh(); note("Signed in."); closeAccount();
-    } catch { note("Unable to sign in. Check your email and password.", true); }
+      clearPasswords();
+      await window.AiLynxAuthGate.refresh();
+      note("로그인되었습니다.");
+      closeAccount();
+    } catch { note("로그인할 수 없습니다. 이메일과 비밀번호를 확인하세요.", true); }
   };
   const signup = async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
-    if (form.password.value !== form.passwordConfirm.value) return note("Passwords do not match.", true);
+    if (form.password.value !== form.passwordConfirm.value) return note("비밀번호 확인이 일치하지 않습니다.", true);
     try {
       const result = await window.AiLynxSupabaseAuth.signUp({email: form.email.value.trim(), password: form.password.value, redirectTo: redirect("/auth/callback")});
       clearPasswords();
-      if (result.confirmationRequired) note("Check your email to confirm your account before signing in.");
-      else { await window.AiLynxAuthGate.refresh(); note("Account created."); closeAccount(); }
-    } catch { note("Unable to create the account. Please try again.", true); }
+      if (result.confirmationRequired) {
+        showView("login");
+        note("확인 이메일을 보냈습니다. 이메일의 링크를 연 뒤 로그인하세요.");
+      } else {
+        await window.AiLynxAuthGate.refresh();
+        note("무료 회원가입이 완료되었습니다.");
+        closeAccount();
+      }
+    } catch { note("회원가입을 완료할 수 없습니다. 잠시 후 다시 시도하세요.", true); }
   };
   const reset = async (event) => {
     event.preventDefault();
     try {
       await window.AiLynxSupabaseAuth.resetPasswordForEmail(event.currentTarget.email.value.trim(), redirect("/auth/reset"));
-      note("If this address is registered, a reset email has been sent.");
-    } catch { note("Unable to request a reset email. Please try again.", true); }
+      note("등록된 이메일이라면 비밀번호 재설정 안내를 보냈습니다.");
+    } catch { note("비밀번호 재설정을 요청할 수 없습니다. 잠시 후 다시 시도하세요.", true); }
   };
   window.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll("[data-open-account], [data-auth-open]").forEach((button) => button.addEventListener("click", openAccount));
+    document.querySelectorAll("[data-auth-view]").forEach((button) => button.addEventListener("click", () => showView(button.dataset.authView)));
     byId("emailLoginForm")?.addEventListener("submit", login);
     byId("emailSignupForm")?.addEventListener("submit", signup);
     byId("passwordResetForm")?.addEventListener("submit", reset);
-    byId("accountLogout")?.addEventListener("click", async () => { await window.AiLynxAuthGate.signOut(); clearPasswords(); accountPlan(); note("Signed out."); closeAccount(); });
-    window.addEventListener("ailynx-membership", accountPlan);
-    accountPlan();
+    byId("accountLogout")?.addEventListener("click", async () => {
+      await window.AiLynxAuthGate.signOut();
+      clearPasswords();
+      renderAccount({authenticated: false, user: null, plan: "FREE"});
+      note("로그아웃되었습니다.");
+      closeAccount();
+    });
+    window.addEventListener("ailynx-membership", (event) => renderAccount(event.detail));
+    renderAccount();
   });
 })();
-
