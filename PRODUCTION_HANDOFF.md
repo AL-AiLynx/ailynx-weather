@@ -219,4 +219,4 @@ This repository contains no `vercel.json` or other Vercel project configuration 
 - Market dominance now follows the hero directly. BTC.D, USDT.D, and USDC.D use the CoinGecko global market-cap feed, show a percentage-only occupancy bar, and refresh every ten minutes. Public-feed data is labeled `무료 · 공개 데이터`; stale data is `무료 · 지연`; unavailable data is `관측 대기`.
 - The compact core-metric row contains only `날씨 지속력`, `날씨 변화율`, and `현재 리더 타임프레임`. It shows `관측 축적 중` until valid history is sufficient and keeps the lower-timeframe noise note deliberately non-predictive.
 - Asset selection is a keyboard and touch accessible dark custom control. The canonical labels are 비트코인/BTCUSD, 금/XAUUSD, 달러 인덱스/DXY, and 나스닥 100/US100. Entitlement and observation state are rendered independently; the existing asset-isolated read path clears stale cross-asset observations.
-- The service worker cache is `ailynx-weather-v32` and precaches `styles.css?v=25`, `asset-registry.js?v=2`, `i18n.js?v=4`, and `app.js?v=26`.
+- The service worker cache is `ailynx-weather-v33` and precaches `styles.css?v=25`, `asset-registry.js?v=2`, `i18n.js?v=4`, and `app.js?v=27`.

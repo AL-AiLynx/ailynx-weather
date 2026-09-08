@@ -952,7 +952,7 @@ function hideLegacyWeatherPanels() {
 function renderLynxDashboard() {
   if (!dashboardConfig) return;
   const result = currentWeatherEngineResult();
-  recordWeatherObservation(result);
+  const observationHistory = recordWeatherObservation(result);
   const durability = window.AiLynxWeatherEngine?.computeDurability?.(observationHistory);
   const changeRate = window.AiLynxWeatherEngine?.computeChangeRate?.(observationHistory);
   const classified = window.AiLynxWeatherEngine?.classifyWeather?.(result?.score);

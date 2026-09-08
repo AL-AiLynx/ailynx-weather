@@ -62,8 +62,8 @@ test("observed market cards separate entitlement from observation state", async 
 
 test("dashboard cache shell is revised and has no removed UI modules", async () => {
   const [html, worker] = await Promise.all([read("index.html"), read("service-worker.js")]);
-  assert.match(worker, /ailynx-weather-v32/);
-  for (const asset of ["styles.css?v=25", "asset-registry.js?v=2", "i18n.js?v=4", "app.js?v=26"]) {
+  assert.match(worker, /ailynx-weather-v33/);
+  for (const asset of ["styles.css?v=25", "asset-registry.js?v=2", "i18n.js?v=4", "app.js?v=27"]) {
     assert.ok(html.includes(asset) || worker.includes(asset), `missing ${asset}`);
   }
   assert.doesNotMatch(worker, /frontline-timeframe|weather-dynamics/);
@@ -71,6 +71,7 @@ test("dashboard cache shell is revised and has no removed UI modules", async () 
 
 test("asset selection still delegates through the isolated read path", async () => {
   const app = await read("app.js");
+  assert.match(app, /const observationHistory = recordWeatherObservation\(result\)/);
   assert.match(app, /await selectAsset\(asset\.id\)/);
   assert.match(app, /initializeAssetSelector\(\)/);
   assert.match(app, /currentAssetObservation/);
