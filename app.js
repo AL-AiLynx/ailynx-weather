@@ -43,6 +43,8 @@ let freshnessIntervalId = null;
 let as1ObservationRequestPromise = null;
 let horusSnapshot = null;
 let validationCardsData = null;
+let publicWeatherSnapshot = null;
+let heroWeatherPhase = "loading";
 let validationTimeframe = "240";
 let validationRequestPromise = null;
 let marketPriceData = null;
@@ -391,28 +393,50 @@ async function applyConfiguredOverlay() {
   return false;
 }
 
+function weatherTimeframeLabel(timeframe = validationTimeframe) {
+  return timeframe === "240" ? "4H" : timeframe === "480" ? "8H" : timeframe === "720" ? "12H" : "1D";
+}
 
-async function applyAs1ValidationCards(timeframe = validationTimeframe) {
-  if (!hasFeature("viewer.professional_details")) {
-    validationCardsData = null;
-    renderValidationCards();
-    renderLynxDashboard();
+function capturePublicWeatherSnapshot(cards, timeframe) {
+  const weatherTimeframe = weatherTimeframeLabel(timeframe);
+  const horus = horusSnapshot?.timeframes?.[weatherTimeframe];
+  const result = window.AiLynxWeatherEngine?.computeWeatherScore?.({timeframe: weatherTimeframe, horus, maat: cards?.maat, hub: cards?.maat2?.hub, time: cards?.maat2?.time}) ?? null;
+  const parentMinutes = cards?.maat2?.time?.available ? cards.maat2.time.payload?.time?.parent_tf_minutes : cards?.maat?.available ? cards.maat.payload?.stopwatch?.parent_tf_minutes : null;
+  if (!result || !horus?.available || horus.quality?.valid !== true || !["FRESH", "AGING"].includes(horus.freshness)) {
+    publicWeatherSnapshot = null;
     return false;
   }
+  const conflictCount = cards?.maat?.payload?.aggregate?.conflict_count;
+  publicWeatherSnapshot = Object.freeze({
+    result: Object.freeze({...result}),
+    leaderTimeframe: Number.isFinite(parentMinutes) ? formatValidationTfMinutes(parentMinutes) : weatherTimeframe,
+    receipt: Object.freeze({receivedAt: horus.receivedAt, freshness: horus.freshness, quality: Object.freeze({...horus.quality})}),
+    noise: Number.isFinite(cards?.maat?.payload?.stopwatch?.noise_score) ? cards.maat.payload.stopwatch.noise_score : 0,
+    quality: Number.isFinite(conflictCount) && conflictCount > 0 ? "CONFLICT" : ["GOOD", "WATCH", "LIMITED"].includes(horus.quality.sensorQuality) ? horus.quality.sensorQuality : "WATCH",
+  });
+  return true;
+}
+
+
+async function applyAs1ValidationCards(timeframe = validationTimeframe) {
   if (validationRequestPromise) {
     return validationRequestPromise;
   }
 
   validationRequestPromise = (async () => {
     try {
+      if (!publicWeatherSnapshot) heroWeatherPhase = "loading";
       const client = await import("./as1-validation-client.js?v=10");
       validationTimeframe = timeframe;
       const nextCards = await client.fetchValidationCards({timeframe});
+      const validPublicWeather = capturePublicWeatherSnapshot(nextCards, timeframe);
+      heroWeatherPhase = validPublicWeather ? "valid" : "empty";
       validationCardsData = hasFeature("viewer.professional_details") ? nextCards : null;
       renderValidationCards();
       renderLynxDashboard();
-      return validationCardsData !== null;
+      return validPublicWeather;
     } catch {
+      if (!publicWeatherSnapshot) heroWeatherPhase = "empty";
       validationCardsData = null;
       renderValidationCards();
       renderLynxDashboard();
@@ -876,7 +900,9 @@ async function selectAsset(assetId) {
 }
 
 function weatherPresentation(score) {
-  if (!Number.isFinite(score)) return {icon: "◌", label: tr("calculating"), note: tr("publicContractWaiting")};
+  if (!Number.isFinite(score)) return heroWeatherPhase === "loading"
+    ? {icon: "◌", label: "불러오는 중", note: "유효 관측을 확인하고 있습니다."}
+    : {icon: "◌", label: "관측 준비 중", note: "유효 관측을 기다리는 중"};
   const band = dashboardConfig?.weatherBands?.find((item) => score >= item.min && score <= item.max);
   return band ? {...band, label: displayState(band.label), note: tr("liveData")} : {icon: "◌", label: tr("noData"), note: tr("publicContractWaiting")};
 }
@@ -887,15 +913,10 @@ function observedHeroState() {
     const latest = selected?.latestReceipt;
     return {timeframe: latest?.timeframe || "WAITING", state: selected?.status || (assetEntitled(selectedAssetId) ? "WAITING" : "LOCKED")};
   }
-  const maat = validationCardsData?.maat;
-  const time = validationCardsData?.maat2?.time;
-  const stopwatch = maat?.available ? maat.payload?.stopwatch : null;
-  const timePayload = time?.available ? time.payload : null;
-  const parentMinutes = timePayload?.time?.parent_tf_minutes ?? stopwatch?.parent_tf_minutes;
-  const state = timePayload?.record_status ?? (maat?.available ? maat.payload?.record_status : null);
+  const publicWeather = publicWeatherSnapshot;
   return {
-    timeframe: Number.isFinite(parentMinutes) ? formatValidationTfMinutes(parentMinutes) : weatherData.mainTimeframe || "WAITING",
-    state: typeof state === "string" ? state : "WAITING",
+    timeframe: publicWeather?.leaderTimeframe || "WAITING",
+    state: publicWeather ? "LIVE" : "WAITING",
   };
 }
 
@@ -906,6 +927,7 @@ function planAllows(timeframe, kind) {
 
 function makeFrameCell(timeframe, kind) {
   const allowed = planAllows(timeframe, kind);
+  const requiredPlan = ["FREE", "WEATHER", "PRO", "PREMIUM"].find((planCode) => dashboardConfig?.plans?.[planCode]?.[kind]?.includes(timeframe)) || "PRO";
   const canonical = timeframe === "24H" ? "1D" : timeframe;
   const selected = allowed ? currentAssetObservation() : null;
   const observation = allowed ? (selectedAssetId === "BTCUSD" ? horusSnapshot?.timeframes?.[canonical] : selected?.timeframes?.[canonical]) : null;
@@ -926,12 +948,13 @@ function makeFrameCell(timeframe, kind) {
   label.textContent = timeframe === "24H" ? "24H / 1D" : timeframe;
   const icon = document.createElement("span");
   icon.className = "frame-icon";
-  icon.textContent = status === "FRESH" || status === "AGING" ? "●" : status === "STALE" ? "◐" : status === "INVALID" ? "!" : status === "NO DATA" ? "—" : "…";
+  icon.textContent = !allowed ? "" : status === "FRESH" || status === "AGING" ? "●" : status === "STALE" ? "◐" : status === "INVALID" ? "!" : status === "NO DATA" ? "—" : "◌";
   const persistence = document.createElement("small");
-  persistence.textContent = allowed ? displayState(status) : tr("locked");
+  persistence.textContent = allowed ? displayState(status) : requiredPlan;
+  if (!allowed) persistence.className = "frame-entitlement";
   const change = document.createElement("small");
   change.className = "frame-change";
-  change.textContent = !allowed ? tr("upgrade") : selectedAssetId !== "BTCUSD" && observation ? `${observation.sensorQuality} · LIVE`
+  change.textContent = !allowed ? "" : selectedAssetId !== "BTCUSD" && observation ? `${observation.sensorQuality} · LIVE`
     : observation?.available ? `${observation.quality.sensorQuality} · ${observation.quality.valid ? "LIVE" : "INVALID"}`
       : tr("waiting");
   cell.append(label, icon, persistence, change);
@@ -998,6 +1021,8 @@ function renderLynxDashboard() {
   dashboardText("heroWeatherName", presentation.label);
   dashboardText("heroWeatherScore", Number.isFinite(presentation.score) ? String(presentation.score) : "—");
   dashboardText("heroWeatherNote", presentation.note);
+  const heroPanel = document.querySelector(".hero-weather-panel");
+  if (heroPanel) heroPanel.dataset.state = Number.isFinite(presentation.score) ? "valid" : heroWeatherPhase;
   renderCoreMetrics(durability, changeRate, hero);
   renderMarketPrice();
 
@@ -1499,9 +1524,7 @@ function startMarketDominanceTimer() {
 }
 
 function currentWeatherEngineResult() {
-  if (selectedAssetId !== "BTCUSD") return null;
-  const timeframe = validationTimeframe === "240" ? "4H" : validationTimeframe === "480" ? "8H" : validationTimeframe === "720" ? "12H" : "1D";
-  return window.AiLynxWeatherEngine?.computeWeatherScore?.({timeframe, horus: horusSnapshot?.timeframes?.[timeframe], maat: validationCardsData?.maat, hub: validationCardsData?.maat2?.hub, time: validationCardsData?.maat2?.time}) ?? null;
+  return selectedAssetId === "BTCUSD" ? publicWeatherSnapshot?.result ?? null : null;
 }
 
 function initializeAnnouncementTicker() {
@@ -1677,26 +1700,23 @@ function initializeAssetSelector() {
 
 function recordWeatherObservation(result) {
   if (selectedAssetId !== "BTCUSD" || !result) return null;
-  const horus = horusSnapshot?.timeframes?.[result.timeframe];
-  const freshness = horus?.freshness;
-  if (!horus?.available || horus.quality?.valid !== true || !["FRESH", "AGING"].includes(freshness)) return null;
+  const publicWeather = publicWeatherSnapshot;
+  const receipt = publicWeather?.receipt;
+  const freshness = receipt?.freshness;
+  if (!receipt || receipt.quality?.valid !== true || !["FRESH", "AGING"].includes(freshness)) return null;
   const classified = window.AiLynxWeatherEngine?.classifyWeather?.(result.score);
   if (!classified) return null;
-  const maatAggregate = validationCardsData?.maat?.payload?.aggregate;
-  const quality = Number.isFinite(maatAggregate?.conflict_count) && maatAggregate.conflict_count > 0
-    ? "CONFLICT"
-    : ["GOOD", "WATCH", "LIMITED"].includes(horus.quality.sensorQuality) ? horus.quality.sensorQuality : "WATCH";
   const snapshot = Object.freeze({
     assetId: selectedAssetId,
     timeframe: result.timeframe,
-    majorTimeframe: observedHeroState().timeframe || result.timeframe,
+    majorTimeframe: publicWeather.leaderTimeframe || result.timeframe,
     score: result.score,
     state: classified.state,
     valid: true,
-    noise: Number.isFinite(validationCardsData?.maat?.payload?.stopwatch?.noise_score) ? validationCardsData.maat.payload.stopwatch.noise_score : 0,
-    quality,
+    noise: publicWeather.noise,
+    quality: publicWeather.quality,
     freshness,
-    observedAt: horus.receivedAt,
+    observedAt: receipt.receivedAt,
   });
   const key = `${snapshot.assetId}:${snapshot.timeframe}`;
   const historyClient = window.AiLynxWeatherHistory;
@@ -1718,8 +1738,8 @@ function leaderTimeframe(hero = observedHeroState()) {
   return selectedAssetId === "BTCUSD" && currentWeatherEngineResult() && supported.includes(hero?.timeframe) ? hero.timeframe : "—";
 }
 
-function coreMetricPresentation(value, kind) {
-  return window.AiLynxCoreDynamics?.metricPresentation?.(value, kind) || {ready: false, value: null, band: "관측 축적 중", note: "유효 관측이 쌓이면 표시합니다."};
+function coreMetricPresentation(value, kind, observationCount) {
+  return window.AiLynxCoreDynamics?.metricPresentation?.(value, kind, observationCount) || {ready: false, value: null, band: "관측 축적 중", note: `관측 ${observationCount > 0 ? 1 : 0} / 2 · 유효 관측이 쌓이면 표시합니다.`};
 }
 
 function setCoreMetricGauge(id, value) {
@@ -1764,8 +1784,10 @@ function updateLeaderTimeframe(value) {
 }
 
 function renderCoreMetrics(durability, changeRate, hero) {
-  updateCoreMetric("corePersistenceMetric", "corePersistence", "corePersistenceBand", "corePersistenceNote", "corePersistenceGauge", coreMetricPresentation(durability, "persistence"));
-  updateCoreMetric("coreChangeMetric", "coreChange", "coreChangeBand", "coreChangeNote", "coreChangeGauge", coreMetricPresentation(changeRate, "changeRate"));
+  const history = weatherObservationHistory.get(`BTCUSD:${weatherTimeframeLabel()}`);
+  const observationCount = Array.isArray(history) ? history.length : 0;
+  updateCoreMetric("corePersistenceMetric", "corePersistence", "corePersistenceBand", "corePersistenceNote", "corePersistenceGauge", coreMetricPresentation(durability, "persistence", observationCount));
+  updateCoreMetric("coreChangeMetric", "coreChange", "coreChangeBand", "coreChangeNote", "coreChangeGauge", coreMetricPresentation(changeRate, "changeRate", observationCount));
   const leader = window.AiLynxCoreDynamics?.leaderPresentation?.(leaderTimeframe(hero))?.value || "—";
   updateLeaderTimeframe(leader);
 }

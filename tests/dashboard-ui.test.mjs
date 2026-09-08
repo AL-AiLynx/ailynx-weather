@@ -47,6 +47,17 @@ test("core dynamics show real values or an explicit accumulation state without l
   assert.match(css, /core-metric-leader\.is-updated/);
 });
 
+test("the completed hero uses the official app mark and a summarized public BTC receipt", async () => {
+  const [html, app, css] = await Promise.all([read("index.html"), read("app.js"), read("styles.css")]);
+  assert.match(html, /class="logo brand-mark" src="\.\/icons\/icon-512\.png"/);
+  assert.match(html, /class="asset-select-label">자산/);
+  assert.match(app, /capturePublicWeatherSnapshot/);
+  assert.match(app, /heroWeatherPhase/);
+  assert.match(app, /validationCardsData = hasFeature\("viewer\.professional_details"\) \? nextCards : null/);
+  assert.match(app, /label: "관측 준비 중"/);
+  assert.match(css, /\.brand-mark/);
+});
+
 test("asset selector is a keyboard-accessible custom control with canonical labels", async () => {
   const [html, app, registry, css] = await Promise.all([read("index.html"), read("app.js"), read("asset-registry.js"), read("styles.css")]);
   assert.match(html, /class="asset-selector" id="assetSelector"/);
@@ -67,8 +78,8 @@ test("observed market cards separate entitlement from observation state", async 
 
 test("dashboard cache shell includes the membership resolver and has no removed UI modules", async () => {
   const [html, worker] = await Promise.all([read("index.html"), read("service-worker.js")]);
-  assert.match(worker, /ailynx-weather-v37/);
-  for (const asset of ["styles.css?v=26", "asset-registry.js?v=4", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "auth-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=4", "app.js?v=30"]) {
+  assert.match(worker, /ailynx-weather-v38/);
+  for (const asset of ["styles.css?v=27", "asset-registry.js?v=4", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "auth-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=4", "app.js?v=31"]) {
     assert.ok(html.includes(asset) || worker.includes(asset), `missing ${asset}`);
   }
   assert.doesNotMatch(worker, /frontline-timeframe|weather-dynamics/);
@@ -80,7 +91,8 @@ test("runtime plan gates use subscription canonical plans and never expose locke
   assert.match(config, /FREE.*WEATHER.*PRO.*PREMIUM/s);
   assert.match(app, /hasFeature\("viewer\.professional_details"\)/);
   assert.match(app, /const observation = allowed \?/);
-  assert.match(app, /change\.textContent = !allowed \? tr\("upgrade"\)/);
+  assert.match(app, /change\.textContent = !allowed \? ""/);
+  assert.match(app, /frame-entitlement/);
   assert.match(app, /assetReadPath\?\.reconcileAccess\?\.?\(\)/);
   assert.match(membership, /subscriptions\.plan_code/);
   assert.match(membership, /source: "unavailable"/);

@@ -871,6 +871,7 @@ body {
 .logo { border-color: rgba(100, 214, 255, .38); box-shadow: 0 0 24px rgba(100, 214, 255, .08); }
 .live-badge { justify-self: end; }
 .brand .local-clock { display: block; min-height: 16px; margin-top: 5px; color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; line-height: 16px; text-align: left; white-space: nowrap; }
+.brand-mark { width: clamp(48px, 5vw, 60px); height: clamp(48px, 5vw, 60px); object-fit: cover; border: 1px solid rgba(100,214,255,.42); border-radius: 18px; box-shadow: 0 0 22px rgba(100,214,255,.12); }.brand:hover .brand-mark, .brand-mark:focus-visible { box-shadow: 0 0 28px rgba(100,214,255,.2); }.brand-product { margin: 3px 0 0; color: var(--text-muted); font-size: 11px; font-weight: 800; letter-spacing: .06em; }
 
 .app-tabs {
   position: sticky;
@@ -987,6 +988,7 @@ body, .card, .frame-cell { transition: background 550ms ease, border-color 450ms
 .hero-signals > div { background: linear-gradient(145deg, rgba(6, 23, 37, .44), rgba(44, 40, 77, .16)); }
 .frame-cell, .asset-access { background: linear-gradient(145deg, rgba(18,49,67,.62), rgba(37, 29, 66, .22)); }
 .frame-cell.is-locked { background: rgba(9, 28, 40, .52); }
+.frame-cell.is-locked .frame-icon { display: none; }.frame-entitlement { position: relative; display: inline-flex; align-items: center; gap: 6px; color: var(--cyan) !important; font-weight: 900 !important; }.frame-entitlement::before { width: 8px; height: 7px; border: 1px solid currentColor; border-radius: 2px; content: ""; }.frame-entitlement::after { position: absolute; top: -2px; left: 1px; width: 6px; height: 5px; border: 1px solid currentColor; border-bottom: 0; border-radius: 5px 5px 0 0; content: ""; }
 
 .shell-panel { margin-top: 0; padding: clamp(24px, 6vw, 42px); }
 .shell-panel h2 { margin: 0; font-size: clamp(25px, 5vw, 36px); }
@@ -1073,7 +1075,7 @@ body.auth-gate-active .app { filter: blur(5px); pointer-events: none; user-selec
 .hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(130px, .5fr); align-items: start; gap: clamp(12px, 3vw, 28px); min-height: 0; padding: clamp(18px, 3vw, 28px); }
 .hero-market { min-width: 0; display: grid; align-content: start; }
 .hero-asset-select { display: inline-grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; width: min(100%, 235px); gap: 8px; margin: 0 0 20px; padding: 7px 9px; border: 1px solid rgba(100,214,255,.16); border-radius: 12px; background: rgba(6,23,37,.38); }
-.hero-asset-select label { color: var(--text-muted); font-size: 10px; font-weight: 900; letter-spacing: .09em; }
+.hero-asset-select > span { color: var(--text-muted); font-size: 10px; font-weight: 900; letter-spacing: .09em; }
 .asset-selector { position: relative; min-width: 0; }
 .asset-selector-toggle { display: grid; grid-template-columns: minmax(0, 1fr) auto; width: 100%; gap: 1px 9px; padding: 5px 0; border: 0; color: var(--text-main); background: transparent; text-align: left; font: inherit; cursor: pointer; }.asset-selector-toggle strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }.asset-selector-toggle small { grid-column: 1; color: var(--text-muted); font-size: 9px; }.asset-selector-toggle > span { grid-column: 2; grid-row: 1 / span 2; align-self: center; color: var(--cyan); font-size: 15px; }
 .asset-selector-menu { position: absolute; z-index: 20; top: calc(100% + 8px); right: 0; left: -82px; display: grid; gap: 4px; padding: 7px; border: 1px solid rgba(100,214,255,.32); border-radius: 12px; background: #081c2a; box-shadow: 0 16px 35px rgba(0,0,0,.38); }.asset-selector-menu[hidden] { display: none; }
@@ -1084,6 +1086,7 @@ body.auth-gate-active .app { filter: blur(5px); pointer-events: none; user-selec
 .hero-weather-panel { display: grid; justify-items: end; gap: 3px; min-width: 0; padding: 0; border: 0; background: transparent; text-align: right; }
 .hero .weather-icon { position: static; display: grid; place-items: center; width: clamp(64px, 8vw, 92px); height: clamp(64px, 8vw, 92px); margin-bottom: 4px; border: 1px solid rgba(100,214,255,.19); border-radius: 50%; background: radial-gradient(circle, rgba(100,214,255,.18), rgba(7,24,36,.05) 70%); font-size: clamp(36px, 5vw, 54px); }
 .hero-weather-copy { min-width: 0; }.hero .weather-name { margin: 0; font-size: clamp(20px, 3.4vw, 30px); }.hero-weather-score { display: block; margin-top: 2px; color: var(--yellow); font-size: clamp(25px, 4vw, 36px); line-height: 1; }.hero-note { margin: 4px 0 0; color: var(--text-muted); font-size: 10px; font-weight: 800; letter-spacing: .04em; }
+.hero-weather-panel[data-state="valid"] .weather-icon { border-color: rgba(100,214,255,.42); box-shadow: 0 0 22px rgba(100,214,255,.13), inset 0 0 18px rgba(100,214,255,.08); }.hero-weather-panel[data-state="empty"] .weather-icon { opacity: .62; }.hero-weather-panel[data-state="loading"] .weather-icon { opacity: .78; }
 .hero-signals { grid-column: 1 / -1; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .hero-signals > div { min-height: 68px; padding: 12px; }
 .hero-signals .hero-timeframe-state { grid-column: auto; grid-template-columns: 1fr; }

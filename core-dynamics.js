@@ -7,8 +7,11 @@ const bands = Object.freeze({
   changeRate: Object.freeze([[80, "매우 빠름"], [60, "빠름"], [40, "보통"], [20, "안정"], [0, "매우 안정"]]),
 });
 
-export function metricPresentation(value, kind) {
-  if (!Number.isFinite(value) || !bands[kind]) return Object.freeze({ready: false, value: null, band: "관측 축적 중", note: "유효 관측이 쌓이면 표시합니다."});
+export function metricPresentation(value, kind, observationCount = 0) {
+  if (!Number.isFinite(value) || !bands[kind]) {
+    const count = Number.isInteger(observationCount) && observationCount > 0 ? Math.min(observationCount, 1) : 0;
+    return Object.freeze({ready: false, value: null, band: "관측 축적 중", note: `관측 ${count} / 2 · 유효 관측이 쌓이면 표시합니다.`});
+  }
   const score = clampScore(value);
   const [, band] = bands[kind].find(([minimum]) => score >= minimum);
   return Object.freeze({ready: true, value: score, band, note: ""});

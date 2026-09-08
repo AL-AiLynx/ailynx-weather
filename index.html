@@ -28,7 +28,7 @@
   <!-- 기본 디자인 -->
   <link
     rel="stylesheet"
-    href="./styles.css?v=26"
+    href="./styles.css?v=27"
   />
 
   <!-- PWA 매니페스트 -->
@@ -81,19 +81,14 @@
     <!-- 상단 브랜드 -->
     <header class="top-bar">
       <div class="brand">
-        <div
-          class="logo"
-          aria-hidden="true"
-        >
-          🦁
-        </div>
+        <img class="logo brand-mark" src="./icons/icon-512.png" alt="AiLynx Lynx Weather" />
 
         <div class="brand-text">
           <h1>
             AiLynx
           </h1>
 
-          <p data-i18n="brandSubtitle">Lynx Weather · timeframe observation</p>
+          <p class="brand-product">Lynx Weather</p>
           <time class="local-clock" id="localClock" aria-live="off"></time>
         </div>
       </div>
@@ -126,7 +121,7 @@
 
     <section class="hero card">
       <div class="hero-market">
-        <div class="hero-asset-select"><span data-i18n="selectAsset">SELECT ASSET</span><div class="asset-selector" id="assetSelector"></div></div>
+        <div class="hero-asset-select"><span class="asset-select-label">자산</span><div class="asset-selector" id="assetSelector"></div></div>
         <div class="hero-heading">
         <p class="eyebrow" id="heroAssetLabel">BTCUSD · LYNX WEATHER</p>
         <p class="hero-asset-identity" id="heroAssetIdentity">현재 가격 관측을 준비하고 있습니다.</p>
@@ -150,13 +145,13 @@
           <p>날씨 지속력</p>
           <div class="core-metric-reading"><strong id="corePersistence">—</strong><span class="core-metric-band" id="corePersistenceBand" role="status">관측 축적 중</span></div>
           <span class="core-metric-bar" aria-hidden="true"><i id="corePersistenceGauge"></i></span>
-          <small id="corePersistenceNote">유효 관측이 쌓이면 표시합니다.</small>
+          <small id="corePersistenceNote">관측 0 / 2 · 유효 관측이 쌓이면 표시합니다.</small>
         </article>
         <article class="core-metric" id="coreChangeMetric" data-state="accumulating">
           <p>날씨 변화율</p>
           <div class="core-metric-reading"><strong id="coreChange">—</strong><span class="core-metric-band" id="coreChangeBand" role="status">관측 축적 중</span></div>
           <span class="core-metric-bar" aria-hidden="true"><i id="coreChangeGauge"></i></span>
-          <small id="coreChangeNote">유효 관측이 쌓이면 표시합니다.</small>
+          <small id="coreChangeNote">관측 0 / 2 · 유효 관측이 쌓이면 표시합니다.</small>
         </article>
         <article class="core-metric core-metric-leader" id="coreLeaderMetric" data-state="empty">
           <div class="core-metric-heading"><p>현재 리더 타임프레임</p><button class="core-dynamics-help" id="coreDynamicsHelp" type="button" aria-label="리더 타임프레임 도움말">?</button></div>
@@ -559,7 +554,7 @@
   <script src="./market-advisory-config.js?v=1"></script>
   <script src="./market-advisory.js?v=1"></script>
   <script type="module" src="./auth-gate.js?v=3"></script>
-  <script src="./app.js?v=30"></script>
+  <script src="./app.js?v=31"></script>
 
   <dialog class="account-dialog" id="accountDialog" aria-labelledby="accountDialogTitle">
     <form method="dialog"><button class="dialog-close" type="button" data-dialog-close aria-label="닫기">×</button></form>

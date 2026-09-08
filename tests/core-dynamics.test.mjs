@@ -15,7 +15,8 @@ test("core change rate renders a bounded numeric value and its Korean band", () 
 });
 
 test("missing history remains an explicit accumulation state without a preview number", () => {
-  assert.deepEqual(metricPresentation(null, "persistence"), {ready: false, value: null, band: "관측 축적 중", note: "유효 관측이 쌓이면 표시합니다."});
+  assert.deepEqual(metricPresentation(null, "persistence"), {ready: false, value: null, band: "관측 축적 중", note: "관측 0 / 2 · 유효 관측이 쌓이면 표시합니다."});
+  assert.equal(metricPresentation(null, "changeRate", 1).note, "관측 1 / 2 · 유효 관측이 쌓이면 표시합니다.");
 });
 
 test("leader only accepts an observed canonical timeframe and updates on a real change", () => {
