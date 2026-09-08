@@ -35,12 +35,16 @@ test("market share is immediately after the hero and has all public-feed cards",
   assert.match(html, /tenMinuteRefresh/);
 });
 
-test("core metrics use the requested labels and leader explanation", async () => {
-  const [html, app] = await Promise.all([read("index.html"), read("app.js")]);
-  for (const required of ["날씨 지속력", "날씨 변화율", "현재 리더 타임프레임", "현재 시장 날씨를 가장 강하게 이끄는 시간축", "하위 시간축에는 상대적으로 노이즈 비중이 높을 수 있습니다.", "관측 축적 중"]) assert.match(html, new RegExp(required));
-  assert.match(app, /renderCoreMetrics/);
-  assert.match(app, /leaderTimeframe/);
-  assert.doesNotMatch(`${html}\n${app}`, /날씨 지구력|내후성|Weather Persistence/);
+test("core dynamics show real values or an explicit accumulation state without leader copy", async () => {
+  const [html, app, css] = await Promise.all([read("index.html"), read("app.js"), read("styles.css")]);
+  for (const required of ["날씨 지속력", "날씨 변화율", "현재 리더 타임프레임", "관측 축적 중", "유효 관측이 쌓이면 표시합니다.", "corePersistenceBand", "coreChangeBand", "coreDynamicsHelp"]) assert.match(html, new RegExp(required));
+  for (const removed of ["현재 시장 날씨를 가장 강하게 이끄는 시간축", "하위 시간축에는 상대적으로 노이즈 비중이 높을 수 있습니다.", ">Persistence<", ">Change Rate<", ">Waiting<"]) assert.doesNotMatch(html, new RegExp(removed));
+  assert.match(app, /updateCoreMetric/);
+  assert.match(app, /updateLeaderTimeframe/);
+  assert.match(app, /currentWeatherEngineResult\(\)/);
+  assert.match(css, /prefers-reduced-motion: reduce/);
+  assert.match(css, /420ms/);
+  assert.match(css, /core-metric-leader\.is-updated/);
 });
 
 test("asset selector is a keyboard-accessible custom control with canonical labels", async () => {
@@ -63,8 +67,8 @@ test("observed market cards separate entitlement from observation state", async 
 
 test("dashboard cache shell includes the membership resolver and has no removed UI modules", async () => {
   const [html, worker] = await Promise.all([read("index.html"), read("service-worker.js")]);
-  assert.match(worker, /ailynx-weather-v36/);
-  for (const asset of ["styles.css?v=25", "asset-registry.js?v=4", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "auth-client.js?v=1", "membership-client.js?v=2", "i18n.js?v=4", "app.js?v=29"]) {
+  assert.match(worker, /ailynx-weather-v37/);
+  for (const asset of ["styles.css?v=26", "asset-registry.js?v=4", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "auth-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=4", "app.js?v=30"]) {
     assert.ok(html.includes(asset) || worker.includes(asset), `missing ${asset}`);
   }
   assert.doesNotMatch(worker, /frontline-timeframe|weather-dynamics/);

@@ -1,7 +1,7 @@
 +"use strict";
 
 const CACHE_NAME =
-  "ailynx-weather-v36";
+  "ailynx-weather-v37";
 
 const AS1_VALIDATION_ENDPOINT =
   "https://jggazwqwalincsjegieo.supabase.co/functions/v1/as1-validation-read";
@@ -9,7 +9,7 @@ const AS1_VALIDATION_ENDPOINT =
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=25",
+  "./styles.css?v=26",
   "./weather-engine.js",
   "./as1-observation-client.js?v=10",
   "./as1-validation-client.js?v=10",
@@ -18,6 +18,7 @@ const APP_SHELL = [
   "./lynx-notices.js?v=16",
   "./asset-registry.js?v=4",
   "./weather-history.js?v=1",
+  "./core-dynamics.js?v=1",
   "./as1-asset-client.js?v=2",
   "./asset-read-path.js?v=2",
   "./public-runtime-config.js?v=1",
@@ -33,7 +34,7 @@ const APP_SHELL = [
   "./market-price-client.js?v=15",
   "./market-dominance-client.js?v=15",
   "./visit-counter-client.js?v=15",
-  "./app.js?v=29",
+  "./app.js?v=30",
   "./weather-data.json",
   "./horus-sample.json",
   "./manifest.webmanifest",

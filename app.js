@@ -53,6 +53,7 @@ let selectedAssetObservation = null;
 let assetReadPath = null;
 let assetReadPathPromise = null;
 const weatherObservationHistory = new Map();
+const coreDynamicsValues = new Map();
 let marketDominanceData = null;
 let marketDominanceRequestPromise = null;
 let marketDominanceIntervalId = null;
@@ -1552,6 +1553,12 @@ function initializeInquiryStatus() {
   });
 }
 
+function initializeCoreDynamicsHelp() {
+  document.getElementById("coreDynamicsHelp")?.addEventListener("click", () => {
+    document.getElementById("manualDialog")?.showModal();
+  });
+}
+
 
 /*
   앱 시작
@@ -1561,6 +1568,7 @@ async function initializeApp() {
   initializeAnnouncementTicker();
   initializeTabs();
   initializeInquiryStatus();
+  initializeCoreDynamicsHelp();
   initializeAssetSelector();
   startLocalClock();
   if (!liveFetchAllowed()) {
@@ -1705,24 +1713,13 @@ function recordWeatherObservation(result) {
   return bounded;
 }
 
-function weatherMetricText(value, type) {
-  if (!Number.isFinite(value)) return null;
-  const label = type === "persistence"
-    ? value >= 80 ? "매우 강함" : value >= 65 ? "강함" : value >= 45 ? "보통" : value >= 25 ? "약함" : "매우 약함"
-    : value >= 80 ? "매우 빠름" : value >= 60 ? "빠름" : value >= 40 ? "보통" : value >= 20 ? "안정" : "매우 안정";
-  return `${value} · ${label}`;
-}
-
 function leaderTimeframe(hero = observedHeroState()) {
   const supported = ["1H", "4H", "6H", "8H", "12H", "1D", "24H"];
-  if (supported.includes(hero?.timeframe)) return hero.timeframe;
-  return validationTimeframe === "240" ? "4H" : validationTimeframe === "480" ? "8H" : validationTimeframe === "720" ? "12H" : "1D";
+  return selectedAssetId === "BTCUSD" && currentWeatherEngineResult() && supported.includes(hero?.timeframe) ? hero.timeframe : "—";
 }
 
-function metricNote(value, type) {
-  if (!Number.isFinite(value)) return "최근 관측 기록을 모으고 있습니다.";
-  if (type === "persistence") return value >= 65 ? "현재 날씨가 안정적으로 지속되는 중" : "현재 날씨의 지속성을 관찰하는 중";
-  return value >= 60 ? "날씨 변화 속도가 빠르게 나타나는 중" : "날씨 변화 속도가 안정적인 편입니다.";
+function coreMetricPresentation(value, kind) {
+  return window.AiLynxCoreDynamics?.metricPresentation?.(value, kind) || {ready: false, value: null, band: "관측 축적 중", note: "유효 관측이 쌓이면 표시합니다."};
 }
 
 function setCoreMetricGauge(id, value) {
@@ -1730,16 +1727,47 @@ function setCoreMetricGauge(id, value) {
   if (element) element.style.setProperty("--core-metric-value", `${Number.isFinite(value) ? value : 0}%`);
 }
 
+function updateCoreMetric(cardId, valueId, bandId, noteId, gaugeId, presentation) {
+  const card = document.getElementById(cardId);
+  const previous = coreDynamicsValues.get(cardId);
+  const next = presentation.value;
+  const changed = window.AiLynxCoreDynamics?.hasCoreTransition?.(previous, next) ?? (previous !== undefined && previous !== next);
+  coreDynamicsValues.set(cardId, next);
+  dashboardText(valueId, presentation.ready ? String(presentation.value) : "—");
+  dashboardText(bandId, presentation.band);
+  dashboardText(noteId, presentation.note);
+  const note = document.getElementById(noteId);
+  if (note) note.hidden = presentation.ready;
+  setCoreMetricGauge(gaugeId, presentation.value);
+  if (!card) return;
+  card.dataset.state = presentation.ready ? "ready" : "accumulating";
+  if (!changed) return;
+  card.classList.remove("is-updated");
+  void card.offsetWidth;
+  card.classList.add("is-updated");
+  window.setTimeout(() => card.classList.remove("is-updated"), 520);
+}
+
+function updateLeaderTimeframe(value) {
+  const card = document.getElementById("coreLeaderMetric");
+  const previous = coreDynamicsValues.get("leader");
+  const changed = window.AiLynxCoreDynamics?.hasCoreTransition?.(previous, value) ?? (previous !== undefined && previous !== value);
+  coreDynamicsValues.set("leader", value);
+  dashboardText("coreLeaderTimeframe", value);
+  if (!card) return;
+  card.dataset.state = value === "—" ? "empty" : "ready";
+  if (!changed) return;
+  card.classList.remove("is-updated");
+  void card.offsetWidth;
+  card.classList.add("is-updated");
+  window.setTimeout(() => card.classList.remove("is-updated"), 520);
+}
+
 function renderCoreMetrics(durability, changeRate, hero) {
-  const persistenceText = weatherMetricText(durability, "persistence") || "관측 축적 중";
-  const changeText = weatherMetricText(changeRate, "changeRate") || "관측 축적 중";
-  dashboardText("corePersistence", persistenceText);
-  dashboardText("coreChange", changeText);
-  dashboardText("corePersistenceNote", metricNote(durability, "persistence"));
-  dashboardText("coreChangeNote", metricNote(changeRate, "changeRate"));
-  dashboardText("coreLeaderTimeframe", leaderTimeframe(hero));
-  setCoreMetricGauge("corePersistenceGauge", durability);
-  setCoreMetricGauge("coreChangeGauge", changeRate);
+  updateCoreMetric("corePersistenceMetric", "corePersistence", "corePersistenceBand", "corePersistenceNote", "corePersistenceGauge", coreMetricPresentation(durability, "persistence"));
+  updateCoreMetric("coreChangeMetric", "coreChange", "coreChangeBand", "coreChangeNote", "coreChangeGauge", coreMetricPresentation(changeRate, "changeRate"));
+  const leader = window.AiLynxCoreDynamics?.leaderPresentation?.(leaderTimeframe(hero))?.value || "—";
+  updateLeaderTimeframe(leader);
 }
 
 window.addEventListener("ailynx-member-preferences", async (event) => {
