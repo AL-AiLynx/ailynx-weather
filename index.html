@@ -28,7 +28,7 @@
   <!-- 기본 디자인 -->
   <link
     rel="stylesheet"
-    href="./styles.css?v=12"
+    href="./styles.css?v=14"
   />
 
   <!-- PWA 매니페스트 -->
@@ -102,31 +102,40 @@
       <div class="live-badge">
         ● CONNECTING
       </div>
+
+      <time class="local-clock" id="localClock" aria-live="off"></time>
     </header>
 
+    <nav class="app-tabs" aria-label="AiLynx sections">
+      <button class="app-tab is-active" type="button" data-tab="weather" aria-controls="weatherPanel" aria-selected="true">WEATHER</button>
+      <button class="app-tab" type="button" data-tab="ai" aria-controls="aiPanel" aria-selected="false">AI</button>
+      <button class="app-tab" type="button" data-tab="community" aria-controls="communityPanel" aria-selected="false">COMMUNITY</button>
+    </nav>
+
+    <div class="app-panel" id="weatherPanel" data-tab-panel="weather">
 
     <section class="hero card">
       <div class="hero-heading">
         <p class="eyebrow">BTCUSD · LYNX WEATHER</p>
         <div class="hero-weather"><span class="weather-icon" id="heroWeatherIcon" aria-hidden="true">◌</span><h2 class="weather-name" id="heroWeatherName">CALCULATING</h2></div>
         <p class="hero-note" id="heroWeatherNote">Weather score is waiting for a public LIVE contract.</p>
-        <div class="hero-price-line"><span class="hero-price-label">BTC price</span><strong class="price">—</strong><span class="price-change">LIVE reference</span></div>
+        <div class="hero-price-line"><span class="hero-price-label">BTC 현재가</span><strong class="price" id="marketPrice">—</strong><span class="price-change" id="marketPriceMeta">1분 갱신 · 데이터 대기</span></div>
       </div>
       <dl class="hero-signals" aria-label="Lynx observation signals">
         <div><dt>날씨 유지력</dt><dd id="heroPersistence">CALCULATING</dd></div>
         <div><dt>날씨 변화율</dt><dd id="heroChange">CALCULATING</dd></div>
-        <div><dt>주인공 시간축</dt><dd id="heroTimeframe">WAITING</dd></div>
+        <div><dt>주요 타임프레임</dt><dd id="heroTimeframe">WAITING</dd></div>
         <div><dt>관측 상태</dt><dd id="heroObservationState">WAITING</dd></div>
       </dl>
     </section>
 
     <section class="section lynx-frames-section" aria-labelledby="dailyFramesTitle">
-      <div class="section-title"><div><h2 id="dailyFramesTitle">일간 시간축</h2><span>상위 시간축 날씨판</span></div><span class="plan-chip">PREMIUM</span></div>
+      <div class="section-title"><div><h2 id="dailyFramesTitle">일간 타임프레임</h2><span>상위 타임프레임 날씨판</span></div><span class="plan-chip">PREMIUM</span></div>
       <div class="daily-frame-strip" id="dailyFrameStrip" aria-live="polite"></div>
     </section>
 
     <section class="section lynx-frames-section" aria-labelledby="intradayFramesTitle">
-      <div class="section-title"><div><h2 id="intradayFramesTitle">시간축 매트릭스</h2><span>1H ~ 24H · Lynx observation grid</span></div><span class="plan-chip">PRO</span></div>
+      <div class="section-title"><div><h2 id="intradayFramesTitle">타임프레임 매트릭스</h2><span>1H ~ 24H · Lynx observation grid</span></div><span class="plan-chip">PRO</span></div>
       <div class="timeframe-matrix" id="timeframeMatrix" aria-live="polite"></div>
     </section>
 
@@ -143,8 +152,8 @@
         </div>
 
         <label class="validation-timeframe-label" for="validationTimeframe">
-          시간축
-          <select id="validationTimeframe" aria-label="MAAT 검증 시간축">
+          타임프레임
+          <select id="validationTimeframe" aria-label="MAAT 검증 타임프레임">
             <option value="240">4H</option>
             <option value="480">8H</option>
             <option value="720">12H</option>
@@ -179,7 +188,7 @@
         <article class="validation-card card" data-validation-card="maat2">
           <div class="validation-card-head">
             <div>
-              <p class="validation-kicker">주인공 시간축 검증</p>
+              <p class="validation-kicker">주요 타임프레임 검증</p>
               <h3>MAAT2 TIME</h3>
             </div>
             <span class="validation-quality" id="maat2Quality">불러오는 중</span>
@@ -201,11 +210,11 @@
     </section>
 
 
-    <!-- 3. 시간축별 날씨 -->
-    <section class="section">
+    <!-- 3. 타임프레임별 날씨 -->
+    <section class="section" hidden>
       <div class="section-title">
         <h2>
-          시간축별 날씨
+          타임프레임별 날씨
         </h2>
 
         <span>
@@ -365,11 +374,11 @@
     </section>
 
 
-    <!-- 3. 상위 시간축 예보 -->
-    <section class="section">
+    <!-- 3. 상위 타임프레임 예보 -->
+    <section class="section" hidden>
       <div class="section-title">
         <h2>
-          상위 시간축 예보
+          상위 타임프레임 예보
         </h2>
 
         <span>
@@ -381,7 +390,7 @@
 
         <div class="daily-header">
           <span>요일</span>
-          <span>시간축</span>
+          <span>타임프레임</span>
           <span>시장 상태</span>
           <span>발현 준비도</span>
           <span>상단 / 하단</span>
@@ -397,11 +406,11 @@
 
 
     <!-- 4. 핵심 관찰 정보 -->
-    <section class="info-grid">
+    <section class="info-grid" hidden>
 
       <article class="info-card card">
         <p class="info-label">
-          주인공 시간축
+          주요 타임프레임
         </p>
 
         <p class="info-value">
@@ -409,7 +418,7 @@
         </p>
 
         <p class="info-description">
-          현재 시장의 조정과 힘 발현을 관찰하는 중심 시간축입니다.
+          현재 시장의 조정과 힘 발현을 관찰하는 중심 타임프레임입니다.
         </p>
       </article>
 
@@ -444,21 +453,39 @@
     </section>
 
 
-    <!-- 하단 -->
-    <footer>
-      <div>
-        마지막 관측: 불러오는 중
-      </div>
+    </div>
 
-      <div>
-        확정 대신 조건 · 예언 대신 검증 · 오늘도 안전운전
+    <section class="app-panel shell-panel card" id="aiPanel" data-tab-panel="ai" hidden>
+      <p class="eyebrow">AILYNX AI</p>
+      <h2>AI 기능 준비 중</h2>
+      <p>관측 데이터를 바탕으로 한 AiLynx AI 경험을 준비하고 있습니다.</p>
+      <span class="shell-status">COMING SOON</span>
+    </section>
+
+    <section class="app-panel shell-panel card" id="communityPanel" data-tab-panel="community" hidden>
+      <p class="eyebrow">COMMUNITY</p>
+      <h2>Community 준비 중</h2>
+      <p>텍스트 중심의 일반 emoji와 AiLynx emoji 표현을 위한 공간입니다. 게시와 반응 기능은 준비 중입니다.</p>
+      <div class="community-emoji-preview" aria-label="Community emoji preview">
+        <span>☀️</span><span>🌦️</span><span>🦁</span><span>✦</span>
       </div>
+      <span class="shell-status">COMING SOON</span>
+    </section>
+
+    <footer>
+      <p id="lastObservation">마지막 관측: 불러오는 중</p>
+      <nav class="footer-links" aria-label="Footer links">
+        <button type="button" class="footer-link" data-inquiry-status>고객문의</button>
+        <span>Privacy</span>
+        <span>Terms</span>
+      </nav>
+      <p>© AiLynx</p>
     </footer>
 
   </main>
 
   <script src="./weather-engine.js"></script>
-  <script src="./lynx-dashboard-config.js?v=11"></script>
-  <script src="./app.js?v=11"></script>
+  <script src="./lynx-dashboard-config.js?v=14"></script>
+  <script src="./app.js?v=14"></script>
 </body>
 </html>

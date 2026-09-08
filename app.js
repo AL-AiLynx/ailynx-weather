@@ -44,6 +44,10 @@ let as1ObservationRequestPromise = null;
 let validationCardsData = null;
 let validationTimeframe = "240";
 let validationRequestPromise = null;
+let marketPriceData = null;
+let marketPriceRequestPromise = null;
+let marketPriceIntervalId = null;
+let localClockIntervalId = null;
 const dashboardConfig = window.LynxDashboardConfig;
 
 const STATUS_CLASSES = [
@@ -453,7 +457,7 @@ const TIME_WHY_TEXT = {
   50: "전체 동기화",
   61: "힘 약함",
   70: "위험 차단",
-  80: "부모 시간축 불일치",
+  80: "부모 타임프레임 불일치",
   81: "일부 source",
   82: "source 무효",
   90: "노이즈",
@@ -504,7 +508,7 @@ function renderValidationQuality(id, observation) {
 function renderMaatValidationCard(observation) {
   renderValidationQuality("maatQuality", observation);
   if (!observation?.available) {
-    setValidationText("maatStatus", "선택한 시간축의 MAAT LIVE 관측을 기다리고 있습니다.");
+    setValidationText("maatStatus", "선택한 타임프레임의 MAAT LIVE 관측을 기다리고 있습니다.");
     for (const id of ["maatState", "maatScore", "maatRisk", "maatNoise", "maatSensors", "maatWindow", "maatUpdated"]) {
       setValidationText(id, "—");
     }
@@ -534,7 +538,7 @@ function renderMaat2ValidationCard(maat2) {
   const primary = time?.available ? time : hub;
   renderValidationQuality("maat2Quality", primary);
   if (!primary?.available) {
-    setValidationText("maat2Status", "선택한 시간축의 MAAT2 Hub/Time LIVE 관측을 기다리고 있습니다.");
+    setValidationText("maat2Status", "선택한 타임프레임의 MAAT2 Hub/Time LIVE 관측을 기다리고 있습니다.");
     for (const id of ["maat2Role", "maat2TimeScore", "maat2Timeframes", "maat2Noise", "maat2HubScores", "maat2Why", "maat2Sync"]) {
       setValidationText(id, "—");
     }
@@ -558,6 +562,93 @@ function renderMaat2ValidationCard(maat2) {
 function renderValidationCards() {
   renderMaatValidationCard(validationCardsData?.maat);
   renderMaat2ValidationCard(validationCardsData?.maat2);
+}
+
+
+function renderMarketPrice() {
+  const price = document.getElementById("marketPrice");
+  const meta = document.getElementById("marketPriceMeta");
+
+  if (!price || !meta) {
+    return;
+  }
+
+  if (!marketPriceData?.available) {
+    price.textContent = "—";
+    meta.textContent = "1분 갱신 · 데이터 대기";
+    return;
+  }
+
+  price.textContent = formatPrice(marketPriceData.price);
+  meta.textContent = marketPriceData.stale
+    ? "COINBASE BTC-USD · STALE"
+    : "COINBASE BTC-USD · 1분 갱신";
+}
+
+
+async function refreshMarketPrice() {
+  if (marketPriceRequestPromise) {
+    return marketPriceRequestPromise;
+  }
+
+  marketPriceRequestPromise = (async () => {
+    try {
+      const priceClient = await import("./market-price-client.js?v=14");
+      const result = await priceClient.fetchBtcSpotPrice();
+
+      if (result.available) {
+        marketPriceData = {...result, stale: false};
+      } else if (marketPriceData?.available) {
+        marketPriceData = {...marketPriceData, stale: true};
+      } else {
+        marketPriceData = null;
+      }
+    } catch {
+      if (marketPriceData?.available) {
+        marketPriceData = {...marketPriceData, stale: true};
+      }
+    }
+
+    renderMarketPrice();
+  })();
+
+  try {
+    return await marketPriceRequestPromise;
+  } finally {
+    marketPriceRequestPromise = null;
+  }
+}
+
+
+function formatLocalClock(date = new Date()) {
+  const twoDigits = (value) => String(value).padStart(2, "0");
+  const time = `${twoDigits(date.getHours())}:${twoDigits(date.getMinutes())}:${twoDigits(date.getSeconds())}`;
+
+  return window.matchMedia("(max-width: 760px)").matches
+    ? `${time} KST`
+    : `${date.getFullYear()}.${twoDigits(date.getMonth() + 1)}.${twoDigits(date.getDate())} · ${time}`;
+}
+
+
+function renderLocalClock() {
+  const clock = document.getElementById("localClock");
+  if (clock) {
+    clock.textContent = formatLocalClock();
+  }
+}
+
+
+function startLocalClock() {
+  if (localClockIntervalId !== null) {
+    return;
+  }
+
+  renderLocalClock();
+  localClockIntervalId = window.setInterval(renderLocalClock, 1000);
+  window.addEventListener("resize", () => {
+    renderLocalClock();
+    renderStatusBadge();
+  });
 }
 
 function dashboardText(id, value) {
@@ -647,8 +738,7 @@ function renderLynxDashboard() {
   dashboardText("heroChange", "CALCULATING");
   dashboardText("heroTimeframe", hero.timeframe);
   dashboardText("heroObservationState", hero.state);
-  const price = document.querySelector(".hero-price-line .price");
-  if (price) price.textContent = weatherData.mode === "AS1_LIVE" ? formatPrice(weatherData.price) : "—";
+  renderMarketPrice();
 
   const daily = document.getElementById("dailyFrameStrip");
   if (daily) {
@@ -832,6 +922,19 @@ function renderStatusBadge() {
 
   badge.classList.remove(...STATUS_CLASSES);
   badge.classList.add(`status-${freshness.status}`);
+  if (window.matchMedia("(max-width: 390px)").matches) {
+    const compactText = {
+      fresh: "● LIVE · FRESH",
+      delay: "● LIVE · AGING",
+      stale: "● LIVE · STALE",
+      expired: "● LIVE · EXPIRED",
+      offline: "● OFFLINE",
+      error: "● DATA ERROR",
+    };
+    badge.textContent = compactText[freshness.status] || freshness.text;
+    return;
+  }
+
   badge.textContent = freshness.text;
 }
 
@@ -1067,7 +1170,7 @@ function renderInfoCards() {
 */
 function renderLastUpdated() {
   const footerFirstLine =
-    document.querySelector("footer div");
+    document.getElementById("lastObservation");
 
   if (!footerFirstLine) {
     return;
@@ -1120,15 +1223,63 @@ function startFreshnessTimer() {
 }
 
 
+function startMarketPriceTimer() {
+  if (marketPriceIntervalId !== null) {
+    return;
+  }
+
+  marketPriceIntervalId = window.setInterval(refreshMarketPrice, 60000);
+}
+
+
+function initializeTabs() {
+  const tabs = document.querySelectorAll("[data-tab]");
+  const panels = document.querySelectorAll("[data-tab-panel]");
+
+  const selectTab = (selectedTab) => {
+    tabs.forEach((tab) => {
+      const active = tab.dataset.tab === selectedTab;
+      tab.classList.toggle("is-active", active);
+      tab.setAttribute("aria-selected", String(active));
+    });
+    panels.forEach((panel) => {
+      panel.hidden = panel.dataset.tabPanel !== selectedTab;
+    });
+  };
+
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => selectTab(tab.dataset.tab));
+  });
+}
+
+
+function initializeInquiryStatus() {
+  const inquiry = document.querySelector("[data-inquiry-status]");
+  if (!inquiry) {
+    return;
+  }
+
+  inquiry.addEventListener("click", () => {
+    inquiry.textContent = "고객문의 준비 중";
+    inquiry.setAttribute("aria-label", "고객문의 준비 중");
+  });
+}
+
+
 /*
   앱 시작
 */
 async function initializeApp() {
   hideLegacyWeatherPanels();
+  initializeTabs();
+  initializeInquiryStatus();
+  startLocalClock();
   await loadWeatherData();
   await applyConfiguredOverlay();
   renderApp();
   startFreshnessTimer();
+  startMarketPriceTimer();
+  void refreshMarketPrice();
   await applyAs1ValidationCards(validationTimeframe);
 
   const selector = document.getElementById("validationTimeframe");
@@ -1158,6 +1309,7 @@ window.addEventListener(
     await applyAs1ValidationCards(validationTimeframe);
 
     renderApp();
+    void refreshMarketPrice();
   }
 );
 
@@ -1167,6 +1319,13 @@ window.addEventListener(
     refreshFreshnessDisplay();
   }
 );
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    renderLocalClock();
+    void refreshMarketPrice();
+  }
+});
 
 
 document.addEventListener(
