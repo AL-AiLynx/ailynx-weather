@@ -61,13 +61,25 @@ test("observed market cards separate entitlement from observation state", async 
   assert.match(css, /\.asset-access \.asset-entitlement/);
 });
 
-test("dashboard cache shell is revised and has no removed UI modules", async () => {
+test("dashboard cache shell includes the membership resolver and has no removed UI modules", async () => {
   const [html, worker] = await Promise.all([read("index.html"), read("service-worker.js")]);
-  assert.match(worker, /ailynx-weather-v33/);
-  for (const asset of ["styles.css?v=25", "asset-registry.js?v=2", "i18n.js?v=4", "app.js?v=27"]) {
+  assert.match(worker, /ailynx-weather-v34/);
+  for (const asset of ["styles.css?v=25", "asset-registry.js?v=3", "membership-client.js?v=1", "i18n.js?v=4", "app.js?v=28"]) {
     assert.ok(html.includes(asset) || worker.includes(asset), `missing ${asset}`);
   }
   assert.doesNotMatch(worker, /frontline-timeframe|weather-dynamics/);
+});
+
+test("runtime plan gates use subscription canonical plans and never expose locked receipt details", async () => {
+  const [app, config, registry, membership] = await Promise.all([read("app.js"), read("lynx-dashboard-config.js"), read("asset-registry.js"), read("membership-client.js")]);
+  assert.doesNotMatch(`${app}\n${config}\n${registry}`, /activePlan|PLUS/);
+  assert.match(config, /FREE.*WEATHER.*PRO.*PREMIUM/s);
+  assert.match(app, /hasFeature\("viewer\.professional_details"\)/);
+  assert.match(app, /const observation = allowed \?/);
+  assert.match(app, /change\.textContent = !allowed \? tr\("upgrade"\)/);
+  assert.match(app, /assetReadPath\?\.reconcileAccess\?\.?\(\)/);
+  assert.match(membership, /subscriptions\.plan_code/);
+  assert.match(membership, /SUBSCRIPTION_UNAVAILABLE/);
 });
 
 test("asset selection still delegates through the isolated read path", async () => {

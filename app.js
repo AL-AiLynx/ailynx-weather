@@ -392,6 +392,12 @@ async function applyConfiguredOverlay() {
 
 
 async function applyAs1ValidationCards(timeframe = validationTimeframe) {
+  if (!hasFeature("viewer.professional_details")) {
+    validationCardsData = null;
+    renderValidationCards();
+    renderLynxDashboard();
+    return false;
+  }
   if (validationRequestPromise) {
     return validationRequestPromise;
   }
@@ -400,10 +406,11 @@ async function applyAs1ValidationCards(timeframe = validationTimeframe) {
     try {
       const client = await import("./as1-validation-client.js?v=10");
       validationTimeframe = timeframe;
-      validationCardsData = await client.fetchValidationCards({timeframe});
+      const nextCards = await client.fetchValidationCards({timeframe});
+      validationCardsData = hasFeature("viewer.professional_details") ? nextCards : null;
       renderValidationCards();
       renderLynxDashboard();
-      return true;
+      return validationCardsData !== null;
     } catch {
       validationCardsData = null;
       renderValidationCards();
@@ -584,7 +591,7 @@ function renderMaat2ValidationCard(maat2) {
 }
 
 function renderValidationCards() {
-  if (dashboardConfig?.activePlan !== "PRO") {
+  if (!hasFeature("viewer.professional_details")) {
     const target = document.getElementById("validationCards");
     if (target) target.innerHTML = `<article class="validation-card card validation-locked"><p class="validation-kicker">${tr("detailValidation")}</p><h3>PRO</h3><p class="validation-status">${tr("precisionValidation")}</p><p class="validation-lock">${tr("viewInPro")}</p></article>`;
     return;
@@ -603,6 +610,11 @@ function renderMarketPrice() {
   }
 
   if (selectedAssetId !== "BTCUSD") {
+    if (!assetEntitled(selectedAssetId)) {
+      price.textContent = "—";
+      meta.textContent = `${tr("locked")} · ${window.AiLynxAssetRegistry?.byId?.(selectedAssetId)?.requiredPlan || "WEATHER"}`;
+      return;
+    }
     const observed = currentAssetObservation()?.latestReceipt;
     price.textContent = Number.isFinite(observed?.barClose) ? formatPrice(observed.barClose) : "—";
     meta.textContent = observed ? tr("observedFreshness", {freshness: displayState(observed.freshness)}) : `${tr("currentPrice")} · ${tr("waiting")}`;
@@ -819,7 +831,17 @@ function dashboardText(id, value) {
 }
 
 function currentPlan() {
-  return dashboardConfig?.plans?.[dashboardConfig.activePlan] ?? null;
+  const code = window.AiLynxMembership?.plan;
+  return dashboardConfig?.plans?.[code] ?? dashboardConfig?.plans?.FREE ?? null;
+}
+
+function currentPlanCode() {
+  const code = window.AiLynxMembership?.plan;
+  return dashboardConfig?.plans?.[code] ? code : "FREE";
+}
+
+function hasFeature(feature) {
+  return Boolean(currentPlan()?.features?.includes(feature));
 }
 
 function assetEntitled(assetId) {
@@ -832,7 +854,7 @@ function currentAssetObservation() {
 
 async function selectAsset(assetId) {
   if (!assetReadPath) {
-    assetReadPathPromise ??= import("./asset-read-path.js?v=1").then((readPath) => {
+    assetReadPathPromise ??= import("./asset-read-path.js?v=2").then((readPath) => {
       assetReadPath = readPath.createAssetReadPath({
         canReadAsset: assetEntitled,
         fetchObservation: async ({asset, signal}) => {
@@ -884,9 +906,9 @@ function planAllows(timeframe, kind) {
 function makeFrameCell(timeframe, kind) {
   const allowed = planAllows(timeframe, kind);
   const canonical = timeframe === "24H" ? "1D" : timeframe;
-  const selected = currentAssetObservation();
-  const observation = selectedAssetId === "BTCUSD" ? horusSnapshot?.timeframes?.[canonical] : selected?.timeframes?.[canonical];
-  const status = selectedAssetId !== "BTCUSD"
+  const selected = allowed ? currentAssetObservation() : null;
+  const observation = allowed ? (selectedAssetId === "BTCUSD" ? horusSnapshot?.timeframes?.[canonical] : selected?.timeframes?.[canonical]) : null;
+  const status = !allowed ? "LOCKED" : selectedAssetId !== "BTCUSD"
     ? !assetEntitled(selectedAssetId) ? "LOCKED"
       : !selected ? "WAITING"
       : selected.status === "PLANNED" ? "PLANNED"
@@ -905,12 +927,12 @@ function makeFrameCell(timeframe, kind) {
   icon.className = "frame-icon";
   icon.textContent = status === "FRESH" || status === "AGING" ? "●" : status === "STALE" ? "◐" : status === "INVALID" ? "!" : status === "NO DATA" ? "—" : "…";
   const persistence = document.createElement("small");
-  persistence.textContent = allowed ? displayState(status) : `${tr("locked")} · ${displayState(status)}`;
+  persistence.textContent = allowed ? displayState(status) : tr("locked");
   const change = document.createElement("small");
   change.className = "frame-change";
-  change.textContent = selectedAssetId !== "BTCUSD" && observation ? `${observation.sensorQuality} · LIVE`
+  change.textContent = !allowed ? tr("upgrade") : selectedAssetId !== "BTCUSD" && observation ? `${observation.sensorQuality} · LIVE`
     : observation?.available ? `${observation.quality.sensorQuality} · ${observation.quality.valid ? "LIVE" : "INVALID"}`
-      : allowed ? tr("waiting") : dashboardConfig?.activePlan === "FREE" ? tr("upgrade") : tr("noData");
+      : tr("waiting");
   cell.append(label, icon, persistence, change);
   return cell;
 }
@@ -929,8 +951,8 @@ function renderAssetAccess() {
     name.textContent = asset.label;
     const entitlement = document.createElement("span");
     entitlement.className = "asset-entitlement";
-    const selected = selectedAssetId === asset.id ? currentAssetObservation() : null;
-    const availability = asset.id === "BTCUSD" ? "LIVE" : selected?.status || "PLANNED";
+    const selected = allowed && selectedAssetId === asset.id ? currentAssetObservation() : null;
+    const availability = !allowed ? "LOCKED" : asset.id === "BTCUSD" ? "LIVE" : selected?.status || "PLANNED";
     entitlement.textContent = allowed ? tr("available") : asset.requiredPlan;
     const observationState = document.createElement("span");
     observationState.className = "asset-observation";
@@ -1571,7 +1593,6 @@ function initializeAssetSelector() {
   const selector = document.getElementById("assetSelector");
   const registry = window.AiLynxAssetRegistry;
   if (!selector || !registry) return;
-  const plan = currentPlan();
   selector.replaceChildren();
   const toggle = document.createElement("button");
   toggle.type = "button";
@@ -1601,13 +1622,13 @@ function initializeAssetSelector() {
     toggle.append(name, ticker, icon);
   };
   const select = async (asset) => {
-    if (!plan?.assets?.includes(asset.id)) return;
+    if (!assetEntitled(asset.id)) return;
     close();
     await selectAsset(asset.id);
     initializeAssetSelector();
   };
   registry.assets.forEach((asset) => {
-    const allowed = Boolean(plan?.assets?.includes(asset.id));
+    const allowed = assetEntitled(asset.id);
     const option = document.createElement("button");
     option.type = "button";
     option.className = "asset-selector-option";
@@ -1720,8 +1741,7 @@ function renderCoreMetrics(durability, changeRate, hero) {
 
 window.addEventListener("ailynx-member-preferences", async (event) => {
   const next = event.detail?.mainAsset;
-  const plan = currentPlan();
-  if (!plan?.assets?.includes(next)) return;
+  if (!assetEntitled(next)) return;
   void selectAsset(next);
 });
 
@@ -1774,6 +1794,17 @@ document.addEventListener(
 window.addEventListener("ailynx-language", () => {
   const plan = currentPlan();
   dashboardText("currentPlanLabel", tr("currentPlan", {plan: plan?.label || "FREE"}));
+  if (document.readyState !== "loading") {
+    initializeAssetSelector();
+    renderApp();
+  }
+});
+
+window.addEventListener("ailynx-membership", () => {
+  assetReadPath?.reconcileAccess?.();
+  if (!hasFeature("viewer.professional_details")) validationCardsData = null;
+  const plan = currentPlan();
+  dashboardText("currentPlanLabel", tr("currentPlan", {plan: plan?.label || currentPlanCode()}));
   if (document.readyState !== "loading") {
     initializeAssetSelector();
     renderApp();

@@ -50,5 +50,15 @@ export function createAssetReadPath({fetchObservation, canReadAsset = () => true
     return {applied: true, ...snapshot()};
   }
 
-  return Object.freeze({select, snapshot});
+  function reconcileAccess() {
+    if (canReadAsset(assetId)) return snapshot();
+    controller?.abort();
+    controller = null;
+    observation = null;
+    requestToken += 1;
+    publish();
+    return snapshot();
+  }
+
+  return Object.freeze({select, snapshot, reconcileAccess});
 }

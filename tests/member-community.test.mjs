@@ -31,6 +31,7 @@ test("member/community MVP is disabled without public Auth configuration", async
   assert.match(gate, /canFetchLive/);
   assert.match(gate, /ailynx-member-preferences/);
   assert.match(dashboard, /assets: \["BTCUSD", "US100"\]/);
+  assert.doesNotMatch(dashboard, /activePlan|PLUS/);
 });
 
 test("community migration enforces RLS, text-only content, and referral/Xp invariants", async () => {

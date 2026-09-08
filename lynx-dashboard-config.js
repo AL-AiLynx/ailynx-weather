@@ -1,10 +1,9 @@
 window.LynxDashboardConfig = Object.freeze({
-  activePlan: "FREE",
   plans: Object.freeze({
-    FREE: Object.freeze({label: "FREE", assets: ["BTCUSD", "US100"], intraday: ["1H"], daily: []}),
-    PLUS: Object.freeze({label: "PLUS", assets: ["BTCUSD", "US100", "XAUUSD"], intraday: ["1H", "4H"], daily: ["1D"]}),
-    PREMIUM: Object.freeze({label: "PREMIUM", assets: ["BTCUSD", "US100", "XAUUSD", "DXY"], intraday: ["1H", "4H"], daily: ["1D", "2D", "3D", "4D", "5D", "6D", "1W"]}),
-    PRO: Object.freeze({label: "PRO", assets: ["BTCUSD", "US100", "XAUUSD", "DXY"], intraday: Array.from({length: 24}, (_, index) => `${index + 1}H`), daily: ["1D", "2D", "3D", "4D", "5D", "6D", "1W"]}),
+    FREE: Object.freeze({label: "FREE", rank: 10, assets: ["BTCUSD", "US100"], intraday: ["1H"], daily: [], features: ["community.read", "dominance.basic", "market.core", "weather.basic"]}),
+    WEATHER: Object.freeze({label: "WEATHER", rank: 20, assets: ["BTCUSD", "US100", "XAUUSD", "DXY"], intraday: ["1H", "4H"], daily: ["1D"], features: ["community.read", "dominance.basic", "history.basic", "macro.dxy", "market.core", "market.expanded", "weather.basic", "weather.expanded"]}),
+    PRO: Object.freeze({label: "PRO", rank: 30, assets: ["BTCUSD", "US100", "XAUUSD", "DXY"], intraday: Array.from({length: 24}, (_, index) => `${index + 1}H`), daily: ["1D", "2D", "3D", "4D", "5D", "6D", "1W"], features: ["community.read", "dominance.basic", "history.basic", "history.extended", "macro.dxy", "market.core", "market.expanded", "viewer.access", "viewer.professional_details", "weather.basic", "weather.expanded"]}),
+    PREMIUM: Object.freeze({label: "PREMIUM", rank: 40, assets: ["BTCUSD", "US100", "XAUUSD", "DXY"], intraday: Array.from({length: 24}, (_, index) => `${index + 1}H`), daily: ["1D", "2D", "3D", "4D", "5D", "6D", "1W"], features: ["community.read", "dominance.basic", "history.basic", "history.extended", "macro.dxy", "market.core", "market.expanded", "viewer.access", "viewer.professional_details", "weather.basic", "weather.expanded", "export.data", "satellite.as2", "satellite.as3"]}),
   }),
   dailyTimeframes: Object.freeze(["1D", "2D", "3D", "4D", "5D", "6D", "1W"]),
   intradayTimeframes: Object.freeze(Array.from({length: 24}, (_, index) => `${index + 1}H`)),

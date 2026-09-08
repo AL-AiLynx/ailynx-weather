@@ -11,12 +11,14 @@ function providerLabel(provider) { return `${i18n.t(`provider${provider[0].toUpp
 
 function renderMemberState() {
   const enabled = communityClient.canUseCommunity();
+  const plan = window.AiLynxMembership?.plan || "FREE";
   const profile = document.getElementById("memberProfile");
   if (profile) profile.hidden = false;
   setText("memberProfileLabel", enabled ? i18n.t("login") : `${i18n.t("login")} · ${i18n.t("setupRequired")}`);
   document.querySelectorAll("[data-community-auth]").forEach((element) => { element.disabled = true; element.title = i18n.t("setupRequired"); });
   setText("communityAvailability", enabled ? i18n.t("signInRequired") : i18n.t("setupRequired"));
-  setText("planStatusChip", enabled ? i18n.t("free") : i18n.t("joinFree"));
+  setText("planStatusChip", plan);
+  setText("accountPlanValue", plan);
 }
 
 function initializeLanguage() {
@@ -92,6 +94,7 @@ function initializeMemberCommunity() {
   initializeEmojiPicker();
   renderMemberState();
   window.addEventListener("ailynx-language", renderMemberState);
+  window.addEventListener("ailynx-membership", renderMemberState);
 }
 
 window.addEventListener("DOMContentLoaded", initializeMemberCommunity);

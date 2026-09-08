@@ -42,6 +42,17 @@ test("locked assets do not fetch or expose a cached receipt", async () => {
   assert.equal(path.snapshot().observation, null);
 });
 
+test("a plan downgrade clears an in-memory paid receipt before rendering can reuse it", async () => {
+  let weatherPlan = true;
+  const path = createAssetReadPath({canReadAsset: (asset) => asset !== "XAUUSD" || weatherPlan, fetchObservation: async ({asset}) => observation(asset, "LIVE")});
+  await path.select("XAUUSD");
+  assert.equal(path.snapshot().observation.asset, "XAUUSD");
+  weatherPlan = false;
+  const next = path.reconcileAccess();
+  assert.equal(next.observation, null);
+  assert.equal(path.snapshot().observation, null);
+});
+
 test("unsupported assets fail before changing the selected asset", async () => {
   const path = createAssetReadPath();
   const result = await path.select("EURUSD");
