@@ -40,7 +40,7 @@ test("market share is compact inside the BTC hero and has all public-feed cards"
 
 test("core dynamics show real values or an explicit accumulation state without leader copy", async () => {
   const [html, app, css] = await Promise.all([read("index.html"), read("app.js"), read("styles.css")]);
-  for (const required of ["날씨 지속력", "날씨 변화율", "현재 리더 타임프레임", "관측 축적 중", "유효 관측이 쌓이면 표시합니다.", "corePersistenceBand", "coreChangeBand", "coreDynamicsHelp"]) assert.match(html, new RegExp(required));
+  for (const required of ["날씨 지속력", "날씨 변화율", "시장 리드 타임프레임", "현재 시장을 리드하는 타임프레임을 확인하세요.", "관측 축적 중", "유효 관측이 쌓이면 표시합니다.", "corePersistenceBand", "coreChangeBand", "coreDynamicsHelp"]) assert.match(html, new RegExp(required));
   for (const removed of ["현재 시장 날씨를 가장 강하게 이끄는 시간축", "하위 시간축에는 상대적으로 노이즈 비중이 높을 수 있습니다.", ">Persistence<", ">Change Rate<", ">Waiting<"]) assert.doesNotMatch(html, new RegExp(removed));
   assert.match(app, /updateCoreMetric/);
   assert.match(app, /updateLeaderTimeframe/);
