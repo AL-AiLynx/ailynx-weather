@@ -204,3 +204,11 @@ This is an initial state-indicator implementation. SESHAT data, once available, 
 ### Deployment boundary
 
 This repository contains no `vercel.json` or other Vercel project configuration that identifies a deployed repository, production branch, or root directory. The older handoff text references a separate `ailynx-weather` repository on `main`, so it cannot establish that this monorepo's `integration/as1-live-v1` branch with `Weather/` root is deployed. No Vercel setting was changed; verify that mapping in the Vercel project before release.
+
+## PWA Visual Refinement v0.3 (2026-09-08)
+
+- The local timestamp is part of the left brand block below the product subtitle. It remains minute-based, tabular, and has a reserved line height, so clock updates do not move right-side controls.
+- User-facing metric terminology is `날씨 지속력` and `날씨 변화율`. Insufficient history uses `관측 축적 중`; user-facing `Waiting` is replaced with `관측 대기` without altering the internal status codes.
+- `현재 리더 타임프레임` uses the already verified MAAT/HORUS observation context, falling back only to the selected validation timeframe. `타임프레임 우선` keeps the asset-local 1H–1D strip and marks that selected leader as `리더`. The lower-timeframe note is deliberately observational, not a prediction claim.
+- `날씨 흐름` is a dependency-free SVG curve over no more than four valid FRESH/AGING observations from the same selected asset and timeframe. It never combines cross-asset history; fewer than two valid observations render `최근 관측 기록을 모으는 중` instead of fabricating a line.
+- Service-worker cache `ailynx-weather-v30` precaches the dynamics module, `styles.css?v=24`, and `app.js?v=25`.

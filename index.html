@@ -28,7 +28,7 @@
   <!-- 기본 디자인 -->
   <link
     rel="stylesheet"
-    href="./styles.css?v=23"
+    href="./styles.css?v=24"
   />
 
   <!-- PWA 매니페스트 -->
@@ -94,6 +94,7 @@
           </h1>
 
           <p data-i18n="brandSubtitle">Lynx Weather · timeframe observation</p>
+          <time class="local-clock" id="localClock" aria-live="off"></time>
         </div>
       </div>
 
@@ -101,7 +102,6 @@
         ● CONNECTING
       </div>
 
-      <time class="local-clock" id="localClock" aria-live="off"></time>
       <div class="member-controls" aria-label="Member controls">
         <span class="plan-status-chip" id="planStatusChip" aria-label="Current plan" data-i18n="joinFree">JOIN FREE</span>
         <div class="language-toggle" aria-label="Language"><button type="button" data-language="ko">KO</button><span aria-hidden="true">|</span><button type="button" data-language="en">EN</button></div>
@@ -130,22 +130,28 @@
         <div class="hero-heading">
         <p class="eyebrow" id="heroAssetLabel">BTCUSD · LYNX WEATHER</p>
         <p class="hero-asset-identity" id="heroAssetIdentity">COINBASE:BTCUSD / AVAILABLE / LIVE / RECEIPT AVAILABLE</p>
-        <div class="hero-price-line"><span class="hero-price-label" data-i18n="currentPrice">CURRENT PRICE</span><strong class="price" id="marketPrice">—</strong><span class="price-change" id="marketPriceMeta">1 MIN UPDATE · WAITING FOR DATA</span></div>
+        <div class="hero-price-line"><span class="hero-price-label" data-i18n="currentPrice">CURRENT PRICE</span><strong class="price" id="marketPrice">—</strong><span class="price-change" id="marketPriceMeta">관측 대기</span></div>
         </div>
       </div>
       <div class="hero-weather-panel" aria-live="polite">
         <span class="weather-icon" id="heroWeatherIcon" aria-hidden="true">◌</span>
-        <div class="hero-weather-copy"><h2 class="weather-name" id="heroWeatherName">CALCULATING</h2><strong class="hero-weather-score" id="heroWeatherScore">—</strong><p class="hero-note" id="heroWeatherNote">WAITING</p></div>
+        <div class="hero-weather-copy"><h2 class="weather-name" id="heroWeatherName">계산 중</h2><strong class="hero-weather-score" id="heroWeatherScore">—</strong><p class="hero-note" id="heroWeatherNote">관측 대기</p></div>
       </div>
-      <dl class="hero-signals" aria-label="Lynx observation signals">
-        <div><dt data-i18n="weatherDurability" title="How consistently the current weather state is holding">WEATHER DURABILITY</dt><dd id="heroPersistence">CALCULATING</dd></div>
-        <div><dt data-i18n="weatherChangeRate" title="How quickly the weather changed from the prior observation">WEATHER CHANGE RATE</dt><dd id="heroChange">CALCULATING</dd></div>
-        <div class="hero-timeframe-state"><dt data-i18n="primaryTimeframe">MAIN TIMEFRAME</dt><dd><span id="heroTimeframe">WAITING</span><span aria-hidden="true"> · </span><span id="heroObservationState">WAITING</span></dd></div>
-      </dl>
+    </section>
+
+    <section class="section weather-dynamics-section" aria-labelledby="weatherFlowTitle">
+      <div class="section-title"><div><h2 id="weatherFlowTitle">날씨 흐름</h2><span>최근 관측 기록 기반 Weather Score 변화</span></div></div>
+      <div class="weather-flow-graph" id="weatherFlowGraph" aria-live="polite"></div>
+      <div class="weather-dynamics-metrics" aria-label="날씨 동역학 지표">
+        <article class="weather-dynamics-metric weather-dynamics-persistence"><p>날씨 지속력</p><strong id="dynamicsPersistence">관측 축적 중</strong><span class="weather-dynamics-gauge" aria-hidden="true"><i id="dynamicsPersistenceGauge"></i></span><small id="dynamicsPersistenceNote">최근 관측 기록을 모으고 있습니다.</small></article>
+        <article class="weather-dynamics-metric weather-dynamics-change"><p>날씨 변화율</p><strong id="dynamicsChange">관측 축적 중</strong><span class="weather-dynamics-wave" aria-hidden="true"><i id="dynamicsChangeGauge"></i></span><small id="dynamicsChangeNote">최근 관측 기록을 모으고 있습니다.</small></article>
+        <article class="weather-dynamics-metric weather-dynamics-leader"><p>현재 리더 타임프레임</p><strong id="dynamicsLeaderTimeframe">—</strong><small id="dynamicsLeaderNote">검증된 관측 문맥을 기준으로 표시합니다.</small></article>
+      </div>
     </section>
 
     <section class="section frontline-section" aria-labelledby="frontlineTimeframeTitle">
-      <div class="section-title"><div><h2 id="frontlineTimeframeTitle">주요 우선 타임프레임</h2><span>ASSET-LOCAL OBSERVATION PRIORITY</span></div><span class="plan-chip">LIVE READ</span></div>
+      <div class="section-title"><div><h2 id="frontlineTimeframeTitle">타임프레임 우선</h2><span>현재 시장 날씨를 가장 강하게 이끄는 시간축</span></div><span class="plan-chip">LIVE READ</span></div>
+      <p class="frontline-explanation">하위 시간축에는 상대적으로 노이즈 비중이 높을 수 있습니다.</p>
       <div class="frontline-timeframe-strip" id="frontlineTimeframeStrip" aria-live="polite"></div>
     </section>
 
@@ -517,7 +523,7 @@
 
     <footer>
       <p id="lastObservation" data-i18n="loading">Loading</p>
-      <p class="visit-stats" id="visitStats" data-i18n="totalVisitsWaiting">Total visits · waiting</p>
+      <p class="visit-stats" id="visitStats" data-i18n="totalVisitsWaiting">Total visits · observation pending</p>
       <nav class="footer-links" aria-label="Footer links">
         <button type="button" class="footer-link" data-inquiry-status>고객문의</button>
         <span>Privacy</span>
@@ -537,6 +543,7 @@
   <script type="module" src="./asset-registry.js?v=1"></script>
   <script type="module" src="./frontline-timeframe.js?v=1"></script>
   <script type="module" src="./weather-history.js?v=1"></script>
+  <script type="module" src="./weather-dynamics.js?v=1"></script>
   <script src="./community-config.js?v=1"></script>
   <script src="./i18n.js?v=2"></script>
   <script src="./community-client.js?v=1"></script>
@@ -544,7 +551,7 @@
   <script src="./market-advisory-config.js?v=1"></script>
   <script src="./market-advisory.js?v=1"></script>
   <script src="./auth-gate.js?v=2"></script>
-  <script src="./app.js?v=24"></script>
+  <script src="./app.js?v=25"></script>
 
   <dialog class="account-dialog" id="accountDialog" aria-labelledby="accountDialogTitle">
     <form method="dialog"><button class="dialog-close" type="button" data-dialog-close aria-label="Close">×</button></form>
@@ -559,7 +566,7 @@
     <p class="eyebrow" data-i18n="manual">MANUAL</p>
     <h2 id="manualDialogTitle" data-i18n="manualTitle">Lynx Weather manual</h2>
     <p data-i18n="manualIntro">AiLynx shows verified market observations, not predictions.</p>
-    <ol><li data-i18n="manualOne">Weather labels use the supported LIVE contract for each market and timeframe.</li><li data-i18n="manualTwo">Waiting, planned, locked, and no-data states are shown as-is; no value is invented.</li><li data-i18n="manualThree">MAAT and MAAT2 detail validation requires PRO.</li></ol>
+    <ol><li data-i18n="manualOne">Weather labels use the supported LIVE contract for each market and timeframe.</li><li data-i18n="manualTwo">Observation-pending, planned, locked, and no-data states are shown as-is; no value is invented.</li><li data-i18n="manualThree">MAAT and MAAT2 detail validation requires PRO.</li></ol>
     <form method="dialog"><button type="submit" data-i18n="close">Close</button></form>
   </dialog>
 

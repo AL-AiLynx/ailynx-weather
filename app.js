@@ -963,12 +963,8 @@ function renderLynxDashboard() {
   dashboardText("heroWeatherName", presentation.label);
   dashboardText("heroWeatherScore", Number.isFinite(presentation.score) ? String(presentation.score) : "—");
   dashboardText("heroWeatherNote", presentation.note);
-  const metricFallback = weatherMetricFallback(result);
-  dashboardText("heroPersistence", durabilityText || metricFallback);
-  dashboardText("heroChange", changeText || metricFallback);
-  dashboardText("heroTimeframe", hero.timeframe);
-  dashboardText("heroObservationState", displayState(hero.state));
-  renderFrontlineTimeframe();
+  renderWeatherDynamics(observationHistory, durability, changeRate, hero);
+  renderFrontlineTimeframe(leaderTimeframe(hero));
   renderMarketPrice();
 
   const daily = document.getElementById("dailyFrameStrip");
@@ -1625,6 +1621,38 @@ function weatherMetricText(value, type) {
   return `${value} · ${label}`;
 }
 
+function leaderTimeframe(hero = observedHeroState()) {
+  const frontline = window.AiLynxFrontlineTimeframes?.FRONTLINE_TIMEFRAMES || [];
+  if (frontline.includes(hero?.timeframe)) return hero.timeframe;
+  return validationTimeframe === "240" ? "4H" : validationTimeframe === "480" ? "8H" : validationTimeframe === "720" ? "12H" : "1D";
+}
+
+function metricNote(value, type) {
+  if (!Number.isFinite(value)) return "최근 관측 기록을 모으고 있습니다.";
+  if (type === "persistence") return value >= 65 ? "현재 날씨가 안정적으로 지속되는 중" : "현재 날씨의 지속성을 관찰하는 중";
+  return value >= 60 ? "날씨 변화 속도가 빠르게 나타나는 중" : "날씨 변화 속도가 안정적인 편입니다.";
+}
+
+function setDynamicsGauge(id, value) {
+  const element = document.getElementById(id);
+  if (element) element.style.setProperty("--weather-dynamics-value", `${Number.isFinite(value) ? value : 0}%`);
+}
+
+function renderWeatherDynamics(history, durability, changeRate, hero) {
+  const persistenceText = weatherMetricText(durability, "persistence") || "관측 축적 중";
+  const changeText = weatherMetricText(changeRate, "changeRate") || "관측 축적 중";
+  dashboardText("dynamicsPersistence", persistenceText);
+  dashboardText("dynamicsChange", changeText);
+  dashboardText("dynamicsPersistenceNote", metricNote(durability, "persistence"));
+  dashboardText("dynamicsChangeNote", metricNote(changeRate, "changeRate"));
+  dashboardText("dynamicsLeaderTimeframe", leaderTimeframe(hero));
+  dashboardText("dynamicsLeaderNote", hero?.state === "LIVE" ? "검증된 관측 문맥을 기준으로 표시합니다." : "관측 상태를 확인하는 중입니다.");
+  setDynamicsGauge("dynamicsPersistenceGauge", durability);
+  setDynamicsGauge("dynamicsChangeGauge", changeRate);
+  const flow = window.AiLynxWeatherDynamics?.buildWeatherFlow?.(history, {assetId: selectedAssetId, timeframe: validationTimeframe === "240" ? "4H" : validationTimeframe === "480" ? "8H" : validationTimeframe === "720" ? "12H" : "1D"});
+  window.AiLynxWeatherDynamics?.renderWeatherFlow?.(document.getElementById("weatherFlowGraph"), flow, {empty: "최근 관측 기록을 모으는 중", aria: "최근 날씨 흐름"});
+}
+
 function weatherMetricFallback(result) {
   if (selectedAssetId === "BTCUSD") return result ? tr("waiting") : tr("calculating");
   if (!assetEntitled(selectedAssetId)) return tr("locked");
@@ -1635,11 +1663,10 @@ function weatherMetricFallback(result) {
   return observation?.available ? tr("noData") : tr("waiting");
 }
 
-function renderFrontlineTimeframe() {
+function renderFrontlineTimeframe(activeTimeframe = leaderTimeframe()) {
   const frontline = window.AiLynxFrontlineTimeframes;
   const container = document.getElementById("frontlineTimeframeStrip");
   if (!frontline || !container) return;
-  const activeTimeframe = validationTimeframe === "240" ? "4H" : validationTimeframe === "480" ? "8H" : validationTimeframe === "720" ? "12H" : "1D";
   const items = frontline.buildFrontlineTimeframes({
     assetId: selectedAssetId,
     entitled: assetEntitled(selectedAssetId),
@@ -1647,7 +1674,7 @@ function renderFrontlineTimeframe() {
     assetObservation: currentAssetObservation(),
     activeTimeframe,
   });
-  frontline.renderFrontlineTimeframes(container, items, displayState);
+  frontline.renderFrontlineTimeframes(container, items, displayState, {leader: "리더", observed: "관측됨"});
 }
 
 window.addEventListener("ailynx-member-preferences", async (event) => {

@@ -36,7 +36,7 @@ export function buildFrontlineTimeframes({assetId, entitled, btcSnapshot, assetO
   }));
 }
 
-export function renderFrontlineTimeframes(container, items, displayState = (state) => state) {
+export function renderFrontlineTimeframes(container, items, displayState = (state) => state, labels = {}) {
   if (!container) return;
   container.replaceChildren(...items.map((item) => {
     const card = document.createElement("article");
@@ -50,7 +50,7 @@ export function renderFrontlineTimeframes(container, items, displayState = (stat
     state.className = "frontline-timeframe-state";
     state.textContent = displayState(item.state);
     const note = document.createElement("small");
-    note.textContent = item.active ? "PRIORITY" : item.observed ? "OBSERVED" : displayState(item.state);
+    note.textContent = item.active ? (labels.leader ?? "LEADER") : item.observed ? (labels.observed ?? "OBSERVED") : displayState(item.state);
     card.append(node, timeframe, state, note);
     return card;
   }));
