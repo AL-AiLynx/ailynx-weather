@@ -85,8 +85,8 @@ test("asset navigation separates entitlement from the selected state", async () 
 
 test("dashboard cache shell includes the membership resolver and has no removed UI modules", async () => {
   const [html, worker] = await Promise.all([read("index.html"), read("service-worker.js")]);
-  assert.match(worker, /ailynx-weather-v41/);
-  for (const asset of ["styles.css?v=30", "asset-registry.js?v=4", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "community-config.js?v=3", "admin-access.js?v=1", "auth-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=5", "member-community.js?v=4", "auth-gate.js?v=4", "app.js?v=34"]) {
+  assert.match(worker, /ailynx-weather-v42/);
+  for (const asset of ["styles.css?v=30", "asset-registry.js?v=4", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "community-config.js?v=3", "admin-access.js?v=1", "auth-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=5", "member-community.js?v=4", "auth-gate.js?v=4", "app.js?v=35"]) {
     assert.ok(html.includes(asset) || worker.includes(asset), `missing ${asset}`);
   }
   assert.doesNotMatch(worker, /frontline-timeframe|weather-dynamics/);
@@ -128,4 +128,13 @@ test("leader timeframe is a WEATHER gate with no FREE value exposure", async () 
   assert.match(app, /const leader = leaderAllowed \?/);
   assert.match(app, /dashboardText\("coreLeaderTimeframe", allowed \? value : planDisplayName\("WEATHER"\)\)/);
   assert.match(css, /core-metric-leader\[data-state="locked"\]/);
+});
+
+test("daily timeframe locks follow Plus for 1D and Premium for 2D through 1W", async () => {
+  const [app, config] = await Promise.all([read("app.js"), read("lynx-dashboard-config.js")]);
+  assert.match(app, /function requiredPlanForTimeframe\(timeframe, kind\)/);
+  assert.match(app, /kind === "daily"\) return timeframe === "1D" \? "WEATHER" : "PREMIUM"/);
+  assert.match(app, /const requiredPlan = requiredPlanForTimeframe\(timeframe, kind\)/);
+  assert.match(config, /WEATHER[\s\S]*daily: \["1D"\]/);
+  assert.match(config, /PREMIUM[\s\S]*daily: \["1D", "2D", "3D", "4D", "5D", "6D", "1W"\]/);
 });

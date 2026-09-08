@@ -964,9 +964,16 @@ function planAllows(timeframe, kind) {
   return Boolean(plan && plan[kind]?.includes(timeframe));
 }
 
+function requiredPlanForTimeframe(timeframe, kind) {
+  // Daily access is a product policy, not an inferred rank: 1D is the
+  // Plus entry point, while every higher daily horizon is Premium.
+  if (kind === "daily") return timeframe === "1D" ? "WEATHER" : "PREMIUM";
+  return ["FREE", "WEATHER", "PRO", "PREMIUM"].find((planCode) => dashboardConfig?.plans?.[planCode]?.[kind]?.includes(timeframe)) || "PRO";
+}
+
 function makeFrameCell(timeframe, kind) {
   const allowed = planAllows(timeframe, kind);
-  const requiredPlan = ["FREE", "WEATHER", "PRO", "PREMIUM"].find((planCode) => dashboardConfig?.plans?.[planCode]?.[kind]?.includes(timeframe)) || "PRO";
+  const requiredPlan = requiredPlanForTimeframe(timeframe, kind);
   const canonical = timeframe === "24H" ? "1D" : timeframe;
   const selected = allowed ? currentAssetObservation() : null;
   const observation = allowed ? (selectedAssetId === "BTCUSD" ? horusSnapshot?.timeframes?.[canonical] : selected?.timeframes?.[canonical]) : null;
