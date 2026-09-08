@@ -28,6 +28,7 @@ test("market share is immediately after the hero and has all public-feed cards",
   assert.ok(html.indexOf("marketDominanceTitle") < html.indexOf("dailyFramesTitle"));
   for (const label of ["BTC.D", "USDT.D", "USDC.D"]) assert.match(app, new RegExp(label.replace(".", "\\.")));
   assert.match(app, /dominance-occupancy/);
+  assert.match(app, /item\.value\.toFixed\(1\).*: "—"/);
   assert.match(dominance, /COINGECKO GLOBAL MARKET CAP/);
   assert.match(app, /tr\("free"\)/);
   assert.match(i18n, /free: "무료"/);

@@ -706,7 +706,7 @@ function renderMarketDominance() {
     const label = document.createElement("span");
     label.textContent = item.label;
     const value = document.createElement("strong");
-    value.textContent = Number.isFinite(item.value) ? `${item.value.toFixed(1)}%` : "관측 대기";
+    value.textContent = Number.isFinite(item.value) ? `${item.value.toFixed(1)}%` : "—";
     const occupancy = document.createElement("span");
     occupancy.className = "dominance-occupancy";
     const fill = document.createElement("i");
