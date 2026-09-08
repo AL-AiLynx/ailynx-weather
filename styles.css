@@ -866,6 +866,16 @@ body {
   backdrop-filter: blur(16px);
 }
 
+body.weather--neutral { background: linear-gradient(180deg, #0a1a29 0%, var(--background) 58%); }
+body.weather--sunny { background: radial-gradient(circle at 82% 5%, rgba(120, 205, 255, .22), transparent 30%), linear-gradient(180deg, #102d45 0%, var(--background) 60%); }
+body.weather--partly-cloudy { background: radial-gradient(circle at 82% 5%, rgba(131, 178, 214, .16), transparent 30%), linear-gradient(180deg, #102537 0%, var(--background) 60%); }
+body.weather--cloudy { background: linear-gradient(180deg, #132431 0%, #081925 60%); }
+body.weather--rain { background: radial-gradient(circle at 20% 20%, rgba(91, 119, 150, .10), transparent 32%), linear-gradient(180deg, #071522 0%, #06111b 65%); }
+body, .card, .frame-cell { transition: background 550ms ease, border-color 450ms ease, box-shadow 550ms ease; }
+.validation-locked { max-width: 460px; }
+.validation-lock { color: var(--cyan); font-weight: 800; }
+@media (prefers-reduced-motion: reduce) { body, .card, .frame-cell { transition: none; } }
+
 .announcement-ticker {
   height: 30px;
   margin: 0 0 12px;

@@ -573,6 +573,11 @@ function renderMaat2ValidationCard(maat2) {
 }
 
 function renderValidationCards() {
+  if (dashboardConfig?.activePlan !== "PRO") {
+    const target = document.getElementById("validationCards");
+    if (target) target.innerHTML = '<article class="validation-card card validation-locked"><p class="validation-kicker">DETAIL VALIDATION</p><h3>PRO</h3><p class="validation-status">MAAT · MAAT2 precision validation</p><p class="validation-lock">PRO에서 확인</p></article>';
+    return;
+  }
   renderMaatValidationCard(validationCardsData?.maat);
   renderMaat2ValidationCard(validationCardsData?.maat2);
 }
@@ -865,13 +870,17 @@ function hideLegacyWeatherPanels() {
 
 function renderLynxDashboard() {
   if (!dashboardConfig) return;
-  const presentation = weatherPresentation(null);
+  const result = currentWeatherEngineResult();
+  const classified = window.AiLynxWeatherEngine?.classifyWeather?.(result?.score);
+  const presentation = classified ? {icon: getWeatherIcon(classified.icon), label: classified.label, note: `${result.timeframe} FULL observation score · ${result.score}`} : weatherPresentation(null);
+  document.body.classList.remove("weather--sunny", "weather--partly-cloudy", "weather--cloudy", "weather--rain", "weather--neutral");
+  document.body.classList.add(classified ? `weather--${classified.state.toLowerCase().replace("_", "-")}` : "weather--neutral");
   const hero = observedHeroState();
   dashboardText("heroWeatherIcon", presentation.icon);
   dashboardText("heroWeatherName", presentation.label);
   dashboardText("heroWeatherNote", presentation.note);
-  dashboardText("heroPersistence", "CALCULATING");
-  dashboardText("heroChange", "CALCULATING");
+  dashboardText("heroPersistence", result ? "WAITING" : "CALCULATING");
+  dashboardText("heroChange", result ? "WAITING" : "CALCULATING");
   dashboardText("heroTimeframe", hero.timeframe);
   dashboardText("heroObservationState", hero.state);
   renderMarketPrice();
@@ -1375,6 +1384,11 @@ function startMarketDominanceTimer() {
   }
 
   marketDominanceIntervalId = window.setInterval(refreshMarketDominance, 10 * 60 * 1000);
+}
+
+function currentWeatherEngineResult() {
+  const timeframe = validationTimeframe === "240" ? "4H" : validationTimeframe === "480" ? "8H" : validationTimeframe === "720" ? "12H" : "1D";
+  return window.AiLynxWeatherEngine?.computeWeatherScore?.({timeframe, horus: horusSnapshot?.timeframes?.[timeframe], maat: validationCardsData?.maat, hub: validationCardsData?.maat2?.hub, time: validationCardsData?.maat2?.time}) ?? null;
 }
 
 function initializeAnnouncementTicker() {

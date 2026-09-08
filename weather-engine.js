@@ -68,5 +68,23 @@ function translateHorusToWeather(input) {
 
 
 window.AiLynxWeatherEngine = {
-  translateHorusToWeather
+  translateHorusToWeather,
+  computeWeatherScore(input) {
+    const {horus, maat, hub, time, timeframe} = input || {};
+    if (![horus, maat, hub, time].every((item) => item?.available && item.quality?.valid) || !time.payload?.time?.valid) return null;
+    const aggregate = maat.payload?.aggregate, hubScores = hub.payload?.scores, timeState = time.payload?.time, noise = maat.payload?.stopwatch?.noise_score;
+    const sensorCount = Object.values(maat.payload?.sensors || {}).filter((sensor) => sensor?.valid).length;
+    const horusScore = Number.isFinite(horus.state?.score) ? horus.state.score : horus.state?.gate_score;
+    const values = [aggregate?.score, hubScores?.structure, hubScores?.force, hubScores?.window, timeState?.score, timeState?.noise_score, noise, horusScore];
+    if (values.some((value) => !Number.isFinite(value))) return null;
+    const score = aggregate.score * .20 + hubScores.structure * .18 + hubScores.force * .16 + hubScores.window * .14 + timeState.score * .10 + horusScore * .12 + sensorCount / 6 * 10 - ((noise + timeState.noise_score) / 2 * .15);
+    return Number.isFinite(score) && score >= 0 && score <= 100 ? {score: Math.round(score), coverage: "FULL", confidence: "HIGH", timeframe} : null;
+  },
+  classifyWeather(score) {
+    if (!Number.isFinite(score)) return null;
+    if (score <= 25) return {state: "RAIN", label: "RAIN", icon: "RAIN"};
+    if (score <= 51) return {state: "CLOUDY", label: "CLOUDY", icon: "CLOUDY"};
+    if (score <= 75) return {state: "PARTLY_CLOUDY", label: "PARTLY CLOUDY", icon: "PARTLY_CLOUDY"};
+    return {state: "SUNNY", label: "SUNNY", icon: "SUNNY"};
+  }
 };
