@@ -212,3 +212,11 @@ This repository contains no `vercel.json` or other Vercel project configuration 
 - `현재 리더 타임프레임` uses the already verified MAAT/HORUS observation context, falling back only to the selected validation timeframe. `타임프레임 우선` keeps the asset-local 1H–1D strip and marks that selected leader as `리더`. The lower-timeframe note is deliberately observational, not a prediction claim.
 - `날씨 흐름` is a dependency-free SVG curve over no more than four valid FRESH/AGING observations from the same selected asset and timeframe. It never combines cross-asset history; fewer than two valid observations render `최근 관측 기록을 모으는 중` instead of fabricating a line.
 - Service-worker cache `ailynx-weather-v31` precaches the dynamics module, `styles.css?v=24`, `app.js?v=25`, `i18n.js?v=3`, and `frontline-timeframe.js?v=2` so user-facing terminology and the leader label cannot reuse their older cached modules.
+
+## PWA Layout Consolidation v0.5 (2026-09-08)
+
+- Removed the user-facing weather-flow SVG and the timeframe-priority strip. The bounded, asset/timeframe-isolated weather history and the durability/change-rate calculations remain active.
+- Market dominance now follows the hero directly. BTC.D, USDT.D, and USDC.D use the CoinGecko global market-cap feed, show a percentage-only occupancy bar, and refresh every ten minutes. Public-feed data is labeled `무료 · 공개 데이터`; stale data is `무료 · 지연`; unavailable data is `관측 대기`.
+- The compact core-metric row contains only `날씨 지속력`, `날씨 변화율`, and `현재 리더 타임프레임`. It shows `관측 축적 중` until valid history is sufficient and keeps the lower-timeframe noise note deliberately non-predictive.
+- Asset selection is a keyboard and touch accessible dark custom control. The canonical labels are 비트코인/BTCUSD, 금/XAUUSD, 달러 인덱스/DXY, and 나스닥 100/US100. Entitlement and observation state are rendered independently; the existing asset-isolated read path clears stale cross-asset observations.
+- The service worker cache is `ailynx-weather-v32` and precaches `styles.css?v=25`, `asset-registry.js?v=2`, `i18n.js?v=4`, and `app.js?v=26`.

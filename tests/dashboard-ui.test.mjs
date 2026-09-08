@@ -3,89 +3,75 @@ import {readFile} from "node:fs/promises";
 import test from "node:test";
 
 const root = new URL("../", import.meta.url);
+const read = (name) => readFile(new URL(name, root), "utf8");
 
-test("dashboard provides a config-driven Lynx timeframe board without invented metrics", async () => {
-  const [html, app, config, css, worker, notices, i18n, dynamics] = await Promise.all([
-    readFile(new URL("index.html", root), "utf8"),
-    readFile(new URL("app.js", root), "utf8"),
-    readFile(new URL("lynx-dashboard-config.js", root), "utf8"),
-    readFile(new URL("styles.css", root), "utf8"),
-    readFile(new URL("service-worker.js", root), "utf8"),
-    readFile(new URL("lynx-notices.js", root), "utf8"),
-    readFile(new URL("i18n.js", root), "utf8"),
-    readFile(new URL("weather-dynamics.js", root), "utf8"),
-  ]);
-  for (const marker of ["dailyFrameStrip", "timeframeMatrix", "marketDominanceStrip", "assetAccessList", "weatherFlowGraph", "dynamicsPersistence", "dynamicsChange", "dynamicsLeaderTimeframe", "localClock", "weatherPanel", "aiPanel", "communityPanel", "lastObservation", "visitStats"]) {
-    assert.ok(html.includes(marker), `missing ${marker}`);
+test("dashboard removes the weather flow graph and timeframe priority strip", async () => {
+  const [html, app, css, worker] = await Promise.all([read("index.html"), read("app.js"), read("styles.css"), read("service-worker.js")]);
+  for (const removed of ["weatherFlowGraph", "weather-flow-graph", "frontlineTimeframeStrip", "frontline-timeframe", "renderWeatherDynamics", "renderFrontlineTimeframe", "weather-dynamics.js", "frontline-timeframe.js"]) {
+    assert.doesNotMatch(`${html}\n${app}\n${css}\n${worker}`, new RegExp(removed));
   }
-  assert.match(config, /BTCUSD/);
-  assert.match(config, /US100/);
-  assert.match(config, /XAUUSD/);
-  assert.match(config, /DXY/);
-  assert.match(config, /weatherBands/);
-  assert.match(config, /Array\.from\(\{length: 24}/);
-  assert.match(app, /CALCULATING/);
-  assert.match(app, /hideLegacyWeatherPanels/);
-  assert.match(app, /refreshMarketPrice/);
-  assert.match(app, /refreshMarketDominance/);
-  assert.match(app, /refreshVisitStats/);
-  assert.match(app, /visibilitychange/);
-  assert.match(app, /initializeTabs/);
-  assert.match(html, /TIMEFRAME MATRIX/);
-  assert.doesNotMatch(html, /확정 대신 조건|예언 대신 검증|오늘도 안전운전/);
-  assert.match(css, /\.timeframe-matrix/);
-  assert.match(css, /\.market-dominance-strip/);
-  assert.match(css, /\.app-tabs/);
-  assert.match(css, /@media \(max-width: 390px\)/);
-  assert.match(worker, /ailynx-weather-v31/);
-  assert.match(worker, /market-dominance-client\.js\?v=15/);
-  assert.match(worker, /visit-counter-client\.js\?v=15/);
-  assert.match(worker, /lynx-dashboard-config\.js\?v=17/);
-  assert.match(html, /announcementTicker/);
-  assert.match(notices, /Lynx Weather Beta/);
-  assert.match(app, /fetchHorusSnapshot/);
-  assert.match(worker, /as1-horus-client\.js\?v=16/);
-  assert.match(html, /marketAdvisory/);
-  assert.match(worker, /market-advisory-config\.js\?v=1/);
-  assert.match(worker, /auth-gate\.js\?v=2/);
-  assert.match(worker, /i18n\.js\?v=3/);
-  assert.match(worker, /app\.js\?v=25/);
-  assert.match(worker, /asset-read-path\.js\?v=1/);
-  assert.match(worker, /as1-asset-client\.js\?v=2/);
-  assert.match(html, /heroAssetIdentity/);
-  assert.match(html, /현재 리더 타임프레임/);
-  assert.match(html, /타임프레임 우선/);
-  assert.match(html, /날씨 흐름/);
-  assert.match(html, /frontlineTimeframeStrip/);
-  assert.match(app, /currentAssetObservation/);
-  assert.match(app, /selectAsset/);
-  assert.match(app, /renderFrontlineTimeframe/);
-  assert.match(worker, /frontline-timeframe\.js\?v=2/);
-  assert.match(worker, /weather-history\.js\?v=1/);
-  assert.match(worker, /weather-dynamics\.js\?v=1/);
-  assert.match(css, /frontline-timeframe-strip/);
-  assert.match(css, /frontline-timeframe-node/);
-  assert.doesNotMatch(html, /주요 구간|주요 기간|주요 우선 타임프레임/);
-  assert.match(app, /setInterval\(renderLocalClock, 60000\)/);
-  assert.doesNotMatch(app, /getSeconds\(\)/);
-  assert.match(css, /font-variant-numeric: tabular-nums/);
+});
+
+test("dashboard retains weather history calculations without a graph renderer", async () => {
+  const [app, worker, history] = await Promise.all([read("app.js"), read("service-worker.js"), read("weather-history.js")]);
   assert.match(app, /weatherObservationHistory/);
-  assert.match(app, /AiLynxWeatherHistory/);
-  assert.match(app, /renderWeatherDynamics\(observationHistory, durability, changeRate, hero\)/);
-  assert.match(app, /renderFrontlineTimeframe\(leaderTimeframe\(hero\)\)/);
-  assert.match(app, /매우 강함/);
-  assert.match(app, /매우 빠름/);
-  assert.match(app, /최근 관측 기록을 모으는 중/);
-  assert.match(html, /최근 관측 기록을 모으고 있습니다/);
-  assert.match(dynamics, /buildWeatherFlow/);
-  assert.match(dynamics, /weather-flow-line/);
-  assert.match(css, /weather-dynamics-metrics/);
-  assert.match(css, /weather-flow-svg/);
-  assert.match(html, /brand-text[\s\S]*localClock/);
-  assert.doesNotMatch(`${html}\n${i18n}`, /내후성|Weather Persistence/);
-  assert.doesNotMatch(html, />Waiting</);
-  assert.doesNotMatch(i18n, /: "[^"\n]*Waiting/);
-  assert.match(app, /activePlan !== "PRO"/);
-  assert.match(app, /precisionValidation/);
-  for (const weatherClass of ["weather--sunny", "weather--partly-cloudy", "weather--cloudy", "weather--rain", "weather--neutral"]) assert.match(css, new RegExp(weatherClass));
+  assert.match(app, /recordWeatherObservation/);
+  assert.match(app, /computeDurability/);
+  assert.match(app, /computeChangeRate/);
+  assert.match(worker, /weather-history\.js\?v=1/);
+  assert.match(history, /mergeWeatherHistory/);
+});
+
+test("market share is immediately after the hero and has all public-feed cards", async () => {
+  const [html, app, dominance, i18n] = await Promise.all([read("index.html"), read("app.js"), read("market-dominance-client.js"), read("i18n.js")]);
+  assert.ok(html.indexOf("marketDominanceTitle") > html.indexOf("hero-weather-panel"));
+  assert.ok(html.indexOf("marketDominanceTitle") < html.indexOf("dailyFramesTitle"));
+  for (const label of ["BTC.D", "USDT.D", "USDC.D"]) assert.match(app, new RegExp(label.replace(".", "\\.")));
+  assert.match(app, /dominance-occupancy/);
+  assert.match(dominance, /COINGECKO GLOBAL MARKET CAP/);
+  assert.match(app, /tr\("free"\)/);
+  assert.match(i18n, /free: "무료"/);
+  assert.match(html, /tenMinuteRefresh/);
+});
+
+test("core metrics use the requested labels and leader explanation", async () => {
+  const [html, app] = await Promise.all([read("index.html"), read("app.js")]);
+  for (const required of ["날씨 지속력", "날씨 변화율", "현재 리더 타임프레임", "현재 시장 날씨를 가장 강하게 이끄는 시간축", "하위 시간축에는 상대적으로 노이즈 비중이 높을 수 있습니다.", "관측 축적 중"]) assert.match(html, new RegExp(required));
+  assert.match(app, /renderCoreMetrics/);
+  assert.match(app, /leaderTimeframe/);
+  assert.doesNotMatch(`${html}\n${app}`, /날씨 지구력|내후성|Weather Persistence/);
+});
+
+test("asset selector is a keyboard-accessible custom control with canonical labels", async () => {
+  const [html, app, registry, css] = await Promise.all([read("index.html"), read("app.js"), read("asset-registry.js"), read("styles.css")]);
+  assert.match(html, /class="asset-selector" id="assetSelector"/);
+  for (const required of ["aria-haspopup", "aria-expanded", "listbox", "Escape", "pointerdown", "focus-visible", "asset-selector-option"]) assert.match(`${app}\n${css}`, new RegExp(required));
+  for (const label of ["비트코인", "금", "달러 인덱스", "나스닥 100"]) assert.match(registry, new RegExp(label));
+  assert.doesNotMatch(registry, /label: "GOLD"|label: "NASDAQ"/);
+  for (const ticker of ["BTCUSD", "XAUUSD", "DXY", "US100"]) assert.match(registry, new RegExp(ticker));
+});
+
+test("observed market cards separate entitlement from observation state", async () => {
+  const [app, css] = await Promise.all([read("app.js"), read("styles.css")]);
+  assert.match(app, /asset-entitlement/);
+  assert.match(app, /asset-observation/);
+  assert.match(app, /entitlement\.textContent = allowed \? tr\("available"\) : asset\.requiredPlan/);
+  assert.match(app, /observationState\.textContent = displayState\(availability\)/);
+  assert.match(css, /\.asset-access \.asset-entitlement/);
+});
+
+test("dashboard cache shell is revised and has no removed UI modules", async () => {
+  const [html, worker] = await Promise.all([read("index.html"), read("service-worker.js")]);
+  assert.match(worker, /ailynx-weather-v32/);
+  for (const asset of ["styles.css?v=25", "asset-registry.js?v=2", "i18n.js?v=4", "app.js?v=26"]) {
+    assert.ok(html.includes(asset) || worker.includes(asset), `missing ${asset}`);
+  }
+  assert.doesNotMatch(worker, /frontline-timeframe|weather-dynamics/);
+});
+
+test("asset selection still delegates through the isolated read path", async () => {
+  const app = await read("app.js");
+  assert.match(app, /await selectAsset\(asset\.id\)/);
+  assert.match(app, /initializeAssetSelector\(\)/);
+  assert.match(app, /currentAssetObservation/);
 });

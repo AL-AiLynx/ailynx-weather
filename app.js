@@ -702,15 +702,25 @@ function renderMarketDominance() {
   values.forEach((item) => {
     const card = document.createElement("article");
     card.className = "dominance-card";
+    card.dataset.source = marketDominanceData?.source || "UNAVAILABLE";
     const label = document.createElement("span");
     label.textContent = item.label;
     const value = document.createElement("strong");
-    value.textContent = Number.isFinite(item.value) ? `${item.value.toFixed(1)}%` : tr("waiting");
+    value.textContent = Number.isFinite(item.value) ? `${item.value.toFixed(1)}%` : "관측 대기";
+    const occupancy = document.createElement("span");
+    occupancy.className = "dominance-occupancy";
+    const fill = document.createElement("i");
+    fill.style.setProperty("--dominance-value", `${Number.isFinite(item.value) ? item.value : 0}%`);
+    occupancy.appendChild(fill);
     const status = document.createElement("small");
     status.textContent = marketDominanceData?.available
-      ? marketDominanceData.stale ? tr("stale") : `${tr("free")} · ${tr("live")}`
-      : tr("publicData");
-    card.append(label, value, status);
+      ? marketDominanceData.stale
+        ? `${tr("free")} · ${tr("stale")}`
+        : marketDominanceData.source === "AS1 VALID RECEIPT"
+          ? `${tr("free")} · ${tr("liveObservation")}`
+          : `${tr("free")} · ${tr("publicData")}`
+      : "관측 대기";
+    card.append(label, value, occupancy, status);
     strip.appendChild(card);
   });
 }
@@ -917,13 +927,17 @@ function renderAssetAccess() {
     item.className = `asset-access ${allowed ? "is-live" : "is-locked"}`;
     const name = document.createElement("strong");
     name.textContent = asset.label;
-    const state = document.createElement("span");
+    const entitlement = document.createElement("span");
+    entitlement.className = "asset-entitlement";
     const selected = selectedAssetId === asset.id ? currentAssetObservation() : null;
     const availability = asset.id === "BTCUSD" ? "LIVE" : selected?.status || "PLANNED";
-    state.textContent = allowed ? `${tr("available")} / ${displayState(availability)}` : `${tr("locked")} / ${asset.requiredPlan}`;
+    entitlement.textContent = allowed ? tr("available") : asset.requiredPlan;
+    const observationState = document.createElement("span");
+    observationState.className = "asset-observation";
+    observationState.textContent = displayState(availability);
     const identity = document.createElement("small");
-    identity.textContent = asset.tickerId;
-    item.append(name, state, identity);
+    identity.textContent = asset.id;
+    item.append(name, entitlement, observationState, identity);
     container.appendChild(item);
   }
 }
@@ -938,11 +952,9 @@ function hideLegacyWeatherPanels() {
 function renderLynxDashboard() {
   if (!dashboardConfig) return;
   const result = currentWeatherEngineResult();
-  const observationHistory = recordWeatherObservation(result);
+  recordWeatherObservation(result);
   const durability = window.AiLynxWeatherEngine?.computeDurability?.(observationHistory);
   const changeRate = window.AiLynxWeatherEngine?.computeChangeRate?.(observationHistory);
-  const durabilityText = weatherMetricText(durability, "persistence");
-  const changeText = weatherMetricText(changeRate, "changeRate");
   const classified = window.AiLynxWeatherEngine?.classifyWeather?.(result?.score);
   const presentation = classified ? {icon: getWeatherIcon(classified.icon), label: displayState(classified.state), note: tr("fullObservation", {timeframe: result.timeframe}), score: result.score} : weatherPresentation(null);
   document.body.classList.remove("weather--sunny", "weather--partly-cloudy", "weather--cloudy", "weather--rain", "weather--neutral");
@@ -953,18 +965,17 @@ function renderLynxDashboard() {
   if (heroLabel) heroLabel.textContent = `${asset?.label || selectedAssetId} · ${tr("lynxWeather")}`;
   const identity = document.getElementById("heroAssetIdentity");
   if (identity && asset) {
-    const observation = currentAssetObservation();
-    const entitlement = assetEntitled(asset.id) ? tr("available") : `${tr("locked")} ${asset.requiredPlan}`;
-    const availability = asset.id === "BTCUSD" ? "LIVE" : observation?.status || (assetEntitled(asset.id) ? "WAITING" : "LOCKED");
-    const receipt = observation?.latestReceipt ? (observation.latestReceipt.valid ? "VALID RECEIPT" : "INVALID RECEIPT") : "NO VALID RECEIPT";
-    identity.textContent = `${asset.tickerId} / ${entitlement} / ${displayState(availability)} / ${receipt}`;
+    identity.textContent = asset.id === "BTCUSD"
+      ? "Coinbase BTC-USD · 1분 갱신"
+      : assetEntitled(asset.id)
+        ? `${asset.id} · 관측 데이터 확인 중`
+        : `${asset.id} · ${asset.requiredPlan} 필요`;
   }
   dashboardText("heroWeatherIcon", presentation.icon);
   dashboardText("heroWeatherName", presentation.label);
   dashboardText("heroWeatherScore", Number.isFinite(presentation.score) ? String(presentation.score) : "—");
   dashboardText("heroWeatherNote", presentation.note);
-  renderWeatherDynamics(observationHistory, durability, changeRate, hero);
-  renderFrontlineTimeframe(leaderTimeframe(hero));
+  renderCoreMetrics(durability, changeRate, hero);
   renderMarketPrice();
 
   const daily = document.getElementById("dailyFrameStrip");
@@ -1561,18 +1572,75 @@ function initializeAssetSelector() {
   const registry = window.AiLynxAssetRegistry;
   if (!selector || !registry) return;
   const plan = currentPlan();
-  selector.replaceChildren(...registry.assets.map((asset) => {
-    const option = document.createElement("option");
-    option.value = asset.id;
-    option.textContent = `${asset.label} · ${plan?.assets?.includes(asset.id) ? tr("available") : `${tr("locked")} ${asset.requiredPlan}`}`;
-    option.disabled = !plan?.assets?.includes(asset.id);
-    return option;
-  }));
-  selector.value = selectedAssetId;
-  selector.onchange = async (event) => {
-    const next = event.target.value;
-    await selectAsset(next);
+  selector.replaceChildren();
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "asset-selector-toggle";
+  toggle.setAttribute("aria-haspopup", "listbox");
+  toggle.setAttribute("aria-expanded", "false");
+  const menu = document.createElement("div");
+  menu.className = "asset-selector-menu";
+  menu.setAttribute("role", "listbox");
+  menu.hidden = true;
+  let open = false;
+  const close = () => {
+    open = false;
+    menu.hidden = true;
+    toggle.setAttribute("aria-expanded", "false");
   };
+  const updateToggle = () => {
+    const asset = registry.byId(selectedAssetId) || registry.assets[0];
+    toggle.replaceChildren();
+    const name = document.createElement("strong");
+    name.textContent = asset.label;
+    const ticker = document.createElement("small");
+    ticker.textContent = asset.id;
+    const icon = document.createElement("span");
+    icon.setAttribute("aria-hidden", "true");
+    icon.textContent = "⌄";
+    toggle.append(name, ticker, icon);
+  };
+  const select = async (asset) => {
+    if (!plan?.assets?.includes(asset.id)) return;
+    close();
+    await selectAsset(asset.id);
+    initializeAssetSelector();
+  };
+  registry.assets.forEach((asset) => {
+    const allowed = Boolean(plan?.assets?.includes(asset.id));
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = "asset-selector-option";
+    option.setAttribute("role", "option");
+    option.setAttribute("aria-selected", String(asset.id === selectedAssetId));
+    option.disabled = !allowed;
+    const name = document.createElement("strong");
+    name.textContent = asset.label;
+    const ticker = document.createElement("small");
+    ticker.textContent = asset.id;
+    const badge = document.createElement("span");
+    badge.textContent = allowed ? tr("available") : asset.requiredPlan;
+    option.append(name, ticker, badge);
+    option.addEventListener("click", () => void select(asset));
+    menu.appendChild(option);
+  });
+  toggle.addEventListener("click", () => {
+    open = !open;
+    menu.hidden = !open;
+    toggle.setAttribute("aria-expanded", String(open));
+    if (open) menu.querySelector(".asset-selector-option:not(:disabled)")?.focus();
+  });
+  selector.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      close();
+      toggle.focus();
+    }
+  });
+  document.addEventListener("pointerdown", (event) => {
+    if (open && !selector.contains(event.target)) close();
+  });
+  updateToggle();
+  selector.append(toggle, menu);
 }
 
 function recordWeatherObservation(result) {
@@ -1622,8 +1690,8 @@ function weatherMetricText(value, type) {
 }
 
 function leaderTimeframe(hero = observedHeroState()) {
-  const frontline = window.AiLynxFrontlineTimeframes?.FRONTLINE_TIMEFRAMES || [];
-  if (frontline.includes(hero?.timeframe)) return hero.timeframe;
+  const supported = ["1H", "4H", "6H", "8H", "12H", "1D", "24H"];
+  if (supported.includes(hero?.timeframe)) return hero.timeframe;
   return validationTimeframe === "240" ? "4H" : validationTimeframe === "480" ? "8H" : validationTimeframe === "720" ? "12H" : "1D";
 }
 
@@ -1633,56 +1701,27 @@ function metricNote(value, type) {
   return value >= 60 ? "날씨 변화 속도가 빠르게 나타나는 중" : "날씨 변화 속도가 안정적인 편입니다.";
 }
 
-function setDynamicsGauge(id, value) {
+function setCoreMetricGauge(id, value) {
   const element = document.getElementById(id);
-  if (element) element.style.setProperty("--weather-dynamics-value", `${Number.isFinite(value) ? value : 0}%`);
+  if (element) element.style.setProperty("--core-metric-value", `${Number.isFinite(value) ? value : 0}%`);
 }
 
-function renderWeatherDynamics(history, durability, changeRate, hero) {
+function renderCoreMetrics(durability, changeRate, hero) {
   const persistenceText = weatherMetricText(durability, "persistence") || "관측 축적 중";
   const changeText = weatherMetricText(changeRate, "changeRate") || "관측 축적 중";
-  dashboardText("dynamicsPersistence", persistenceText);
-  dashboardText("dynamicsChange", changeText);
-  dashboardText("dynamicsPersistenceNote", metricNote(durability, "persistence"));
-  dashboardText("dynamicsChangeNote", metricNote(changeRate, "changeRate"));
-  dashboardText("dynamicsLeaderTimeframe", leaderTimeframe(hero));
-  dashboardText("dynamicsLeaderNote", hero?.state === "LIVE" ? "검증된 관측 문맥을 기준으로 표시합니다." : "관측 상태를 확인하는 중입니다.");
-  setDynamicsGauge("dynamicsPersistenceGauge", durability);
-  setDynamicsGauge("dynamicsChangeGauge", changeRate);
-  const flow = window.AiLynxWeatherDynamics?.buildWeatherFlow?.(history, {assetId: selectedAssetId, timeframe: validationTimeframe === "240" ? "4H" : validationTimeframe === "480" ? "8H" : validationTimeframe === "720" ? "12H" : "1D"});
-  window.AiLynxWeatherDynamics?.renderWeatherFlow?.(document.getElementById("weatherFlowGraph"), flow, {empty: "최근 관측 기록을 모으는 중", aria: "최근 날씨 흐름"});
-}
-
-function weatherMetricFallback(result) {
-  if (selectedAssetId === "BTCUSD") return result ? tr("waiting") : tr("calculating");
-  if (!assetEntitled(selectedAssetId)) return tr("locked");
-  const observation = currentAssetObservation();
-  if (observation?.status === "PLANNED") return tr("planned");
-  if (observation?.status === "STALE") return tr("stale");
-  if (observation?.status === "INVALID") return tr("invalid");
-  return observation?.available ? tr("noData") : tr("waiting");
-}
-
-function renderFrontlineTimeframe(activeTimeframe = leaderTimeframe()) {
-  const frontline = window.AiLynxFrontlineTimeframes;
-  const container = document.getElementById("frontlineTimeframeStrip");
-  if (!frontline || !container) return;
-  const items = frontline.buildFrontlineTimeframes({
-    assetId: selectedAssetId,
-    entitled: assetEntitled(selectedAssetId),
-    btcSnapshot: horusSnapshot,
-    assetObservation: currentAssetObservation(),
-    activeTimeframe,
-  });
-  frontline.renderFrontlineTimeframes(container, items, displayState, {leader: "리더", observed: "관측됨"});
+  dashboardText("corePersistence", persistenceText);
+  dashboardText("coreChange", changeText);
+  dashboardText("corePersistenceNote", metricNote(durability, "persistence"));
+  dashboardText("coreChangeNote", metricNote(changeRate, "changeRate"));
+  dashboardText("coreLeaderTimeframe", leaderTimeframe(hero));
+  setCoreMetricGauge("corePersistenceGauge", durability);
+  setCoreMetricGauge("coreChangeGauge", changeRate);
 }
 
 window.addEventListener("ailynx-member-preferences", async (event) => {
   const next = event.detail?.mainAsset;
   const plan = currentPlan();
   if (!plan?.assets?.includes(next)) return;
-  const selector = document.getElementById("assetSelector");
-  if (selector) selector.value = next;
   void selectAsset(next);
 });
 
