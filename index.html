@@ -28,7 +28,7 @@
   <!-- 기본 디자인 -->
   <link
     rel="stylesheet"
-    href="./styles.css?v=29"
+    href="./styles.css?v=30"
   />
 
   <!-- PWA 매니페스트 -->
@@ -104,7 +104,6 @@
         <span class="plan-status-chip" id="planStatusChip" aria-label="Current plan" data-i18n="joinFree">JOIN FREE</span>
         <div class="language-toggle" aria-label="Language"><button type="button" data-language="ko">KO</button><span aria-hidden="true">|</span><button type="button" data-language="en">EN</button></div>
         <button class="manual-button" id="manualButton" type="button" data-i18n="manual">MANUAL</button>
-        <button class="admin-entry" id="adminEntry" type="button" hidden><span aria-hidden="true">◆</span> 관리자</button>
         <button class="member-profile" id="memberProfile" type="button" hidden><span aria-hidden="true">◌</span> <span id="memberProfileLabel">로그인</span></button>
       </div>
     </header>
@@ -160,7 +159,8 @@
         <article class="core-metric core-metric-leader" id="coreLeaderMetric" data-state="empty">
           <div class="core-metric-heading"><p>현재 리더 타임프레임</p><button class="core-dynamics-help" id="coreDynamicsHelp" type="button" aria-label="리더 타임프레임 도움말">?</button></div>
           <div class="core-leader-value"><span class="core-leader-lock" id="coreLeaderLock" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M7.5 10V7.6a4.5 4.5 0 0 1 9 0V10M6.3 10h11.4c.7 0 1.3.6 1.3 1.3v8.2c0 .7-.6 1.3-1.3 1.3H6.3c-.7 0-1.3-.6-1.3-1.3v-8.2c0-.7.6-1.3 1.3-1.3Zm5.7 3.5v3.8" /></svg></span><strong id="coreLeaderTimeframe">—</strong></div>
-          <small class="core-leader-note" id="coreLeaderNote" hidden>플러스에서 확인</small>
+          <small class="core-leader-note" id="coreLeaderNote" hidden>현재 시장을 주도하는 시간축을 확인하세요.</small>
+          <button class="core-plan-cta" id="coreLeaderCta" type="button" data-open-plan data-plan-target="WEATHER" hidden>플러스에서 확인</button>
         </article>
       </div>
     </section>
@@ -551,11 +551,11 @@
   <script src="./community-client.js?v=1"></script>
   <script type="module" src="./auth-client.js?v=1"></script>
   <script type="module" src="./membership-client.js?v=2"></script>
-  <script type="module" src="./member-community.js?v=3"></script>
+  <script type="module" src="./member-community.js?v=4"></script>
   <script src="./market-advisory-config.js?v=1"></script>
   <script src="./market-advisory.js?v=1"></script>
-  <script type="module" src="./auth-gate.js?v=3"></script>
-  <script src="./app.js?v=33"></script>
+  <script type="module" src="./auth-gate.js?v=4"></script>
+  <script src="./app.js?v=34"></script>
 
   <dialog class="account-dialog" id="accountDialog" aria-labelledby="accountDialogTitle">
     <form method="dialog"><button class="dialog-close" type="button" data-dialog-close aria-label="닫기">×</button></form>
@@ -588,7 +588,8 @@
       <strong id="accountSettingsTitle">멤버십</strong>
       <p id="accountUserEmail"></p>
       <div><span>현재 플랜</span><b id="accountPlanValue">무료</b></div>
-      <span class="account-admin-badge" id="accountAdminBadge" hidden>◆ 관리자</span>
+      <p class="account-upgrade-note" id="accountUpgradeNote">더 많은 자산과 정밀 관측 기능은 상위 플랜에서 사용할 수 있습니다.</p>
+      <button class="account-plan-button" id="accountPlanButton" type="button" data-open-plan>플랜 보기</button>
       <button id="accountLogout" type="button">로그아웃</button>
     </section>
   </dialog>
@@ -604,19 +605,27 @@
 
   <dialog class="auth-gate-dialog" id="authGateDialog" aria-labelledby="authGateTitle">
     <form method="dialog"><button class="dialog-close" type="button" data-auth-action="close" aria-label="Close">×</button></form>
-    <p class="eyebrow">AILYNX WEATHER</p><h2 id="authGateTitle">WEATHER 자산은 로그인 후 이용할 수 있습니다.</h2>
-    <p>BTCUSD 날씨는 로그인 없이 이용할 수 있습니다.</p>
-    <button type="button" data-auth-open>로그인 / 무료 회원가입</button>
+    <p class="eyebrow">AILYNX WEATHER</p><h2 id="authGateTitle">회원 전용 기능</h2>
+    <p>로그인하면 현재 플랜과 이용 가능한 기능을 확인할 수 있습니다.</p>
+    <div class="auth-gate-actions"><button type="button" data-auth-open="login">로그인</button><button type="button" data-auth-open="signup">무료 회원가입</button></div>
   </dialog>
   <dialog class="auth-gate-dialog" id="membershipUpgradeDialog" aria-labelledby="membershipUpgradeTitle">
     <form method="dialog"><button class="dialog-close" type="button" data-auth-action="close" aria-label="Close">×</button></form>
-    <p class="eyebrow">플러스 멤버십</p><h2 id="membershipUpgradeTitle"><span data-upgrade-asset>이 자산</span>은 플러스 플랜이 필요합니다.</h2>
-    <p>무료 멤버십에서는 BTCUSD 날씨를 이용할 수 있습니다.</p>
+    <p class="eyebrow" id="membershipUpgradeEyebrow">플러스 멤버십</p><h2 id="membershipUpgradeTitle">플러스에서 추가 자산 날씨를 확인하세요</h2>
+    <p id="membershipUpgradeDescription">BTC 외 시장까지 같은 Lynx Weather 기준으로 관측할 수 있습니다.</p>
+    <button type="button" data-open-plan data-plan-target="WEATHER">플랜 보기</button>
   </dialog>
-  <dialog class="admin-dialog" id="adminDialog" aria-labelledby="adminDialogTitle">
+  <dialog class="plan-dialog" id="planDialog" aria-labelledby="planDialogTitle">
     <form method="dialog"><button class="dialog-close" type="submit" aria-label="닫기">×</button></form>
-    <p class="eyebrow">AILYNX ADMIN</p><h2 id="adminDialogTitle">관리자 진입점</h2>
-    <p>관리자 권한 연결을 위한 안전한 준비 화면입니다. 이 화면에서는 데이터나 권한을 변경하지 않습니다.</p>
+    <p class="eyebrow">AILYNX MEMBERSHIP</p><h2 id="planDialogTitle">Lynx 플랜</h2>
+    <p class="plan-dialog-intro" id="planDialogIntro">현재 관측 범위에 맞는 플랜을 확인하세요.</p>
+    <div class="plan-card-grid">
+      <article class="plan-card" data-plan-card="FREE"><h3>무료</h3><p>BTC 중심의 기본 Lynx Weather</p><small>기본 시장 점유율과 핵심 날씨 확인</small></article>
+      <article class="plan-card" data-plan-card="WEATHER"><h3>플러스</h3><p>추가 자산 Weather + 리더 타임프레임</p><small>더 넓은 시장 관측</small><button type="button" data-plan-interest="WEATHER">플러스 보기</button></article>
+      <article class="plan-card" data-plan-card="PREMIUM"><h3>프리미엄</h3><p>상세 시간축 + 검증 상태</p><small>더 깊은 Lynx 관측실</small><button type="button" data-plan-interest="PREMIUM">프리미엄 보기</button></article>
+      <article class="plan-card" data-plan-card="PRO"><h3>프로</h3><p>정밀 도구 + Mobile Viewer</p><small>Lynx 전체 관측 환경</small><button type="button" data-plan-interest="PRO">프로 보기</button></article>
+    </div>
+    <p class="plan-dialog-notice" id="planDialogNotice" role="status">구독 준비 중</p>
   </dialog>
   <dialog class="auth-gate-dialog onboarding-dialog" id="onboardingDialog" aria-labelledby="onboardingTitle">
     <p class="eyebrow">WELCOME TO AILYNX</p>

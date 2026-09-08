@@ -85,8 +85,8 @@ test("asset navigation separates entitlement from the selected state", async () 
 
 test("dashboard cache shell includes the membership resolver and has no removed UI modules", async () => {
   const [html, worker] = await Promise.all([read("index.html"), read("service-worker.js")]);
-  assert.match(worker, /ailynx-weather-v40/);
-  for (const asset of ["styles.css?v=29", "asset-registry.js?v=4", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "community-config.js?v=3", "admin-access.js?v=1", "auth-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=5", "app.js?v=33"]) {
+  assert.match(worker, /ailynx-weather-v41/);
+  for (const asset of ["styles.css?v=30", "asset-registry.js?v=4", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "community-config.js?v=3", "admin-access.js?v=1", "auth-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=5", "member-community.js?v=4", "auth-gate.js?v=4", "app.js?v=34"]) {
     assert.ok(html.includes(asset) || worker.includes(asset), `missing ${asset}`);
   }
   assert.doesNotMatch(worker, /frontline-timeframe|weather-dynamics/);
@@ -123,6 +123,7 @@ test("leader timeframe is a WEATHER gate with no FREE value exposure", async () 
   assert.match(config, /PRO: Object\.freeze\(\{label: "프로"/);
   assert.match(html, /id="coreLeaderLock"/);
   assert.match(html, /플러스에서 확인/);
+  assert.match(html, /id="coreLeaderCta"/);
   assert.match(app, /const leaderAllowed = planAtLeast\("WEATHER"\)/);
   assert.match(app, /const leader = leaderAllowed \?/);
   assert.match(app, /dashboardText\("coreLeaderTimeframe", allowed \? value : planDisplayName\("WEATHER"\)\)/);

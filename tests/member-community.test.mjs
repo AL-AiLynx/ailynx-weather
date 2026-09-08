@@ -48,7 +48,7 @@ test("community migration enforces RLS, text-only content, and referral/Xp invar
 });
 
 test("community UI retains posts/chat and adds email Auth controls without upload", async () => {
-  const [html, ui, advisory] = await Promise.all([read("index.html"), read("member-community.js"), read("market-advisory-config.js")]);
+  const [html, ui, advisory, gate] = await Promise.all([read("index.html"), read("member-community.js"), read("market-advisory-config.js"), read("auth-gate.js")]);
   assert.match(html, /data-community-tab="posts"/);
   assert.match(html, /data-community-tab="chat"/);
   assert.match(html, /emailLoginForm/);
@@ -64,9 +64,17 @@ test("community UI retains posts/chat and adds email Auth controls without uploa
   assert.match(html, /MARKET ADVISORY/);
   assert.match(html, /manualButton/);
   assert.match(html, /manualDialog/);
-  assert.match(html, /adminEntry/);
-  assert.match(html, /adminDialog/);
+  assert.match(html, /id="planDialog"/);
+  assert.match(html, /플러스에서 확인/);
+  for (const label of ["회원 전용 기능", "무료 회원가입", "플러스 보기", "프리미엄 보기", "프로 보기", "구독 준비 중"]) assert.match(html, new RegExp(label));
+  assert.doesNotMatch(html, /id="adminEntry"|id="adminDialog"/);
   assert.match(ui, /AiLynxAdminAccess/);
+  assert.match(ui, /renderAdminShell/);
+  assert.match(ui, /initializePlanDialog/);
+  assert.match(ui, /data-open-plan/);
+  assert.match(ui, /data-plan-interest/);
+  assert.match(gate, /membershipUpgradeDescription/);
+  assert.match(gate, /planButton\.dataset\.planTarget/);
   assert.match(advisory, /active: null/);
   assert.match(advisory, /evidencePlan: "PRO"/);
 });

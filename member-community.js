@@ -11,10 +11,36 @@ function providerLabel(provider) { return `${i18n.t(`provider${provider[0].toUpp
 function planDisplayName(plan) { return window.LynxDashboardConfig?.plans?.[plan]?.label || "무료"; }
 function adminMembership(state) { return window.AiLynxAdminAccess?.isAdminMembership?.(state) ?? false; }
 
+function renderAdminShell(state) {
+  const isAdmin = adminMembership(state);
+  document.getElementById("adminEntry")?.remove();
+  document.getElementById("adminDialog")?.remove();
+  document.getElementById("accountAdminBadge")?.remove();
+  if (!isAdmin) return;
+  const controls = document.querySelector(".member-controls");
+  const entry = document.createElement("button");
+  entry.id = "adminEntry";
+  entry.className = "admin-entry";
+  entry.type = "button";
+  entry.innerHTML = '<span aria-hidden="true">◆</span> ADMIN';
+  const dialog = document.createElement("dialog");
+  dialog.id = "adminDialog";
+  dialog.className = "admin-dialog";
+  dialog.setAttribute("aria-labelledby", "adminDialogTitle");
+  dialog.innerHTML = '<form method="dialog"><button class="dialog-close" type="submit" aria-label="닫기">×</button></form><p class="eyebrow">AILYNX ADMIN</p><h2 id="adminDialogTitle">관리자 대시보드</h2><ul><li>사용자 플랜</li><li>구독 상태</li><li>기능 권한</li></ul><p>관리자 권한 연결을 위한 안전한 준비 화면입니다. 이 화면에서는 데이터나 권한을 변경하지 않습니다.</p>';
+  entry.addEventListener("click", () => dialog.showModal());
+  controls?.insertBefore(entry, document.getElementById("memberProfile"));
+  document.body.append(dialog);
+  const badge = document.createElement("span");
+  badge.id = "accountAdminBadge";
+  badge.className = "account-admin-badge";
+  badge.textContent = "◆ 관리자";
+  document.getElementById("accountAuthenticated")?.prepend(badge);
+}
+
 function renderMemberState(state = window.AiLynxMembership?.membership?.() || {authenticated: false, plan: "FREE"}) {
   const enabled = communityClient.canUseCommunity();
   const plan = String(state.plan || "FREE").toUpperCase();
-  const isAdmin = adminMembership(state);
   const profile = document.getElementById("memberProfile");
   if (profile) profile.hidden = false;
   setText("memberProfileLabel", enabled ? i18n.t("login") : `${i18n.t("login")} · ${i18n.t("setupRequired")}`);
@@ -22,8 +48,7 @@ function renderMemberState(state = window.AiLynxMembership?.membership?.() || {a
   setText("communityAvailability", enabled ? i18n.t("signInRequired") : i18n.t("setupRequired"));
   setText("planStatusChip", planDisplayName(plan));
   setText("accountPlanValue", planDisplayName(plan));
-  document.getElementById("adminEntry")?.toggleAttribute("hidden", !isAdmin);
-  document.getElementById("accountAdminBadge")?.toggleAttribute("hidden", !isAdmin);
+  renderAdminShell(state);
 }
 
 function initializeLanguage() {
@@ -34,7 +59,6 @@ function initializeLanguage() {
 function initializeAuthShell() {
   document.getElementById("manualButton")?.addEventListener("click", () => showDialog("manualDialog"));
   document.getElementById("memberProfile")?.addEventListener("click", () => showDialog("accountDialog"));
-  document.getElementById("adminEntry")?.addEventListener("click", () => showDialog("adminDialog"));
   document.querySelectorAll("[data-provider]").forEach((button) => {
     button.addEventListener("click", async () => {
       try { await communityClient.beginOAuth(button.dataset.provider); }
@@ -63,6 +87,32 @@ function initializeAuthShell() {
     window.AiLynxAuthGate?.completeOnboarding({language: i18n.language, mainAsset});
   });
   document.querySelectorAll("[data-dialog-close]").forEach((button) => button.addEventListener("click", () => closeDialog(button.closest("dialog")?.id)));
+}
+
+function initializePlanDialog() {
+  const dialog = document.getElementById("planDialog");
+  if (!dialog) return;
+  const open = (trigger) => {
+    const plan = String(trigger?.dataset.planTarget || "").toUpperCase();
+    const card = dialog.querySelector(`[data-plan-card="${plan}"]`);
+    dialog.querySelectorAll("[data-plan-card]").forEach((item) => item.classList.toggle("is-highlighted", item === card));
+    const intro = document.getElementById("planDialogIntro");
+    if (intro) intro.textContent = plan ? `${planDisplayName(plan)} 플랜에서 제공되는 관측 범위를 확인하세요.` : "현재 관측 범위에 맞는 플랜을 확인하세요.";
+    const sourceDialog = trigger?.closest?.("dialog");
+    if (sourceDialog && sourceDialog !== dialog) sourceDialog.close();
+    dialog.showModal();
+  };
+  document.addEventListener("click", (event) => {
+    const opener = event.target.closest?.("[data-open-plan]");
+    if (!opener) return;
+    event.preventDefault();
+    open(opener);
+  });
+  dialog.querySelectorAll("[data-plan-interest]").forEach((button) => button.addEventListener("click", () => {
+    const plan = planDisplayName(button.dataset.planInterest);
+    const notice = document.getElementById("planDialogNotice");
+    if (notice) notice.textContent = `${plan} 구독을 준비 중입니다.`;
+  }));
 }
 
 function initializeCommunityTabs() {
@@ -98,6 +148,7 @@ function initializeMemberCommunity() {
   initializeCommunityTabs();
   initializeShare();
   initializeEmojiPicker();
+  initializePlanDialog();
   renderMemberState();
   window.addEventListener("ailynx-language", renderMemberState);
   window.addEventListener("ailynx-membership", (event) => renderMemberState(event.detail));
@@ -140,13 +191,13 @@ window.addEventListener("DOMContentLoaded", initializeMemberCommunity);
     const displayPlan = planDisplayName(plan);
     byId("accountPlanValue") && (byId("accountPlanValue").textContent = displayPlan);
     byId("planStatusChip") && (byId("planStatusChip").textContent = displayPlan);
-    const isAdmin = adminMembership(state);
-    byId("adminEntry")?.toggleAttribute("hidden", !isAdmin);
-    byId("accountAdminBadge")?.toggleAttribute("hidden", !isAdmin);
+    renderAdminShell(state);
+    byId("accountUpgradeNote")?.toggleAttribute("hidden", !authenticated || plan !== "FREE");
+    byId("accountPlanButton")?.toggleAttribute("hidden", !authenticated || plan !== "FREE");
     if (!authenticated) showView("login");
   };
   const closeAccount = () => account()?.close?.();
-  const openAccount = () => { renderAccount(); account()?.showModal?.(); };
+  const openAccount = (event) => { renderAccount(); account()?.showModal?.(); showView(event?.currentTarget?.dataset.authOpen || "login"); };
   const login = async (event) => {
     event.preventDefault();
     const form = event.currentTarget;

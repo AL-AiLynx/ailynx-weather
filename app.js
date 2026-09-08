@@ -644,7 +644,7 @@ function renderMaat2ValidationCard(maat2) {
 function renderValidationCards() {
   if (!hasFeature("viewer.professional_details")) {
     const target = document.getElementById("validationCards");
-    if (target) target.innerHTML = `<article class="validation-card card validation-locked"><p class="validation-kicker">${tr("detailValidation")}</p><h3>프로</h3><p class="validation-status">${tr("precisionValidation")}</p><p class="validation-lock">${tr("viewInPro")}</p></article>`;
+    if (target) target.innerHTML = `<article class="validation-card card validation-locked"><p class="validation-kicker">프로 전용</p><h3>정밀 관측 도구</h3><p class="validation-status">정밀 관측 도구와 Mobile Viewer를 사용할 수 있습니다.</p><button type="button" data-open-plan data-plan-target="PRO">프로 보기</button></article>`;
     return;
   }
   renderMaatValidationCard(validationCardsData?.maat);
@@ -1754,6 +1754,7 @@ function updateLeaderTimeframe(value, allowed) {
   const card = document.getElementById("coreLeaderMetric");
   const lock = document.getElementById("coreLeaderLock");
   const note = document.getElementById("coreLeaderNote");
+  const cta = document.getElementById("coreLeaderCta");
   const previous = coreDynamicsValues.get("leader");
   const next = allowed ? value : null;
   const changed = window.AiLynxCoreDynamics?.hasCoreTransition?.(previous, next) ?? (previous !== undefined && previous !== next);
@@ -1761,6 +1762,7 @@ function updateLeaderTimeframe(value, allowed) {
   dashboardText("coreLeaderTimeframe", allowed ? value : planDisplayName("WEATHER"));
   if (lock) lock.hidden = allowed;
   if (note) note.hidden = allowed;
+  if (cta) cta.hidden = allowed;
   if (!card) return;
   card.dataset.state = allowed ? (value === "—" ? "empty" : "ready") : "locked";
   card.toggleAttribute("data-locked", !allowed);
