@@ -64,7 +64,7 @@ test("observed market cards separate entitlement from observation state", async 
 test("dashboard cache shell includes the membership resolver and has no removed UI modules", async () => {
   const [html, worker] = await Promise.all([read("index.html"), read("service-worker.js")]);
   assert.match(worker, /ailynx-weather-v36/);
-  for (const asset of ["styles.css?v=25", "asset-registry.js?v=4", "public-runtime-config.js?v=1", "auth-client.js?v=1", "membership-client.js?v=2", "i18n.js?v=4", "app.js?v=29"]) {
+  for (const asset of ["styles.css?v=25", "asset-registry.js?v=4", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "auth-client.js?v=1", "membership-client.js?v=2", "i18n.js?v=4", "app.js?v=29"]) {
     assert.ok(html.includes(asset) || worker.includes(asset), `missing ${asset}`);
   }
   assert.doesNotMatch(worker, /frontline-timeframe|weather-dynamics/);
