@@ -28,7 +28,7 @@
   <!-- 기본 디자인 -->
   <link
     rel="stylesheet"
-    href="./styles.css?v=18"
+    href="./styles.css?v=19"
   />
 
   <!-- PWA 매니페스트 -->
@@ -104,6 +104,10 @@
       </div>
 
       <time class="local-clock" id="localClock" aria-live="off"></time>
+      <div class="member-controls" aria-label="Member controls">
+        <div class="language-toggle" aria-label="Language"><button type="button" data-language="ko">KO</button><span aria-hidden="true">|</span><button type="button" data-language="en">EN</button></div>
+        <button class="member-profile" id="memberProfile" type="button" hidden><span aria-hidden="true">◌</span> <span id="memberProfileLabel">로그인</span></button>
+      </div>
     </header>
 
     <aside class="announcement-ticker" aria-label="AiLynx announcements">
@@ -472,7 +476,7 @@
       <span class="shell-status">COMING SOON</span>
     </section>
 
-    <section class="app-panel shell-panel card" id="communityPanel" data-tab-panel="community" hidden>
+    <section class="app-panel shell-panel card" id="legacyCommunityPanel" hidden>
       <p class="eyebrow">COMMUNITY</p>
       <h2>Community 준비 중</h2>
       <p>텍스트 중심의 일반 emoji와 AiLynx emoji 표현을 위한 공간입니다. 게시와 반응 기능은 준비 중입니다.</p>
@@ -482,6 +486,16 @@
       <span class="shell-status">COMING SOON</span>
     </section>
 
+    <section class="app-panel shell-panel card community-shell" id="communityPanel" data-tab-panel="community" hidden>
+      <p class="eyebrow">COMMUNITY</p>
+      <div class="community-heading"><h2 data-i18n="community">커뮤니티</h2><span class="shell-status" id="communityAvailability">SETUP REQUIRED</span></div>
+      <p class="community-policy" data-i18n="noUploads">이미지·GIF·동영상·파일 업로드는 지원하지 않습니다.</p>
+      <div class="community-tabs" role="tablist" aria-label="Community sections"><button class="is-active" type="button" data-community-tab="posts" data-i18n="posts">POSTS</button><button type="button" data-community-tab="chat" data-i18n="chat">LIVE CHAT</button></div>
+      <section data-community-panel="posts"><div class="community-composer"><textarea data-community-input data-i18n-placeholder="postPlaceholder" placeholder="텍스트로 생각을 남겨보세요" maxlength="4000" disabled></textarea><button type="button" data-community-auth data-i18n="compose">글 작성</button></div><div class="community-empty"><strong data-i18n="setupRequired">설정 필요</strong><p data-i18n="signInRequired">로그인 후 이용할 수 있습니다.</p></div></section>
+      <section data-community-panel="chat" hidden><div class="community-empty"><strong data-i18n="liveChat">LIVE CHAT</strong><p data-i18n="signInRequired">로그인 후 이용할 수 있습니다.</p></div><div class="community-composer"><textarea data-community-input data-i18n-placeholder="chatPlaceholder" placeholder="메시지 입력" maxlength="800" disabled></textarea><button type="button" data-community-auth data-i18n="send">보내기</button></div></section>
+      <div class="community-emoji-picker" id="communityEmojiPicker" aria-label="Emoji picker"></div>
+    </section>
+
     <footer>
       <p id="lastObservation">마지막 관측: 불러오는 중</p>
       <p class="visit-stats" id="visitStats">TOTAL VISITS · WAITING</p>
@@ -489,6 +503,9 @@
         <button type="button" class="footer-link" data-inquiry-status>고객문의</button>
         <span>Privacy</span>
         <span>Terms</span>
+        <span class="social-link-placeholder">YouTube · COMING SOON</span>
+        <span class="social-link-placeholder">Discord · COMING SOON</span>
+        <span class="social-link-placeholder">Telegram · COMING SOON</span>
       </nav>
       <p>© AiLynx</p>
     </footer>
@@ -498,6 +515,17 @@
   <script src="./weather-engine.js"></script>
   <script src="./lynx-dashboard-config.js?v=16"></script>
   <script src="./lynx-notices.js?v=16"></script>
+  <script src="./community-config.js?v=1"></script>
+  <script src="./i18n.js?v=1"></script>
+  <script src="./community-client.js?v=1"></script>
+  <script src="./member-community.js?v=1"></script>
   <script src="./app.js?v=18"></script>
+
+  <dialog class="account-dialog" id="accountDialog" aria-labelledby="accountDialogTitle">
+    <form method="dialog"><button class="dialog-close" type="button" data-dialog-close aria-label="Close">×</button></form>
+    <p class="eyebrow" data-i18n="account">계정</p><h2 id="accountDialogTitle" data-i18n="login">로그인</h2><p id="authSetupNote" data-i18n="setupRequired">설정 필요</p>
+    <div class="provider-list"><button type="button" data-provider="google">Google · SETUP REQUIRED</button><button type="button" data-provider="kakao">Kakao · SETUP REQUIRED</button><button type="button" data-provider="toss">Toss · COMING SOON</button><button type="button" data-provider="chatgpt">ChatGPT · COMING SOON</button></div>
+    <div class="profile-referral"><strong data-i18n="referral">추천 코드</strong><button type="button" data-copy-referral data-i18n="copy">링크 복사</button></div>
+  </dialog>
 </body>
 </html>

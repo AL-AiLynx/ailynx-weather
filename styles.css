@@ -975,6 +975,35 @@ footer p { margin: 0; }
 .footer-links { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px 14px; }
 .footer-link { padding: 0; border: 0; color: var(--cyan); background: transparent; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 
+.member-controls { grid-column: 1 / -1; display: flex; justify-content: flex-end; align-items: center; gap: 9px; }
+.language-toggle { display: inline-flex; align-items: center; gap: 4px; color: var(--text-muted); font-size: 11px; }
+.language-toggle button, .member-profile, .community-tabs button, .community-composer button, .provider-list button, .profile-referral button, .community-emoji-picker button { border: 1px solid rgba(100,214,255,.18); border-radius: 9px; color: var(--text-sub); background: rgba(8,24,38,.58); cursor: pointer; }
+.language-toggle button { padding: 3px 5px; border-color: transparent; }
+.language-toggle button.is-active, .community-tabs button.is-active { color: var(--text-main); border-color: rgba(100,214,255,.44); background: rgba(100,214,255,.13); }
+.member-profile { min-height: 30px; padding: 5px 8px; font-size: 11px; }
+.community-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.community-policy { color: var(--text-muted); font-size: 12px; }
+.community-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin: 18px 0 12px; }
+.community-tabs button { min-height: 36px; font-weight: 800; letter-spacing: .06em; }
+.community-composer { display: grid; gap: 8px; }
+.community-composer textarea { min-height: 88px; width: 100%; resize: vertical; box-sizing: border-box; padding: 11px; border: 1px solid rgba(100,214,255,.18); border-radius: 12px; color: var(--text-main); background: rgba(6,20,31,.6); font: inherit; }
+.community-composer button { justify-self: end; min-height: 34px; padding: 7px 11px; font-weight: 800; }
+.community-composer button:disabled { opacity: .58; cursor: not-allowed; }
+.community-empty { margin: 10px 0; padding: 16px; border: 1px dashed rgba(169,139,255,.28); border-radius: 12px; color: var(--text-sub); background: rgba(169,139,255,.05); }
+.community-empty p { margin-bottom: 0; }
+.community-emoji-picker { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.community-emoji-picker button { display: grid; place-items: center; width: 32px; height: 32px; font-size: 16px; }
+.community-emoji-picker img { max-width: 22px; max-height: 22px; }
+.account-dialog { width: min(420px, calc(100vw - 28px)); border: 1px solid rgba(100,214,255,.3); border-radius: 18px; color: var(--text-main); background: #0b1e2d; box-shadow: 0 24px 72px rgba(0,0,0,.55); }
+.account-dialog::backdrop { background: rgba(0,0,0,.58); backdrop-filter: blur(3px); }
+.account-dialog h2 { margin-top: 0; }
+.dialog-close { float: right; border: 0; color: var(--text-muted); background: transparent; font-size: 24px; cursor: pointer; }
+.provider-list { display: grid; gap: 8px; }
+.provider-list button { min-height: 42px; padding: 8px 10px; text-align: left; }
+.profile-referral { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding-top: 12px; border-top: 1px solid rgba(100,214,255,.12); }
+.profile-referral button { padding: 6px 8px; }
+.social-link-placeholder { color: var(--text-muted); font-size: 11px; }
+
 @media (max-width: 760px) {
   .top-bar { gap: 3px 8px; }
   .app-tabs { top: 5px; margin-bottom: 12px; }
@@ -983,6 +1012,7 @@ footer p { margin: 0; }
   .hero .price { font-size: clamp(25px, 8.2vw, 34px); }
   .hero .price-change { flex-basis: 100%; }
   .section-title h2 { font-size: 16px; }
+  .member-controls { grid-column: 1 / -1; }
 }
 
 @media (max-width: 390px) {

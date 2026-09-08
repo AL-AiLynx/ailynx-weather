@@ -35,7 +35,7 @@ test("dashboard provides a config-driven Lynx timeframe board without invented m
   assert.match(css, /\.market-dominance-strip/);
   assert.match(css, /\.app-tabs/);
   assert.match(css, /@media \(max-width: 390px\)/);
-  assert.match(worker, /ailynx-weather-v18/);
+  assert.match(worker, /ailynx-weather-v19/);
   assert.match(worker, /market-dominance-client\.js\?v=15/);
   assert.match(worker, /visit-counter-client\.js\?v=15/);
   assert.match(worker, /lynx-dashboard-config\.js\?v=16/);
