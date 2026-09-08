@@ -63,8 +63,8 @@ test("observed market cards separate entitlement from observation state", async 
 
 test("dashboard cache shell includes the membership resolver and has no removed UI modules", async () => {
   const [html, worker] = await Promise.all([read("index.html"), read("service-worker.js")]);
-  assert.match(worker, /ailynx-weather-v34/);
-  for (const asset of ["styles.css?v=25", "asset-registry.js?v=3", "membership-client.js?v=1", "i18n.js?v=4", "app.js?v=28"]) {
+  assert.match(worker, /ailynx-weather-v35/);
+  for (const asset of ["styles.css?v=25", "asset-registry.js?v=4", "membership-client.js?v=1", "i18n.js?v=4", "app.js?v=28"]) {
     assert.ok(html.includes(asset) || worker.includes(asset), `missing ${asset}`);
   }
   assert.doesNotMatch(worker, /frontline-timeframe|weather-dynamics/);
@@ -80,6 +80,7 @@ test("runtime plan gates use subscription canonical plans and never expose locke
   assert.match(app, /assetReadPath\?\.reconcileAccess\?\.?\(\)/);
   assert.match(membership, /subscriptions\.plan_code/);
   assert.match(membership, /SUBSCRIPTION_UNAVAILABLE/);
+  assert.match(registry, /US100[\s\S]*requiredPlan: "WEATHER"/);
 });
 
 test("asset selection still delegates through the isolated read path", async () => {
