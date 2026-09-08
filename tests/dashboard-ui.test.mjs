@@ -52,7 +52,8 @@ test("core dynamics show real values or an explicit accumulation state without l
 
 test("the completed hero uses the official app mark and a summarized public BTC receipt", async () => {
   const [html, app, css] = await Promise.all([read("index.html"), read("app.js"), read("styles.css")]);
-  assert.match(html, /class="logo brand-mark" src="\.\/icons\/icon-512\.png"/);
+  assert.match(html, /class="logo brand-mark" id="brandMark" src="\.\/icons\/icon-512\.png"/);
+  assert.match(html, /id="brandFallback" hidden/);
   assert.match(html, /class="asset-navigation" id="assetNavigation"/);
   assert.doesNotMatch(html, /asset-select-label/);
   assert.match(app, /capturePublicWeatherSnapshot/);
@@ -76,15 +77,16 @@ test("asset navigation separates entitlement from the selected state", async () 
   const [app, css] = await Promise.all([read("app.js"), read("styles.css")]);
   assert.match(app, /asset-navigation-access/);
   assert.match(app, /asset\.id === selectedAssetId/);
-  assert.match(app, /allowed \? \(asset\.id === "BTCUSD" \? "LIVE"/);
+  assert.match(app, /asset\.id === "BTCUSD" \? "실시간"/);
   assert.match(css, /\.asset-navigation-item\.is-selected/);
-  assert.match(css, /content: "🔒"/);
+  assert.match(app, /createPlanLockIcon/);
+  assert.match(css, /\.plan-lock-icon/);
 });
 
 test("dashboard cache shell includes the membership resolver and has no removed UI modules", async () => {
   const [html, worker] = await Promise.all([read("index.html"), read("service-worker.js")]);
-  assert.match(worker, /ailynx-weather-v39/);
-  for (const asset of ["styles.css?v=28", "asset-registry.js?v=4", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "auth-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=4", "app.js?v=32"]) {
+  assert.match(worker, /ailynx-weather-v40/);
+  for (const asset of ["styles.css?v=29", "asset-registry.js?v=4", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "community-config.js?v=3", "admin-access.js?v=1", "auth-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=5", "app.js?v=33"]) {
     assert.ok(html.includes(asset) || worker.includes(asset), `missing ${asset}`);
   }
   assert.doesNotMatch(worker, /frontline-timeframe|weather-dynamics/);
@@ -111,4 +113,18 @@ test("asset selection still delegates through the isolated read path", async () 
   assert.match(app, /renderAssetNavigation\(\)/);
   assert.doesNotMatch(app, /initializeAssetSelector|asset-selector-toggle/);
   assert.match(app, /currentAssetObservation/);
+});
+
+test("leader timeframe is a WEATHER gate with no FREE value exposure", async () => {
+  const [html, app, config, css] = await Promise.all([read("index.html"), read("app.js"), read("lynx-dashboard-config.js"), read("styles.css")]);
+  assert.match(config, /WEATHER: Object\.freeze\(\{label: "플러스"/);
+  assert.match(config, /FREE: Object\.freeze\(\{label: "무료"/);
+  assert.match(config, /PREMIUM: Object\.freeze\(\{label: "프리미엄"/);
+  assert.match(config, /PRO: Object\.freeze\(\{label: "프로"/);
+  assert.match(html, /id="coreLeaderLock"/);
+  assert.match(html, /플러스에서 확인/);
+  assert.match(app, /const leaderAllowed = planAtLeast\("WEATHER"\)/);
+  assert.match(app, /const leader = leaderAllowed \?/);
+  assert.match(app, /dashboardText\("coreLeaderTimeframe", allowed \? value : planDisplayName\("WEATHER"\)\)/);
+  assert.match(css, /core-metric-leader\[data-state="locked"\]/);
 });

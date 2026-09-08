@@ -8,17 +8,22 @@ function setText(id, value) { const element = document.getElementById(id); if (e
 function showDialog(id) { document.getElementById(id)?.showModal(); }
 function closeDialog(id) { document.getElementById(id)?.close(); }
 function providerLabel(provider) { return `${i18n.t(`provider${provider[0].toUpperCase()}${provider.slice(1)}`)} · ${memberConfig.providers[provider].replace("_", " ")}`; }
+function planDisplayName(plan) { return window.LynxDashboardConfig?.plans?.[plan]?.label || "무료"; }
+function adminMembership(state) { return window.AiLynxAdminAccess?.isAdminMembership?.(state) ?? false; }
 
-function renderMemberState() {
+function renderMemberState(state = window.AiLynxMembership?.membership?.() || {authenticated: false, plan: "FREE"}) {
   const enabled = communityClient.canUseCommunity();
-  const plan = window.AiLynxMembership?.plan || "FREE";
+  const plan = String(state.plan || "FREE").toUpperCase();
+  const isAdmin = adminMembership(state);
   const profile = document.getElementById("memberProfile");
   if (profile) profile.hidden = false;
   setText("memberProfileLabel", enabled ? i18n.t("login") : `${i18n.t("login")} · ${i18n.t("setupRequired")}`);
   document.querySelectorAll("[data-community-auth]").forEach((element) => { element.disabled = true; element.title = i18n.t("setupRequired"); });
   setText("communityAvailability", enabled ? i18n.t("signInRequired") : i18n.t("setupRequired"));
-  setText("planStatusChip", plan);
-  setText("accountPlanValue", plan);
+  setText("planStatusChip", planDisplayName(plan));
+  setText("accountPlanValue", planDisplayName(plan));
+  document.getElementById("adminEntry")?.toggleAttribute("hidden", !isAdmin);
+  document.getElementById("accountAdminBadge")?.toggleAttribute("hidden", !isAdmin);
 }
 
 function initializeLanguage() {
@@ -29,6 +34,7 @@ function initializeLanguage() {
 function initializeAuthShell() {
   document.getElementById("manualButton")?.addEventListener("click", () => showDialog("manualDialog"));
   document.getElementById("memberProfile")?.addEventListener("click", () => showDialog("accountDialog"));
+  document.getElementById("adminEntry")?.addEventListener("click", () => showDialog("adminDialog"));
   document.querySelectorAll("[data-provider]").forEach((button) => {
     button.addEventListener("click", async () => {
       try { await communityClient.beginOAuth(button.dataset.provider); }
@@ -94,7 +100,7 @@ function initializeMemberCommunity() {
   initializeEmojiPicker();
   renderMemberState();
   window.addEventListener("ailynx-language", renderMemberState);
-  window.addEventListener("ailynx-membership", renderMemberState);
+  window.addEventListener("ailynx-membership", (event) => renderMemberState(event.detail));
 }
 
 window.addEventListener("DOMContentLoaded", initializeMemberCommunity);
@@ -131,8 +137,12 @@ window.addEventListener("DOMContentLoaded", initializeMemberCommunity);
     const userEmail = byId("accountUserEmail");
     if (userEmail) userEmail.textContent = email;
     const plan = String(state.plan || "FREE").toUpperCase();
-    byId("accountPlanValue") && (byId("accountPlanValue").textContent = plan);
-    byId("planStatusChip") && (byId("planStatusChip").textContent = plan);
+    const displayPlan = planDisplayName(plan);
+    byId("accountPlanValue") && (byId("accountPlanValue").textContent = displayPlan);
+    byId("planStatusChip") && (byId("planStatusChip").textContent = displayPlan);
+    const isAdmin = adminMembership(state);
+    byId("adminEntry")?.toggleAttribute("hidden", !isAdmin);
+    byId("accountAdminBadge")?.toggleAttribute("hidden", !isAdmin);
     if (!authenticated) showView("login");
   };
   const closeAccount = () => account()?.close?.();

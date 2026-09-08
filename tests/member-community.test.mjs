@@ -6,7 +6,7 @@ const root = new URL("../", import.meta.url);
 const read = (name) => readFile(new URL(name, root), "utf8");
 
 test("membership runtime uses public Auth configuration with anonymous FREE fallback", async () => {
-  const [config, runtime, authClient, client, i18n, gate, dashboard] = await Promise.all([read("community-config.js"), read("public-runtime-config.js"), read("auth-client.js"), read("community-client.js"), read("i18n.js"), read("auth-gate.js"), read("lynx-dashboard-config.js")]);
+  const [config, runtime, authClient, client, i18n, gate, dashboard, admin] = await Promise.all([read("community-config.js"), read("public-runtime-config.js"), read("auth-client.js"), read("community-client.js"), read("i18n.js"), read("auth-gate.js"), read("lynx-dashboard-config.js"), read("admin-access.js")]);
   assert.match(config, /enabled: false/);
   assert.match(config, /authGateEnabled: true/);
   assert.match(runtime, /__AILYNX_SUPABASE_PUBLISHABLE_KEY__/);
@@ -16,6 +16,7 @@ test("membership runtime uses public Auth configuration with anonymous FREE fall
   assert.match(config, /google: "DISABLED"/);
   assert.match(config, /chatgpt: "COMING_SOON"/);
   assert.match(config, /profilePersistenceAvailable: true/);
+  assert.match(config, /adminUserIds: Object\.freeze\(\[\]\)/);
   assert.doesNotMatch(config, /service_role/i);
   assert.match(client, /canUseCommunity/);
   assert.match(client, /beginOAuth/);
@@ -29,6 +30,9 @@ test("membership runtime uses public Auth configuration with anonymous FREE fall
   assert.match(gate, /ailynx-auth-logout/);
   assert.match(gate, /canFetchLive/);
   assert.match(dashboard, /assets: \["BTCUSD"\]/);
+  assert.match(dashboard, /label: "플러스"/);
+  assert.match(admin, /isAdminMembership/);
+  assert.doesNotMatch(admin, /service_role/i);
   assert.doesNotMatch(dashboard, /activePlan|PLUS/);
 });
 
@@ -60,6 +64,9 @@ test("community UI retains posts/chat and adds email Auth controls without uploa
   assert.match(html, /MARKET ADVISORY/);
   assert.match(html, /manualButton/);
   assert.match(html, /manualDialog/);
+  assert.match(html, /adminEntry/);
+  assert.match(html, /adminDialog/);
+  assert.match(ui, /AiLynxAdminAccess/);
   assert.match(advisory, /active: null/);
   assert.match(advisory, /evidencePlan: "PRO"/);
 });

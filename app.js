@@ -66,7 +66,7 @@ const dashboardConfig = window.LynxDashboardConfig;
 const liveFetchAllowed = () => window.AiLynxAuthGate?.canFetchLive?.() ?? true;
 const tr = (key, values) => window.AiLynxI18n?.t?.(key, values) ?? key;
 const displayState = (value) => {
-  const key = {WAITING: "waiting", PLANNED: "planned", LOCKED: "locked", LIVE: "live", STALE: "stale", INVALID: "invalid", "NO DATA": "noData", CALCULATING: "calculating", FULL: "fullObservation", CLOUDY: "cloudy", SUNNY: "sunny", PARTLY_CLOUDY: "partlyCloudy", RAINY: "rainy", NOISE_ONLY: "waiting"}[value];
+  const key = {WAITING: "waiting", PLANNED: "planned", LOCKED: "locked", LIVE: "live", STALE: "stale", INVALID: "invalid", "NO DATA": "noData", CALCULATING: "calculating", FULL: "fullObservation", CLOUDY: "cloudy", SUNNY: "sunny", PARTLY_CLOUDY: "partlyCloudy", RAIN: "rainy", RAINY: "rainy", NOISE_ONLY: "waiting"}[value];
   return key ? tr(key) : String(value || "").replaceAll("_", " ");
 };
 
@@ -80,26 +80,52 @@ const STATUS_CLASSES = [
 ];
 
 
-/*
-  날씨 코드 → 이모지
-*/
-const WEATHER_ICONS = {
-  SUNNY: "☀️",
-  PARTLY_CLOUDY: "🌤️",
-  MOSTLY_CLOUDY: "⛅",
-  CLOUDY: "☁️",
-  SHOWERS: "🌦️",
-  RAIN: "🌧️",
-  STORM: "⛈️",
-  FOG: "🌫️",
-  WIND: "💨",
-  HOT: "🔥",
-  COLD: "❄️"
-};
+const SVG_NS = "http://www.w3.org/2000/svg";
 
+function svgElement(name, attributes = {}) {
+  const node = document.createElementNS(SVG_NS, name);
+  for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, value);
+  return node;
+}
 
-function getWeatherIcon(iconCode) {
-  return WEATHER_ICONS[iconCode] || "☁️";
+function createPlanLockIcon() {
+  const svg = svgElement("svg", {viewBox: "0 0 24 24", focusable: "false", "aria-hidden": "true"});
+  svg.classList.add("plan-lock-icon");
+  svg.append(svgElement("path", {d: "M7.5 10V7.6a4.5 4.5 0 0 1 9 0V10M6.3 10h11.4c.7 0 1.3.6 1.3 1.3v8.2c0 .7-.6 1.3-1.3 1.3H6.3c-.7 0-1.3-.6-1.3-1.3v-8.2c0-.7.6-1.3 1.3-1.3Zm5.7 3.5v3.8", fill: "none", stroke: "currentColor", "stroke-width": "1.7", "stroke-linecap": "round", "stroke-linejoin": "round"}));
+  return svg;
+}
+
+function createWeatherSymbol(iconCode) {
+  const code = String(iconCode || "LOADING").toUpperCase();
+  const svg = svgElement("svg", {viewBox: "0 0 64 64", focusable: "false", "aria-hidden": "true"});
+  svg.classList.add("weather-symbol", `weather-symbol--${code.toLowerCase().replaceAll("_", "-")}`);
+  const stroke = {fill: "none", stroke: "currentColor", "stroke-width": "3", "stroke-linecap": "round", "stroke-linejoin": "round"};
+  const cloud = () => svg.append(svgElement("path", {...stroke, d: "M17 46h29a10 10 0 0 0 1.8-19.8A15 15 0 0 0 19.5 29 8.5 8.5 0 0 0 17 46Z"}));
+  if (code === "SUNNY") {
+    svg.append(svgElement("circle", {...stroke, cx: "32", cy: "32", r: "10"}));
+    for (const [x1, y1, x2, y2] of [[32,7,32,14],[32,50,32,57],[7,32,14,32],[50,32,57,32],[14,14,19,19],[45,45,50,50],[50,14,45,19],[19,45,14,50]]) svg.append(svgElement("path", {...stroke, d: `M${x1} ${y1} ${x2} ${y2}`}));
+  } else if (code === "PARTLY_CLOUDY" || code === "MOSTLY_CLOUDY") {
+    svg.append(svgElement("circle", {...stroke, cx: "24", cy: "23", r: "9"}));
+    cloud();
+  } else if (["RAIN", "SHOWERS", "STORM"].includes(code)) {
+    cloud();
+    for (const [x1, y1, x2, y2] of [[23,50,20,56],[33,50,30,56],[43,50,40,56]]) svg.append(svgElement("path", {...stroke, d: `M${x1} ${y1} ${x2} ${y2}`}));
+  } else if (code === "LOADING" || code === "WAITING") {
+    svg.append(svgElement("circle", {...stroke, cx: "32", cy: "32", r: "15", "stroke-dasharray": "52 16"}));
+    svg.append(svgElement("path", {...stroke, d: "M32 17v4"}));
+  } else {
+    cloud();
+    svg.append(svgElement("path", {...stroke, d: "M22 52h20"}));
+  }
+  return svg;
+}
+
+function renderWeatherIcon(iconCode) {
+  const target = document.getElementById("heroWeatherIcon");
+  if (!target) return;
+  const code = String(iconCode || "LOADING").toUpperCase();
+  target.dataset.icon = code;
+  target.replaceChildren(createWeatherSymbol(code));
 }
 
 
@@ -618,7 +644,7 @@ function renderMaat2ValidationCard(maat2) {
 function renderValidationCards() {
   if (!hasFeature("viewer.professional_details")) {
     const target = document.getElementById("validationCards");
-    if (target) target.innerHTML = `<article class="validation-card card validation-locked"><p class="validation-kicker">${tr("detailValidation")}</p><h3>PRO</h3><p class="validation-status">${tr("precisionValidation")}</p><p class="validation-lock">${tr("viewInPro")}</p></article>`;
+    if (target) target.innerHTML = `<article class="validation-card card validation-locked"><p class="validation-kicker">${tr("detailValidation")}</p><h3>프로</h3><p class="validation-status">${tr("precisionValidation")}</p><p class="validation-lock">${tr("viewInPro")}</p></article>`;
     return;
   }
   renderMaatValidationCard(validationCardsData?.maat);
@@ -637,7 +663,7 @@ function renderMarketPrice() {
   if (selectedAssetId !== "BTCUSD") {
     if (!assetEntitled(selectedAssetId)) {
       price.textContent = "—";
-      meta.textContent = `${tr("locked")} · ${window.AiLynxAssetRegistry?.byId?.(selectedAssetId)?.requiredPlan || "WEATHER"}`;
+      meta.textContent = `${tr("locked")} · ${planDisplayName(window.AiLynxAssetRegistry?.byId?.(selectedAssetId)?.requiredPlan || "WEATHER")}`;
       return;
     }
     const observed = currentAssetObservation()?.latestReceipt;
@@ -869,6 +895,15 @@ function currentPlanCode() {
   return dashboardConfig?.plans?.[code] ? code : "FREE";
 }
 
+function planDisplayName(code = currentPlanCode()) {
+  return dashboardConfig?.plans?.[code]?.label || dashboardConfig?.plans?.FREE?.label || "무료";
+}
+
+function planAtLeast(code) {
+  const requiredRank = dashboardConfig?.plans?.[code]?.rank;
+  return Number.isFinite(requiredRank) && (currentPlan()?.rank || 0) >= requiredRank;
+}
+
 function hasFeature(feature) {
   return Boolean(currentPlan()?.features?.includes(feature));
 }
@@ -905,10 +940,10 @@ async function selectAsset(assetId) {
 
 function weatherPresentation(score) {
   if (!Number.isFinite(score)) return heroWeatherPhase === "loading"
-    ? {icon: "◌", label: "불러오는 중", note: "유효 관측을 확인하고 있습니다."}
-    : {icon: "◌", label: "관측 준비 중", note: "유효 관측을 기다리는 중"};
+    ? {iconCode: "LOADING", label: "불러오는 중", note: "유효 관측을 확인하고 있습니다."}
+    : {iconCode: "WAITING", label: "관측 준비 중", note: "유효 관측을 기다리는 중"};
   const band = dashboardConfig?.weatherBands?.find((item) => score >= item.min && score <= item.max);
-  return band ? {...band, label: displayState(band.label), note: tr("liveData")} : {icon: "◌", label: tr("noData"), note: tr("publicContractWaiting")};
+  return band ? {...band, iconCode: band.icon, label: displayState(band.label), note: tr("liveData")} : {iconCode: "WAITING", label: tr("noData"), note: tr("publicContractWaiting")};
 }
 
 function observedHeroState() {
@@ -954,8 +989,11 @@ function makeFrameCell(timeframe, kind) {
   icon.className = "frame-icon";
   icon.textContent = !allowed ? "" : status === "FRESH" || status === "AGING" ? "●" : status === "STALE" ? "◐" : status === "INVALID" ? "!" : status === "NO DATA" ? "—" : "◌";
   const persistence = document.createElement("small");
-  persistence.textContent = allowed ? displayState(status) : requiredPlan;
-  if (!allowed) persistence.className = "frame-entitlement";
+  if (allowed) persistence.textContent = displayState(status);
+  else {
+    persistence.className = "frame-entitlement";
+    persistence.append(createPlanLockIcon(), document.createTextNode(planDisplayName(requiredPlan)));
+  }
   const change = document.createElement("small");
   change.className = "frame-change";
   change.textContent = !allowed ? "" : selectedAssetId !== "BTCUSD" && observation ? `${observation.sensorQuality} · LIVE`
@@ -976,14 +1014,15 @@ function renderAssetNavigation() {
     item.type = "button";
     item.className = `asset-navigation-item ${allowed ? "is-live" : "is-locked"} ${asset.id === selectedAssetId ? "is-selected" : ""}`;
     item.setAttribute("aria-current", String(asset.id === selectedAssetId));
-    item.setAttribute("aria-label", allowed ? `${asset.label} ${asset.id}` : `${asset.label} ${asset.id}, ${asset.requiredPlan} 필요`);
+    item.setAttribute("aria-label", allowed ? `${asset.label} ${asset.id}` : `${asset.label} ${asset.id}, ${planDisplayName(asset.requiredPlan)} 필요`);
     const name = document.createElement("strong");
     name.textContent = asset.label;
     const identity = document.createElement("small");
     identity.textContent = asset.id;
     const access = document.createElement("span");
     access.className = "asset-navigation-access";
-    access.textContent = allowed ? (asset.id === "BTCUSD" ? "LIVE" : tr("available")) : asset.requiredPlan;
+    if (allowed) access.textContent = asset.id === "BTCUSD" ? "실시간" : tr("available");
+    else access.append(createPlanLockIcon(), document.createTextNode(planDisplayName(asset.requiredPlan)));
     item.append(name, identity, access);
     item.addEventListener("click", () => {
       if (!allowed) {
@@ -1010,7 +1049,7 @@ function renderLynxDashboard() {
   const durability = window.AiLynxWeatherEngine?.computeDurability?.(observationHistory);
   const changeRate = window.AiLynxWeatherEngine?.computeChangeRate?.(observationHistory);
   const classified = window.AiLynxWeatherEngine?.classifyWeather?.(result?.score);
-  const presentation = classified ? {icon: getWeatherIcon(classified.icon), label: displayState(classified.state), note: tr("fullObservation", {timeframe: result.timeframe}), score: result.score} : weatherPresentation(null);
+  const presentation = classified ? {iconCode: classified.icon, label: displayState(classified.state), note: tr("fullObservation", {timeframe: result.timeframe}), score: result.score} : weatherPresentation(null);
   document.body.classList.remove("weather--sunny", "weather--partly-cloudy", "weather--cloudy", "weather--rain", "weather--neutral");
   document.body.classList.add(classified ? `weather--${classified.state.toLowerCase().replace("_", "-")}` : "weather--neutral");
   const hero = observedHeroState();
@@ -1023,9 +1062,9 @@ function renderLynxDashboard() {
       ? "Coinbase BTC-USD · 1분 갱신"
       : assetEntitled(asset.id)
         ? `${asset.id} · 관측 데이터 확인 중`
-        : `${asset.id} · ${asset.requiredPlan} 필요`;
+        : `${asset.id} · ${planDisplayName(asset.requiredPlan)} 필요`;
   }
-  dashboardText("heroWeatherIcon", presentation.icon);
+  renderWeatherIcon(presentation.iconCode);
   dashboardText("heroWeatherName", presentation.label);
   dashboardText("heroWeatherScore", Number.isFinite(presentation.score) ? String(presentation.score) : "—");
   dashboardText("heroWeatherNote", presentation.note);
@@ -1584,6 +1623,18 @@ function initializeInquiryStatus() {
   });
 }
 
+function initializeBrandMark() {
+  const mark = document.getElementById("brandMark");
+  const fallback = document.getElementById("brandFallback");
+  if (!mark || !fallback) return;
+  const showFallback = () => {
+    mark.hidden = true;
+    fallback.hidden = false;
+  };
+  mark.addEventListener("error", showFallback, {once: true});
+  if (mark.complete && mark.naturalWidth === 0) showFallback();
+}
+
 function initializeCoreDynamicsHelp() {
   document.getElementById("coreDynamicsHelp")?.addEventListener("click", () => {
     document.getElementById("manualDialog")?.showModal();
@@ -1596,6 +1647,7 @@ function initializeCoreDynamicsHelp() {
 */
 async function initializeApp() {
   hideLegacyWeatherPanels();
+  initializeBrandMark();
   initializeAnnouncementTicker();
   initializeTabs();
   initializeInquiryStatus();
@@ -1690,6 +1742,7 @@ function updateCoreMetric(cardId, valueId, bandId, noteId, gaugeId, presentation
   setCoreMetricGauge(gaugeId, presentation.value);
   if (!card) return;
   card.dataset.state = presentation.ready ? "ready" : "accumulating";
+  card.dataset.level = !presentation.ready ? "accumulating" : presentation.value >= 80 ? "very-high" : presentation.value >= 60 ? "high" : presentation.value >= 40 ? "mid" : presentation.value >= 20 ? "low" : "very-low";
   if (!changed) return;
   card.classList.remove("is-updated");
   void card.offsetWidth;
@@ -1697,14 +1750,20 @@ function updateCoreMetric(cardId, valueId, bandId, noteId, gaugeId, presentation
   window.setTimeout(() => card.classList.remove("is-updated"), 520);
 }
 
-function updateLeaderTimeframe(value) {
+function updateLeaderTimeframe(value, allowed) {
   const card = document.getElementById("coreLeaderMetric");
+  const lock = document.getElementById("coreLeaderLock");
+  const note = document.getElementById("coreLeaderNote");
   const previous = coreDynamicsValues.get("leader");
-  const changed = window.AiLynxCoreDynamics?.hasCoreTransition?.(previous, value) ?? (previous !== undefined && previous !== value);
-  coreDynamicsValues.set("leader", value);
-  dashboardText("coreLeaderTimeframe", value);
+  const next = allowed ? value : null;
+  const changed = window.AiLynxCoreDynamics?.hasCoreTransition?.(previous, next) ?? (previous !== undefined && previous !== next);
+  coreDynamicsValues.set("leader", next);
+  dashboardText("coreLeaderTimeframe", allowed ? value : planDisplayName("WEATHER"));
+  if (lock) lock.hidden = allowed;
+  if (note) note.hidden = allowed;
   if (!card) return;
-  card.dataset.state = value === "—" ? "empty" : "ready";
+  card.dataset.state = allowed ? (value === "—" ? "empty" : "ready") : "locked";
+  card.toggleAttribute("data-locked", !allowed);
   if (!changed) return;
   card.classList.remove("is-updated");
   void card.offsetWidth;
@@ -1717,8 +1776,9 @@ function renderCoreMetrics(durability, changeRate, hero) {
   const observationCount = Array.isArray(history) ? history.length : 0;
   updateCoreMetric("corePersistenceMetric", "corePersistence", "corePersistenceBand", "corePersistenceNote", "corePersistenceGauge", coreMetricPresentation(durability, "persistence", observationCount));
   updateCoreMetric("coreChangeMetric", "coreChange", "coreChangeBand", "coreChangeNote", "coreChangeGauge", coreMetricPresentation(changeRate, "changeRate", observationCount));
-  const leader = window.AiLynxCoreDynamics?.leaderPresentation?.(leaderTimeframe(hero))?.value || "—";
-  updateLeaderTimeframe(leader);
+  const leaderAllowed = planAtLeast("WEATHER");
+  const leader = leaderAllowed ? (window.AiLynxCoreDynamics?.leaderPresentation?.(leaderTimeframe(hero))?.value || "—") : "—";
+  updateLeaderTimeframe(leader, leaderAllowed);
 }
 
 window.addEventListener("ailynx-member-preferences", async (event) => {
