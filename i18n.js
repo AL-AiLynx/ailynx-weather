@@ -6,7 +6,7 @@ const dictionary = Object.freeze({
 });
 
 const storageKey = "ailynx-language";
-const preferred = () => navigator.language?.toLowerCase().startsWith("ko") ? "ko" : "en";
+const preferred = () => "en";
 let language = localStorage.getItem(storageKey) || preferred();
 
 function t(key) { return dictionary[language]?.[key] || dictionary.en[key] || key; }

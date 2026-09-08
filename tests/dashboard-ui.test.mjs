@@ -29,13 +29,13 @@ test("dashboard provides a config-driven Lynx timeframe board without invented m
   assert.match(app, /refreshVisitStats/);
   assert.match(app, /visibilitychange/);
   assert.match(app, /initializeTabs/);
-  assert.match(html, /타임프레임 매트릭스/);
+  assert.match(html, /TIMEFRAME MATRIX/);
   assert.doesNotMatch(html, /확정 대신 조건|예언 대신 검증|오늘도 안전운전/);
   assert.match(css, /\.timeframe-matrix/);
   assert.match(css, /\.market-dominance-strip/);
   assert.match(css, /\.app-tabs/);
   assert.match(css, /@media \(max-width: 390px\)/);
-  assert.match(worker, /ailynx-weather-v21/);
+  assert.match(worker, /ailynx-weather-v22/);
   assert.match(worker, /market-dominance-client\.js\?v=15/);
   assert.match(worker, /visit-counter-client\.js\?v=15/);
   assert.match(worker, /lynx-dashboard-config\.js\?v=16/);
@@ -43,6 +43,9 @@ test("dashboard provides a config-driven Lynx timeframe board without invented m
   assert.match(notices, /Lynx Weather Beta/);
   assert.match(app, /fetchHorusSnapshot/);
   assert.match(worker, /as1-horus-client\.js\?v=16/);
+  assert.match(html, /marketAdvisory/);
+  assert.match(worker, /market-advisory-config\.js\?v=1/);
+  assert.match(worker, /auth-gate\.js\?v=2/);
   assert.match(app, /activePlan !== "PRO"/);
   assert.match(app, /MAAT2 precision validation/);
   for (const weatherClass of ["weather--sunny", "weather--partly-cloudy", "weather--cloudy", "weather--rain", "weather--neutral"]) assert.match(css, new RegExp(weatherClass));

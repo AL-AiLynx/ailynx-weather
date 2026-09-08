@@ -3,6 +3,11 @@
 // Public browser configuration only. Never add a service-role key or OAuth secret here.
 window.AiLynxCommunityConfig = Object.freeze({
   enabled: false,
+  // Flip only after an approved Auth client and profile backend are live.
+  authGateReadyButDisabled: true,
+  authGateEnabled: false,
+  authGateDelayMs: 1500,
+  profilePersistenceAvailable: false,
   supabaseUrl: "https://jggazwqwalincsjegieo.supabase.co",
   publishableKey: "",
   providers: Object.freeze({google: "SETUP_REQUIRED", kakao: "SETUP_REQUIRED", toss: "COMING_SOON", chatgpt: "COMING_SOON"}),

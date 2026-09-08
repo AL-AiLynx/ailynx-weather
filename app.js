@@ -57,6 +57,7 @@ let visitStatsData = null;
 let visitStatsRequestPromise = null;
 let localClockIntervalId = null;
 const dashboardConfig = window.LynxDashboardConfig;
+const liveFetchAllowed = () => window.AiLynxAuthGate?.canFetchLive?.() ?? true;
 
 const STATUS_CLASSES = [
   "status-fresh",
@@ -523,7 +524,7 @@ function renderValidationQuality(id, observation) {
 function renderMaatValidationCard(observation) {
   renderValidationQuality("maatQuality", observation);
   if (!observation?.available) {
-    setValidationText("maatStatus", "선택한 타임프레임의 MAAT LIVE 관측을 기다리고 있습니다.");
+    setValidationText("maatStatus", "Waiting for a MAAT LIVE observation in the selected timeframe.");
     for (const id of ["maatState", "maatScore", "maatRisk", "maatNoise", "maatSensors", "maatWindow", "maatUpdated"]) {
       setValidationText(id, "—");
     }
@@ -553,7 +554,7 @@ function renderMaat2ValidationCard(maat2) {
   const primary = time?.available ? time : hub;
   renderValidationQuality("maat2Quality", primary);
   if (!primary?.available) {
-    setValidationText("maat2Status", "선택한 타임프레임의 MAAT2 Hub/Time LIVE 관측을 기다리고 있습니다.");
+    setValidationText("maat2Status", "Waiting for a MAAT2 Hub/Time LIVE observation in the selected timeframe.");
     for (const id of ["maat2Role", "maat2TimeScore", "maat2Timeframes", "maat2Noise", "maat2HubScores", "maat2Why", "maat2Sync"]) {
       setValidationText(id, "—");
     }
@@ -602,14 +603,14 @@ function renderMarketPrice() {
 
   if (!marketPriceData?.available) {
     price.textContent = "—";
-    meta.textContent = "1분 갱신 · 데이터 대기";
+    meta.textContent = "1 MIN UPDATE · WAITING FOR DATA";
     return;
   }
 
   price.textContent = formatPrice(marketPriceData.price);
   meta.textContent = marketPriceData.stale
     ? "COINBASE BTC-USD · STALE"
-    : "COINBASE BTC-USD · 1분 갱신";
+    : "COINBASE BTC-USD · 1 MIN UPDATE";
 }
 
 
@@ -982,8 +983,8 @@ function getFreshnessStatus() {
     return {
       status: "offline",
       text: elapsedMinutes === null
-        ? "● OFFLINE CACHE · 마지막 관측 시각 확인 불가"
-        : `● OFFLINE CACHE · 마지막 관측 ${formatElapsedTime(elapsedMinutes)}`
+        ? "● OFFLINE CACHE · LAST OBSERVATION TIME UNAVAILABLE"
+        : `● OFFLINE CACHE · LAST OBSERVATION ${formatElapsedTime(elapsedMinutes)}`
     };
   }
 
@@ -1347,13 +1348,13 @@ function renderLastUpdated() {
 
   if (!updatedAt) {
     footerFirstLine.textContent =
-      "마지막 관측: 시각 확인 불가";
+      "LAST OBSERVATION: TIME UNAVAILABLE";
 
     return;
   }
 
   footerFirstLine.textContent =
-    `마지막 관측: ${updatedAt} KST · ${formatElapsedTime(
+    `LAST OBSERVATION: ${updatedAt} KST · ${formatElapsedTime(
       getElapsedMinutes(weatherData.updatedAt)
     )}`;
 }
@@ -1472,6 +1473,11 @@ async function initializeApp() {
   initializeInquiryStatus();
   initializeAssetSelector();
   startLocalClock();
+  if (!liveFetchAllowed()) {
+    renderApp();
+    void refreshVisitStats();
+    return;
+  }
   await loadWeatherData();
   await applyConfiguredOverlay();
   renderApp();
@@ -1521,6 +1527,23 @@ function initializeAssetSelector() {
   });
 }
 
+window.addEventListener("ailynx-member-preferences", async (event) => {
+  const next = event.detail?.mainAsset;
+  const plan = currentPlan();
+  if (!plan?.assets?.includes(next)) return;
+  selectedAssetId = next;
+  selectedAssetObservation = null;
+  const selector = document.getElementById("assetSelector");
+  if (selector) selector.value = next;
+  if (next !== "BTCUSD") {
+    try {
+      const client = await import("./as1-asset-client.js?v=1");
+      selectedAssetObservation = await client.fetchAssetObservations({asset: next});
+    } catch { selectedAssetObservation = null; }
+  }
+  renderLynxDashboard();
+});
+
 
 /*
   온라인·오프라인 변화 감지
@@ -1528,6 +1551,7 @@ function initializeAssetSelector() {
 window.addEventListener(
   "online",
   async () => {
+    if (!liveFetchAllowed()) return;
     if (APP_DATA_MODE === "AS1_LIVE") {
       await applyAs1LiveOverlay();
     } else {
@@ -1554,6 +1578,7 @@ window.addEventListener(
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
     renderLocalClock();
+    if (!liveFetchAllowed()) return;
     void refreshMarketPrice();
     void refreshMarketDominance();
   }

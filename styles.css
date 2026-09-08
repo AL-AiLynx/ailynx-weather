@@ -1007,6 +1007,31 @@ footer p { margin: 0; }
 .profile-referral { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding-top: 12px; border-top: 1px solid rgba(100,214,255,.12); }
 .profile-referral button { padding: 6px 8px; }
 .social-link-placeholder { color: var(--text-muted); font-size: 11px; }
+.account-settings { display: grid; gap: 7px; margin-top: 16px; padding: 13px 0; border-top: 1px solid rgba(100,214,255,.12); border-bottom: 1px solid rgba(100,214,255,.12); }
+.account-settings > strong { color: var(--cyan); font-size: 12px; letter-spacing: .08em; }
+.account-settings p { margin: 0; color: var(--text-muted); font-size: 12px; }
+.account-settings div { display: flex; justify-content: space-between; color: var(--text-muted); font-size: 12px; }
+.account-settings b { color: var(--text-main); }
+.auth-gate-dialog { width: min(430px, calc(100vw - 28px)); border: 1px solid rgba(100,214,255,.34); border-radius: 22px; color: var(--text-main); background: linear-gradient(155deg, #102d41, #091824); box-shadow: 0 26px 90px rgba(0,0,0,.65); }
+.auth-gate-dialog::backdrop { background: rgba(1, 9, 16, .52); backdrop-filter: blur(3px); }
+.auth-gate-dialog h2 { margin: 5px 0 10px; font-size: clamp(24px, 6vw, 32px); line-height: 1.12; }
+.auth-gate-dialog > p:not(.eyebrow):not(.auth-gate-footnote) { color: var(--text-muted); line-height: 1.6; }
+.auth-gate-dialog .provider-list { margin-top: 20px; }
+.auth-gate-dialog .provider-list button { border-color: rgba(100,214,255,.3); color: var(--text-main); background: rgba(100,214,255,.1); text-align: center; font-weight: 800; }
+.auth-gate-footnote { margin: 16px 0 0; color: var(--text-muted); font-size: 12px; text-align: center; }
+.onboarding-choice { display: grid; gap: 8px; margin-top: 18px; }
+.onboarding-choice > strong { color: var(--text-muted); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.onboarding-choice > div { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.onboarding-choice button, .onboarding-save { min-height: 42px; border-color: rgba(100,214,255,.22); color: var(--text-muted); background: rgba(7,24,36,.42); }
+.onboarding-choice button.is-active, .onboarding-save { border-color: rgba(100,214,255,.5); color: var(--text-main); background: rgba(100,214,255,.14); }
+.onboarding-save { width: 100%; margin-top: 22px; font-weight: 900; }
+body.auth-gate-active .app { filter: blur(5px); pointer-events: none; user-select: none; }
+
+.market-advisory-section .section-title { align-items: flex-end; }
+.market-advisory-empty { display: flex; align-items: center; gap: 14px; min-height: 82px; padding: 14px; border: 1px dashed rgba(100,214,255,.24); border-radius: 16px; background: rgba(7, 24, 36, .35); }
+.market-advisory-icon { display: grid; flex: 0 0 auto; place-items: center; width: 42px; height: 42px; border: 1px solid rgba(100,214,255,.25); border-radius: 50%; color: var(--cyan); font-size: 23px; }
+.market-advisory-empty strong { color: var(--text-main); }
+.market-advisory-empty p { margin: 4px 0 0; color: var(--text-muted); font-size: 12px; line-height: 1.45; }
 
 /* HERO v3: left = selected market, right = weather observation. */
 .plan-status-chip { display: inline-flex; align-items: center; min-height: 24px; padding: 0 8px; border: 1px solid rgba(100,214,255,.32); border-radius: 999px; color: var(--cyan); background: rgba(100,214,255,.09); font-size: 10px; font-weight: 900; letter-spacing: .1em; }

@@ -6,17 +6,29 @@ const root = new URL("../", import.meta.url);
 const read = (name) => readFile(new URL(name, root), "utf8");
 
 test("member/community MVP is disabled without public Auth configuration", async () => {
-  const [config, client, i18n] = await Promise.all([read("community-config.js"), read("community-client.js"), read("i18n.js")]);
+  const [config, client, i18n, gate, dashboard] = await Promise.all([read("community-config.js"), read("community-client.js"), read("i18n.js"), read("auth-gate.js"), read("lynx-dashboard-config.js")]);
   assert.match(config, /enabled: false/);
   assert.match(config, /publishableKey: ""/);
   assert.match(config, /google: "SETUP_REQUIRED"/);
   assert.match(config, /chatgpt: "COMING_SOON"/);
+  assert.match(config, /authGateReadyButDisabled: true/);
+  assert.match(config, /authGateEnabled: false/);
+  assert.match(config, /profilePersistenceAvailable: false/);
   assert.doesNotMatch(config, /service_role/i);
   assert.match(client, /canUseCommunity/);
   assert.match(client, /beginOAuth/);
   assert.match(i18n, /localStorage/);
   assert.match(i18n, /ko:/);
   assert.match(i18n, /en:/);
+  assert.match(i18n, /const preferred = \(\) => "en"/);
+  assert.match(gate, /BOOTING/);
+  assert.match(gate, /UNAUTHENTICATED/);
+  assert.match(gate, /AUTHENTICATING/);
+  assert.match(gate, /ONBOARDING/);
+  assert.match(gate, /AUTHENTICATED/);
+  assert.match(gate, /canFetchLive/);
+  assert.match(gate, /ailynx-member-preferences/);
+  assert.match(dashboard, /assets: \["BTCUSD", "US100"\]/);
 });
 
 test("community migration enforces RLS, text-only content, and referral/Xp invariants", async () => {
@@ -31,7 +43,7 @@ test("community migration enforces RLS, text-only content, and referral/Xp invar
 });
 
 test("community UI has separate posts/chat, provider states, and no upload control", async () => {
-  const [html, ui] = await Promise.all([read("index.html"), read("member-community.js")]);
+  const [html, ui, advisory] = await Promise.all([read("index.html"), read("member-community.js"), read("market-advisory-config.js")]);
   assert.match(html, /data-community-tab="posts"/);
   assert.match(html, /data-community-tab="chat"/);
   assert.match(html, /data-provider="google"/);
@@ -41,4 +53,10 @@ test("community UI has separate posts/chat, provider states, and no upload contr
   assert.doesNotMatch(html, /type="file"|<input[^>]+file/i);
   assert.match(ui, /emojiManifest/);
   assert.match(ui, /navigator\.clipboard/);
+  assert.match(html, /authGateDialog/);
+  assert.match(html, /onboardingDialog/);
+  assert.match(html, /JOIN FREE/);
+  assert.match(html, /MARKET ADVISORY/);
+  assert.match(advisory, /active: null/);
+  assert.match(advisory, /evidencePlan: "PRO"/);
 });

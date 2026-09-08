@@ -16,6 +16,7 @@ function renderMemberState() {
   setText("memberProfileLabel", enabled ? i18n.t("login") : `${i18n.t("login")} · ${i18n.t("setupRequired")}`);
   document.querySelectorAll("[data-community-auth]").forEach((element) => { element.disabled = true; element.title = i18n.t("setupRequired"); });
   setText("communityAvailability", enabled ? i18n.t("signInRequired") : i18n.t("setupRequired"));
+  setText("planStatusChip", enabled ? "FREE" : "JOIN FREE");
 }
 
 function initializeLanguage() {
@@ -30,6 +31,27 @@ function initializeAuthShell() {
       try { await communityClient.beginOAuth(button.dataset.provider); }
       catch { setText("authSetupNote", `${providerLabel(button.dataset.provider)} · ${i18n.t("setupRequired")}`); }
     });
+  });
+  document.querySelectorAll("[data-gate-provider]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      window.AiLynxAuthGate?.startAuthentication();
+      try { await communityClient.beginOAuth(button.dataset.gateProvider); }
+      catch {
+        window.AiLynxAuthGate?.logout();
+        setText("authSetupNote", `${providerLabel(button.dataset.gateProvider)} · ${i18n.t("setupRequired")}`);
+      }
+    });
+  });
+  document.querySelectorAll("[data-onboarding-language]").forEach((button) => button.addEventListener("click", () => {
+    i18n.setLanguage(button.dataset.onboardingLanguage);
+    document.querySelectorAll("[data-onboarding-language]").forEach((item) => item.classList.toggle("is-active", item === button));
+  }));
+  document.querySelectorAll("[data-onboarding-asset]").forEach((button) => button.addEventListener("click", () => {
+    document.querySelectorAll("[data-onboarding-asset]").forEach((item) => item.classList.toggle("is-active", item === button));
+  }));
+  document.querySelector("[data-onboarding-save]")?.addEventListener("click", () => {
+    const mainAsset = document.querySelector("[data-onboarding-asset].is-active")?.dataset.onboardingAsset || "BTCUSD";
+    window.AiLynxAuthGate?.completeOnboarding({language: i18n.language, mainAsset});
   });
   document.querySelectorAll("[data-dialog-close]").forEach((button) => button.addEventListener("click", () => closeDialog(button.closest("dialog")?.id)));
 }
