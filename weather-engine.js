@@ -83,15 +83,23 @@ window.AiLynxWeatherEngine = {
     return Number.isFinite(score) && score >= 0 && score <= 100 ? {score: Math.round(score), coverage: "FULL", confidence: "HIGH", timeframe} : null;
   },
   computeDurability(history) {
-    // The public LIVE contract currently provides no prior same-timeframe snapshot.
-    // Return null until enough ordered observations are supplied; never infer it.
-    if (!Array.isArray(history) || history.length < 2) return null;
-    return null;
+    // History is oldest-to-newest and must contain same-timeframe valid snapshots.
+    const snapshots = normalizeHistory(history);
+    if (!snapshots) return null;
+    const current = snapshots.at(-1);
+    const stateStreak = snapshots.slice().reverse().findIndex((item) => item.state !== current.state);
+    const streak = (stateStreak === -1 ? snapshots.length : stateStreak) / snapshots.length * 100;
+    const averageChange = snapshots.slice(1).reduce((total, item, index) => total + Math.abs(item.score - snapshots[index].score), 0) / (snapshots.length - 1);
+    const scoreStability = Math.max(0, 100 - averageChange * 2);
+    const qualityContinuity = snapshots.filter((item) => item.valid).length / snapshots.length * 100;
+    const noiseContinuity = 100 - snapshots.reduce((total, item) => total + item.noise, 0) / snapshots.length;
+    return Math.round(streak * .30 + scoreStability * .30 + qualityContinuity * .25 + noiseContinuity * .15);
   },
   computeChangeRate(history) {
-    // Change rate has the same history requirement as durability.
-    if (!Array.isArray(history) || history.length < 2) return null;
-    return null;
+    const snapshots = normalizeHistory(history);
+    if (!snapshots) return null;
+    // Current score minus the immediately prior valid score, never another timeframe.
+    return Math.round(snapshots.at(-1).score - snapshots.at(-2).score);
   },
   classifyWeather(score) {
     if (!Number.isFinite(score)) return null;
@@ -101,3 +109,17 @@ window.AiLynxWeatherEngine = {
     return {state: "SUNNY", label: "SUNNY", icon: "SUNNY"};
   }
 };
+
+function normalizeHistory(history) {
+  if (!Array.isArray(history) || history.length < 2) return null;
+  const timeframe = history[0]?.timeframe;
+  if (typeof timeframe !== "string" || !timeframe) return null;
+  const snapshots = history.map((item) => ({
+    timeframe: item?.timeframe,
+    score: item?.score,
+    state: item?.state,
+    valid: item?.valid,
+    noise: item?.noise,
+  }));
+  return snapshots.every((item) => item.timeframe === timeframe && Number.isFinite(item.score) && item.score >= 0 && item.score <= 100 && typeof item.state === "string" && typeof item.valid === "boolean" && Number.isFinite(item.noise) && item.noise >= 0 && item.noise <= 100) ? snapshots : null;
+}

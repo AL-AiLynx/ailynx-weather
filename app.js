@@ -881,8 +881,8 @@ function renderLynxDashboard() {
   dashboardText("heroWeatherIcon", presentation.icon);
   dashboardText("heroWeatherName", presentation.label);
   dashboardText("heroWeatherNote", presentation.note);
-  dashboardText("heroPersistence", result && durability === null ? "WAITING" : "CALCULATING");
-  dashboardText("heroChange", result && changeRate === null ? "WAITING" : "CALCULATING");
+  dashboardText("heroPersistence", Number.isFinite(durability) ? `${durability}%` : result ? "WAITING" : "CALCULATING");
+  dashboardText("heroChange", Number.isFinite(changeRate) ? `${changeRate >= 0 ? "+" : ""}${changeRate}` : result ? "WAITING" : "CALCULATING");
   dashboardText("heroTimeframe", hero.timeframe);
   dashboardText("heroObservationState", hero.state);
   renderMarketPrice();

@@ -18,3 +18,5 @@ Weather bands: 0–25 RAIN, 26–51 CLOUDY, 52–75 PARTLY CLOUDY, and 76–100 
 ## Current history boundary
 
 The public LIVE reader does not yet expose prior same-timeframe weather snapshots. `computeDurability` and `computeChangeRate` therefore return `null`, and the UI displays `WAITING`. They must not be derived from a single observation.
+
+When an ordered (oldest-to-newest) sequence of at least two valid snapshots for one timeframe becomes available, durability is `30% state-streak + 30% score stability + 25% quality continuity + 15% noise continuity`. Score stability is `100 - 2 × mean adjacent score change`; noise continuity is `100 - mean noise`. Change rate is simply `current score - immediately prior valid score`. Mixed-timeframe, malformed, or insufficient history returns `null`.

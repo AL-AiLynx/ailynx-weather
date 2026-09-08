@@ -43,4 +43,7 @@ test("dashboard provides a config-driven Lynx timeframe board without invented m
   assert.match(notices, /Lynx Weather Beta/);
   assert.match(app, /fetchHorusSnapshot/);
   assert.match(worker, /as1-horus-client\.js\?v=16/);
+  assert.match(app, /activePlan !== "PRO"/);
+  assert.match(app, /MAAT2 precision validation/);
+  for (const weatherClass of ["weather--sunny", "weather--partly-cloudy", "weather--cloudy", "weather--rain", "weather--neutral"]) assert.match(css, new RegExp(weatherClass));
 });
