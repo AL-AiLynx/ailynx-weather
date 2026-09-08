@@ -83,24 +83,26 @@ window.AiLynxWeatherEngine = {
     return Number.isFinite(score) && score >= 0 && score <= 100 ? {score: Math.round(score), coverage: "FULL", confidence: "HIGH", timeframe} : null;
   },
   computeDurability(history) {
-    // History is oldest-to-newest and must contain same-timeframe valid snapshots.
     const snapshots = normalizeHistory(history);
     if (!snapshots) return null;
-    const current = snapshots.at(-1);
-    const stateStreak = snapshots.slice().reverse().findIndex((item) => item.state !== current.state);
-    const streak = (stateStreak === -1 ? snapshots.length : stateStreak) / snapshots.length * 100;
-    const averageChange = snapshots.slice(1).reduce((total, item, index) => total + Math.abs(item.score - snapshots[index].score), 0) / (snapshots.length - 1);
-    const scoreStability = Math.max(0, 100 - averageChange * 2);
-    const qualityContinuity = snapshots.filter((item) => item.valid).length / snapshots.length * 100;
-    const noiseContinuity = 100 - snapshots.reduce((total, item) => total + item.noise, 0) / snapshots.length;
-    return Math.round(streak * .30 + scoreStability * .30 + qualityContinuity * .25 + noiseContinuity * .15);
+    const scoreStability = 100 - averagePairValue(snapshots, (previous, current) => Math.min(100, Math.abs(current.score - previous.score) * 2));
+    const weatherStateStability = 100 - averagePairValue(snapshots, (previous, current) => stateDistance(previous.state, current.state));
+    const majorTimeframeStability = 100 - averagePairValue(snapshots, (previous, current) => timeframeDistance(previous.majorTimeframe, current.majorTimeframe));
+    const quality = snapshots.reduce((total, snapshot) => total + qualityScore(snapshot), 0) / snapshots.length;
+    return clamp(scoreStability * .40 + weatherStateStability * .25 + majorTimeframeStability * .20 + quality * .15);
   },
   computeChangeRate(history) {
     const snapshots = normalizeHistory(history);
     if (!snapshots) return null;
-    // Current score minus the immediately prior valid score, never another timeframe.
-    return Math.round(snapshots.at(-1).score - snapshots.at(-2).score);
+    const previous = snapshots.at(-2), current = snapshots.at(-1);
+    const scoreDelta = Math.min(100, Math.abs(current.score - previous.score) * 4);
+    const weatherTransition = stateDistance(previous.state, current.state);
+    const majorTimeframeTransition = timeframeDistance(previous.majorTimeframe, current.majorTimeframe);
+    const qualityRecencyAdjustment = Math.min(100, (100 - qualityScore(current)) * .7 + freshnessPenalty(current.freshness));
+    return clamp(scoreDelta * .50 + weatherTransition * .25 + majorTimeframeTransition * .15 + qualityRecencyAdjustment * .10);
   },
+  describePersistence(score) { return Number.isFinite(score) ? score >= 80 ? "VERY STRONG" : score >= 65 ? "STRONG" : score >= 45 ? "MODERATE" : score >= 25 ? "WEAK" : "VERY WEAK" : null; },
+  describeChangeRate(score) { return Number.isFinite(score) ? score < 20 ? "VERY CALM" : score < 40 ? "CALM" : score < 60 ? "MODERATE" : score < 80 ? "FAST" : "VERY FAST" : null; },
   classifyWeather(score) {
     if (!Number.isFinite(score)) return null;
     if (score <= 25) return {state: "RAIN", label: "RAIN", icon: "RAIN"};
@@ -120,6 +122,19 @@ function normalizeHistory(history) {
     state: item?.state,
     valid: item?.valid,
     noise: item?.noise,
+    majorTimeframe: item?.majorTimeframe ?? item?.timeframe,
+    quality: item?.quality ?? "GOOD",
+    freshness: item?.freshness ?? "FRESH",
+    assetId: item?.assetId,
   }));
-  return snapshots.every((item) => item.timeframe === timeframe && Number.isFinite(item.score) && item.score >= 0 && item.score <= 100 && typeof item.state === "string" && typeof item.valid === "boolean" && Number.isFinite(item.noise) && item.noise >= 0 && item.noise <= 100) ? snapshots : null;
+  const assetId = snapshots[0]?.assetId;
+  return snapshots.every((item) => item.timeframe === timeframe && item.assetId === assetId && Number.isFinite(item.score) && item.score >= 0 && item.score <= 100 && typeof item.state === "string" && typeof item.valid === "boolean" && item.valid === true && Number.isFinite(item.noise) && item.noise >= 0 && item.noise <= 100 && typeof item.majorTimeframe === "string" && ["GOOD", "WATCH", "LIMITED", "CONFLICT"].includes(item.quality) && ["FRESH", "AGING"].includes(item.freshness)) ? snapshots : null;
 }
+
+function clamp(value) { return Math.round(Math.max(0, Math.min(100, value))); }
+function averagePairValue(snapshots, metric) { return snapshots.slice(1).reduce((total, current, index) => total + metric(snapshots[index], current), 0) / (snapshots.length - 1); }
+function stateDistance(previous, current) { const order = ["RAIN", "CLOUDY", "PARTLY_CLOUDY", "SUNNY"]; const from = order.indexOf(previous), to = order.indexOf(current); return from < 0 || to < 0 ? 100 : Math.abs(from - to) / (order.length - 1) * 100; }
+function timeframeMinutes(value) { const hours = /^(\d+)H$/.exec(value); return hours ? Number(hours[1]) * 60 : value === "1D" ? 1440 : value === "1W" ? 10080 : NaN; }
+function timeframeDistance(previous, current) { const from = timeframeMinutes(previous), to = timeframeMinutes(current); return Number.isFinite(from) && Number.isFinite(to) && from > 0 && to > 0 ? Math.min(100, Math.abs(Math.log2(to / from)) * 35) : 100; }
+function qualityScore(snapshot) { return snapshot.valid ? ({GOOD: 100, WATCH: 75, LIMITED: 55, CONFLICT: 20}[snapshot.quality] ?? 0) : 0; }
+function freshnessPenalty(freshness) { return freshness === "AGING" ? 25 : freshness === "FRESH" ? 0 : 100; }

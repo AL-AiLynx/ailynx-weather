@@ -1,0 +1,47 @@
+{
+  "schema_version": "as1.bundle.v0.1",
+  "satellite_id": "AS1",
+  "platform": "TRADINGVIEW",
+  "layout_id": "HORUS_B",
+  "sensor": "GENUT_B",
+  "packet_type": "MTF_BAR_CLOSE_BATCH",
+  "instrument": {"asset_class": "CRYPTO", "symbol": "BTC", "quote": "USD", "venue": "COINBASE", "market_type": "SPOT", "ticker_id": "COINBASE:BTCUSD"},
+  "session_hint": {"session_type": "24_7", "timezone": "UTC"},
+  "quality": {"sensor_quality": 100, "valid": true, "flags": []},
+  "emitted_at": 1785148801000,
+  "batch_event_key": "AS1|HORUS_B|GENUT_B|COINBASE:BTCUSD|MTF_BAR_CLOSE_BATCH|1785148800000",
+  "frames": [
+    {
+      "tf": "4H", "tf_minutes": 240,
+      "bar_open_at": 1785134400000, "bar_close_at": 1785148800000, "observed_at": 1785148801000,
+      "frame_event_key": "AS1|HORUS_B|GENUT_B|COINBASE:BTCUSD|4H|1785148800000",
+      "state": {"direction": "UP", "state": "HOLD", "risk": "SAFE", "mode": 1, "tf_role": 4, "gate_state": "OPEN"},
+      "values": {"total_score": 78.5, "structure_score": 72, "structure_pressure_score": 69.5, "gate_score": 81, "pressure_index": 63, "sensor_mask": 127},
+      "quality": {"sensor_quality": 100, "valid": true, "flags": []}
+    },
+    {
+      "tf": "8H", "tf_minutes": 480,
+      "bar_open_at": 1785120000000, "bar_close_at": 1785148800000, "observed_at": 1785148801000,
+      "frame_event_key": "AS1|HORUS_B|GENUT_B|COINBASE:BTCUSD|8H|1785148800000",
+      "state": {"direction": "UP", "state": "SET", "risk": "MID", "mode": 1, "tf_role": 5, "gate_state": "CLEARING"},
+      "values": {"total_score": 71, "structure_score": 68, "structure_pressure_score": 62, "gate_score": 73, "pressure_index": 58, "sensor_mask": 127},
+      "quality": {"sensor_quality": 100, "valid": true, "flags": []}
+    },
+    {
+      "tf": "12H", "tf_minutes": 720,
+      "bar_open_at": 1785105600000, "bar_close_at": 1785148800000, "observed_at": 1785148801000,
+      "frame_event_key": "AS1|HORUS_B|GENUT_B|COINBASE:BTCUSD|12H|1785148800000",
+      "state": {"direction": "FLAT", "state": "SET", "risk": "MID", "mode": 2, "tf_role": 6, "gate_state": "WAIT"},
+      "values": {"total_score": 61, "structure_score": 64, "structure_pressure_score": 57, "gate_score": 59, "pressure_index": 52, "sensor_mask": 127},
+      "quality": {"sensor_quality": 100, "valid": true, "flags": []}
+    },
+    {
+      "tf": "1D", "tf_minutes": 1440,
+      "bar_open_at": 1785062400000, "bar_close_at": 1785148800000, "observed_at": 1785148801000,
+      "frame_event_key": "AS1|HORUS_B|GENUT_B|COINBASE:BTCUSD|1D|1785148800000",
+      "state": {"direction": "DOWN", "state": "IDLE", "risk": "RISK", "mode": 3, "tf_role": 7, "gate_state": "RISK"},
+      "values": {"total_score": 44, "structure_score": 48, "structure_pressure_score": 55, "gate_score": 39, "pressure_index": 67, "sensor_mask": 127},
+      "quality": {"sensor_quality": 100, "valid": true, "flags": []}
+    }
+  ]
+}

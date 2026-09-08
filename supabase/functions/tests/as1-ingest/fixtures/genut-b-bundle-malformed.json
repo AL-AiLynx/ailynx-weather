@@ -1,0 +1,23 @@
+{
+  "schema_version": "as1.bundle.v0.1",
+  "satellite_id": "AS1",
+  "platform": "TRADINGVIEW",
+  "layout_id": "HORUS_B",
+  "sensor": "GENUT_B",
+  "packet_type": "MTF_BAR_CLOSE_BATCH",
+  "instrument": {"asset_class": "CRYPTO", "symbol": "BTC", "quote": "USD", "venue": "COINBASE", "market_type": "SPOT", "ticker_id": "COINBASE:BTCUSD"},
+  "session_hint": {"session_type": "24_7", "timezone": "UTC"},
+  "quality": {"sensor_quality": 100, "valid": true, "flags": []},
+  "emitted_at": 1785148801000,
+  "batch_event_key": "AS1|HORUS_B|GENUT_B|COINBASE:BTCUSD|MTF_BAR_CLOSE_BATCH|1785148800000",
+  "frames": [
+    {
+      "tf": "4H", "tf_minutes": 240,
+      "bar_open_at": 1785134400000, "bar_close_at": 1785148800000, "observed_at": 1785148801000,
+      "frame_event_key": "AS1|HORUS_B|GENUT_B|COINBASE:BTCUSD|4H|1785148800000",
+      "state": [],
+      "values": {"total_score": 78.5, "structure_score": 72, "structure_pressure_score": 69.5, "gate_score": 81, "pressure_index": 63, "sensor_mask": 127},
+      "quality": {"sensor_quality": 100, "valid": true, "flags": []}
+    }
+  ]
+}

@@ -50,6 +50,9 @@ let marketPriceRequestPromise = null;
 let marketPriceIntervalId = null;
 let selectedAssetId = "BTCUSD";
 let selectedAssetObservation = null;
+let assetReadPath = null;
+let assetReadPathPromise = null;
+const weatherObservationHistory = new Map();
 let marketDominanceData = null;
 let marketDominanceRequestPromise = null;
 let marketDominanceIntervalId = null;
@@ -600,8 +603,8 @@ function renderMarketPrice() {
   }
 
   if (selectedAssetId !== "BTCUSD") {
-    const observed = selectedAssetObservation?.latestReceipt;
-    price.textContent = Number.isFinite(observed?.bar_close) ? formatPrice(observed.bar_close) : "—";
+    const observed = currentAssetObservation()?.latestReceipt;
+    price.textContent = Number.isFinite(observed?.barClose) ? formatPrice(observed.barClose) : "—";
     meta.textContent = observed ? tr("observedFreshness", {freshness: displayState(observed.freshness)}) : `${tr("currentPrice")} · ${tr("waiting")}`;
     return;
   }
@@ -655,7 +658,7 @@ async function refreshMarketPrice() {
 
 function formatLocalClock(date = new Date()) {
   const twoDigits = (value) => String(value).padStart(2, "0");
-  const time = `${twoDigits(date.getHours())}:${twoDigits(date.getMinutes())}:${twoDigits(date.getSeconds())}`;
+  const time = `${twoDigits(date.getHours())}:${twoDigits(date.getMinutes())}`;
 
   return window.matchMedia("(max-width: 760px)").matches
     ? `${time} KST`
@@ -677,7 +680,7 @@ function startLocalClock() {
   }
 
   renderLocalClock();
-  localClockIntervalId = window.setInterval(renderLocalClock, 1000);
+  localClockIntervalId = window.setInterval(renderLocalClock, 60000);
   window.addEventListener("resize", () => {
     renderLocalClock();
     renderStatusBadge();
@@ -809,6 +812,36 @@ function currentPlan() {
   return dashboardConfig?.plans?.[dashboardConfig.activePlan] ?? null;
 }
 
+function assetEntitled(assetId) {
+  return Boolean(currentPlan()?.assets?.includes(assetId));
+}
+
+function currentAssetObservation() {
+  return assetEntitled(selectedAssetId) ? selectedAssetObservation : null;
+}
+
+async function selectAsset(assetId) {
+  if (!assetReadPath) {
+    assetReadPathPromise ??= import("./asset-read-path.js?v=1").then((readPath) => {
+      assetReadPath = readPath.createAssetReadPath({
+        canReadAsset: assetEntitled,
+        fetchObservation: async ({asset, signal}) => {
+          const client = await import("./as1-asset-client.js?v=2");
+          return client.fetchAssetObservations({asset, signal});
+        },
+        onChange: (selection) => {
+          selectedAssetId = selection.assetId;
+          selectedAssetObservation = selection.observation;
+          if (document.readyState !== "loading") renderLynxDashboard();
+        },
+      });
+      return assetReadPath;
+    });
+    await assetReadPathPromise;
+  }
+  return assetReadPath.select(assetId);
+}
+
 function weatherPresentation(score) {
   if (!Number.isFinite(score)) return {icon: "◌", label: tr("calculating"), note: tr("publicContractWaiting")};
   const band = dashboardConfig?.weatherBands?.find((item) => score >= item.min && score <= item.max);
@@ -817,8 +850,9 @@ function weatherPresentation(score) {
 
 function observedHeroState() {
   if (selectedAssetId !== "BTCUSD") {
-    const latest = selectedAssetObservation?.latestReceipt;
-    return {timeframe: latest?.timeframe || "WAITING", state: selectedAssetObservation?.status || "PLANNED"};
+    const selected = currentAssetObservation();
+    const latest = selected?.latestReceipt;
+    return {timeframe: latest?.timeframe || "WAITING", state: selected?.status || (assetEntitled(selectedAssetId) ? "WAITING" : "LOCKED")};
   }
   const maat = validationCardsData?.maat;
   const time = validationCardsData?.maat2?.time;
@@ -840,11 +874,19 @@ function planAllows(timeframe, kind) {
 function makeFrameCell(timeframe, kind) {
   const allowed = planAllows(timeframe, kind);
   const canonical = timeframe === "24H" ? "1D" : timeframe;
-  const observation = selectedAssetId === "BTCUSD" ? horusSnapshot?.timeframes?.[canonical] : selectedAssetObservation?.timeframes?.[canonical];
-  const status = !horusSnapshot ? "WAITING"
-    : !observation?.available ? observation?.reason === "INVALID_OBSERVATION" ? "INVALID" : "NO DATA"
-    : !observation.quality.valid || observation.quality.sensorQuality === "INVALID" ? "INVALID"
-    : observation.freshness;
+  const selected = currentAssetObservation();
+  const observation = selectedAssetId === "BTCUSD" ? horusSnapshot?.timeframes?.[canonical] : selected?.timeframes?.[canonical];
+  const status = selectedAssetId !== "BTCUSD"
+    ? !assetEntitled(selectedAssetId) ? "LOCKED"
+      : !selected ? "WAITING"
+      : selected.status === "PLANNED" ? "PLANNED"
+      : selected.status === "INVALID" ? "INVALID"
+      : !observation ? "NO DATA"
+      : observation.sensorQuality === "INVALID" ? "INVALID" : observation.freshness
+    : !horusSnapshot ? "WAITING"
+      : !observation?.available ? observation?.reason === "INVALID_OBSERVATION" ? "INVALID" : "NO DATA"
+      : !observation.quality.valid || observation.quality.sensorQuality === "INVALID" ? "INVALID"
+      : observation.freshness;
   const cell = document.createElement("article");
   cell.className = `frame-cell ${allowed ? `is-${status.toLowerCase().replace(" ", "-")}` : "is-locked"}`;
   const label = document.createElement("strong");
@@ -856,8 +898,9 @@ function makeFrameCell(timeframe, kind) {
   persistence.textContent = allowed ? displayState(status) : `${tr("locked")} · ${displayState(status)}`;
   const change = document.createElement("small");
   change.className = "frame-change";
-  change.textContent = observation?.available ? `${observation.quality.sensorQuality} · ${observation.quality.valid ? "LIVE" : "INVALID"}`
-    : allowed ? tr("waiting") : dashboardConfig?.activePlan === "FREE" ? tr("upgrade") : tr("noData");
+  change.textContent = selectedAssetId !== "BTCUSD" && observation ? `${observation.sensorQuality} · LIVE`
+    : observation?.available ? `${observation.quality.sensorQuality} · ${observation.quality.valid ? "LIVE" : "INVALID"}`
+      : allowed ? tr("waiting") : dashboardConfig?.activePlan === "FREE" ? tr("upgrade") : tr("noData");
   cell.append(label, icon, persistence, change);
   return cell;
 }
@@ -875,9 +918,12 @@ function renderAssetAccess() {
     const name = document.createElement("strong");
     name.textContent = asset.label;
     const state = document.createElement("span");
-    const liveState = asset.id === "BTCUSD" ? "LIVE" : selectedAssetId === asset.id ? selectedAssetObservation?.status || "PLANNED" : "PLANNED";
-    state.textContent = allowed ? displayState(liveState) : `${tr("locked")} · ${asset.requiredPlan}`;
-    item.append(name, state);
+    const selected = selectedAssetId === asset.id ? currentAssetObservation() : null;
+    const availability = asset.id === "BTCUSD" ? "LIVE" : selected?.status || "PLANNED";
+    state.textContent = allowed ? `${tr("available")} / ${displayState(availability)}` : `${tr("locked")} / ${asset.requiredPlan}`;
+    const identity = document.createElement("small");
+    identity.textContent = asset.tickerId;
+    item.append(name, state, identity);
     container.appendChild(item);
   }
 }
@@ -892,8 +938,11 @@ function hideLegacyWeatherPanels() {
 function renderLynxDashboard() {
   if (!dashboardConfig) return;
   const result = currentWeatherEngineResult();
-  const durability = window.AiLynxWeatherEngine?.computeDurability?.([]);
-  const changeRate = window.AiLynxWeatherEngine?.computeChangeRate?.([]);
+  const observationHistory = recordWeatherObservation(result);
+  const durability = window.AiLynxWeatherEngine?.computeDurability?.(observationHistory);
+  const changeRate = window.AiLynxWeatherEngine?.computeChangeRate?.(observationHistory);
+  const durabilityText = weatherMetricText(durability, "persistence");
+  const changeText = weatherMetricText(changeRate, "changeRate");
   const classified = window.AiLynxWeatherEngine?.classifyWeather?.(result?.score);
   const presentation = classified ? {icon: getWeatherIcon(classified.icon), label: displayState(classified.state), note: tr("fullObservation", {timeframe: result.timeframe}), score: result.score} : weatherPresentation(null);
   document.body.classList.remove("weather--sunny", "weather--partly-cloudy", "weather--cloudy", "weather--rain", "weather--neutral");
@@ -902,14 +951,24 @@ function renderLynxDashboard() {
   const asset = window.AiLynxAssetRegistry?.byId?.(selectedAssetId);
   const heroLabel = document.getElementById("heroAssetLabel");
   if (heroLabel) heroLabel.textContent = `${asset?.label || selectedAssetId} · ${tr("lynxWeather")}`;
+  const identity = document.getElementById("heroAssetIdentity");
+  if (identity && asset) {
+    const observation = currentAssetObservation();
+    const entitlement = assetEntitled(asset.id) ? tr("available") : `${tr("locked")} ${asset.requiredPlan}`;
+    const availability = asset.id === "BTCUSD" ? "LIVE" : observation?.status || (assetEntitled(asset.id) ? "WAITING" : "LOCKED");
+    const receipt = observation?.latestReceipt ? (observation.latestReceipt.valid ? "VALID RECEIPT" : "INVALID RECEIPT") : "NO VALID RECEIPT";
+    identity.textContent = `${asset.tickerId} / ${entitlement} / ${displayState(availability)} / ${receipt}`;
+  }
   dashboardText("heroWeatherIcon", presentation.icon);
   dashboardText("heroWeatherName", presentation.label);
   dashboardText("heroWeatherScore", Number.isFinite(presentation.score) ? String(presentation.score) : "—");
   dashboardText("heroWeatherNote", presentation.note);
-  dashboardText("heroPersistence", Number.isFinite(durability) ? `${durability}%` : result ? tr("waiting") : tr("calculating"));
-  dashboardText("heroChange", Number.isFinite(changeRate) ? `${changeRate >= 0 ? "+" : ""}${changeRate}` : result ? tr("waiting") : tr("calculating"));
+  const metricFallback = weatherMetricFallback(result);
+  dashboardText("heroPersistence", durabilityText || metricFallback);
+  dashboardText("heroChange", changeText || metricFallback);
   dashboardText("heroTimeframe", hero.timeframe);
   dashboardText("heroObservationState", displayState(hero.state));
+  renderFrontlineTimeframe();
   renderMarketPrice();
 
   const daily = document.getElementById("dailyFrameStrip");
@@ -1516,34 +1575,88 @@ function initializeAssetSelector() {
   selector.value = selectedAssetId;
   selector.onchange = async (event) => {
     const next = event.target.value;
-    selectedAssetObservation = null;
-    selectedAssetId = next;
-    renderLynxDashboard();
-    if (next !== "BTCUSD") {
-      try {
-        const client = await import("./as1-asset-client.js?v=1");
-        selectedAssetObservation = await client.fetchAssetObservations({asset: next});
-      } catch { selectedAssetObservation = null; }
-      renderLynxDashboard();
-    }
+    await selectAsset(next);
   };
+}
+
+function recordWeatherObservation(result) {
+  if (selectedAssetId !== "BTCUSD" || !result) return null;
+  const horus = horusSnapshot?.timeframes?.[result.timeframe];
+  const freshness = horus?.freshness;
+  if (!horus?.available || horus.quality?.valid !== true || !["FRESH", "AGING"].includes(freshness)) return null;
+  const classified = window.AiLynxWeatherEngine?.classifyWeather?.(result.score);
+  if (!classified) return null;
+  const maatAggregate = validationCardsData?.maat?.payload?.aggregate;
+  const quality = Number.isFinite(maatAggregate?.conflict_count) && maatAggregate.conflict_count > 0
+    ? "CONFLICT"
+    : ["GOOD", "WATCH", "LIMITED"].includes(horus.quality.sensorQuality) ? horus.quality.sensorQuality : "WATCH";
+  const snapshot = Object.freeze({
+    assetId: selectedAssetId,
+    timeframe: result.timeframe,
+    majorTimeframe: observedHeroState().timeframe || result.timeframe,
+    score: result.score,
+    state: classified.state,
+    valid: true,
+    noise: Number.isFinite(validationCardsData?.maat?.payload?.stopwatch?.noise_score) ? validationCardsData.maat.payload.stopwatch.noise_score : 0,
+    quality,
+    freshness,
+    observedAt: horus.receivedAt,
+  });
+  const key = `${snapshot.assetId}:${snapshot.timeframe}`;
+  const historyClient = window.AiLynxWeatherHistory;
+  const history = weatherObservationHistory.get(key) || historyClient?.readWeatherHistory?.(window.localStorage, snapshot.assetId, snapshot.timeframe) || [];
+  const bounded = historyClient?.mergeWeatherHistory?.(history, snapshot) || (() => {
+    const next = [...history];
+    const index = next.findIndex((item) => item.observedAt === snapshot.observedAt);
+    if (index >= 0) next[index] = snapshot;
+    else next.push(snapshot);
+    return next.slice(-4);
+  })();
+  weatherObservationHistory.set(key, bounded);
+  historyClient?.writeWeatherHistory?.(window.localStorage, bounded);
+  return bounded;
+}
+
+function weatherMetricText(value, type) {
+  if (!Number.isFinite(value)) return null;
+  const label = type === "persistence"
+    ? value >= 80 ? "매우 강함" : value >= 65 ? "강함" : value >= 45 ? "보통" : value >= 25 ? "약함" : "매우 약함"
+    : value >= 80 ? "매우 빠름" : value >= 60 ? "빠름" : value >= 40 ? "보통" : value >= 20 ? "안정" : "매우 안정";
+  return `${value} · ${label}`;
+}
+
+function weatherMetricFallback(result) {
+  if (selectedAssetId === "BTCUSD") return result ? tr("waiting") : tr("calculating");
+  if (!assetEntitled(selectedAssetId)) return tr("locked");
+  const observation = currentAssetObservation();
+  if (observation?.status === "PLANNED") return tr("planned");
+  if (observation?.status === "STALE") return tr("stale");
+  if (observation?.status === "INVALID") return tr("invalid");
+  return observation?.available ? tr("noData") : tr("waiting");
+}
+
+function renderFrontlineTimeframe() {
+  const frontline = window.AiLynxFrontlineTimeframes;
+  const container = document.getElementById("frontlineTimeframeStrip");
+  if (!frontline || !container) return;
+  const activeTimeframe = validationTimeframe === "240" ? "4H" : validationTimeframe === "480" ? "8H" : validationTimeframe === "720" ? "12H" : "1D";
+  const items = frontline.buildFrontlineTimeframes({
+    assetId: selectedAssetId,
+    entitled: assetEntitled(selectedAssetId),
+    btcSnapshot: horusSnapshot,
+    assetObservation: currentAssetObservation(),
+    activeTimeframe,
+  });
+  frontline.renderFrontlineTimeframes(container, items, displayState);
 }
 
 window.addEventListener("ailynx-member-preferences", async (event) => {
   const next = event.detail?.mainAsset;
   const plan = currentPlan();
   if (!plan?.assets?.includes(next)) return;
-  selectedAssetId = next;
-  selectedAssetObservation = null;
   const selector = document.getElementById("assetSelector");
   if (selector) selector.value = next;
-  if (next !== "BTCUSD") {
-    try {
-      const client = await import("./as1-asset-client.js?v=1");
-      selectedAssetObservation = await client.fetchAssetObservations({asset: next});
-    } catch { selectedAssetObservation = null; }
-  }
-  renderLynxDashboard();
+  void selectAsset(next);
 });
 
 

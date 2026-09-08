@@ -105,3 +105,102 @@ These are observation-alignment results, not forecasts. Durability and change ra
 4. Confirm the intended US100 Alert timeframe.
 5. Build same-timeframe weather history before enabling durability/change-rate results.
 6. Reconcile Auth migration history without reset, force-pull, or destructive repair.
+
+## Multi-Asset Read Path v0.1 — 2026-09-08
+
+### What changed
+
+- `asset-read-path.js` is the single owner for selected non-BTC observation reads. A new selection clears the old observation immediately, aborts the prior request, and accepts a response only when its selection token and asset identity still match.
+- `as1-asset-client.js` now validates the response's top-level asset/ticker/profile and every projected receipt's asset, symbol, ticker, timeframe, timestamp, close, validity, freshness, and flags. A mismatched or malformed receipt fails closed as `IDENTITY_MISMATCH`.
+- The HERO and observed-market cards show the selected canonical ticker, entitlement, observation availability, and receipt presence. Non-BTC displays an AS1 `Observed close` only; it cannot use the Coinbase BTC price fallback.
+- Locked assets do not issue an observation request and expose no cached receipt to the DOM path. Weather Engine calculations remain BTC-only and were not changed.
+
+### BTC-only hard-coding removed from the read path
+
+The selected asset is now passed to `as1-asset-read` through the fixed registry and is checked again in its returned receipt. The remaining BTC-only paths are intentional: Coinbase spot-price polling, HORUS/MAAT/MAAT2 projections, and Weather Engine v0.1 have BTC-only production contracts.
+
+### Safety and test result
+
+- Cross-asset response, malformed nested receipt, stale response, sequential BTC/XAUUSD/DXY/US100 switching, no-data/PLANNED, and locked receipt exposure are covered by Weather tests.
+- `node --test Weather/tests/*.test.mjs`: 38 passed, 0 failed.
+- `node --check Weather/app.js` and `git diff --check`: passed.
+
+### Production receipt gate
+
+XAUUSD, DXY, and US100 remain `PLANNED`. Promote a non-BTC timeframe to `LIVE` only after `as1-asset-read` returns an asset-local receipt with the exact canonical ticker/profile and `valid=true`; no BTC data may be used as a substitute.
+
+## Phase 2 — Production receipt readiness and frontline UI (2026-09-08)
+
+### Production verification
+
+The public `as1-asset-read` endpoint was read without modifying production data or registry state. It returned the exact canonical ticker/profile pairs for all four assets:
+
+| Asset | Receipt result | Readiness state |
+| --- | --- | --- |
+| BTCUSD | valid receipts present; 4H `AGING`, 1D `STALE` in this read | asset remains LIVE; stale timeframe is displayed as stale |
+| XAUUSD | no latest receipt; no timeframes | PLANNED |
+| DXY | no latest receipt; no timeframes | PLANNED |
+| US100 | no latest receipt; no timeframes | PLANNED |
+
+The browser client treats a timeframe as `LIVE` only when its selected asset's bounded receipt has the exact identity already verified by the reader, is `valid=true`, and is not stale. Cross-asset, mismatched-profile, invalid, stale, locked, and no-data paths do not promote to LIVE.
+
+### Frontline UI
+
+- Added the `주요 우선 타임프레임` strip directly below the HERO card.
+- The strip renders asset-local 1H, 2H, 4H, 6H, 8H, 12H, and 1D nodes with a responsive horizontal overflow path.
+- The selected validation candidate is highlighted as `PRIORITY`; every node independently renders `LIVE`, `WAITING`, `PLANNED`, `STALE`, `INVALID`, `NO DATA`, or `LOCKED`.
+- No price, receipt, or BTC fallback is rendered for a locked asset. The component is state visualization only; Weather Engine calculations remain unchanged.
+
+### Validation
+
+- Existing and new Weather tests: 43 passed, 0 failed.
+- The new coverage verifies BTC status mapping, non-BTC PLANNED isolation, asset-local LIVE mapping, stale-receipt non-promotion, locked exposure, and frontline DOM/CSS integration.
+
+## Weather Persistence & Change Rate v0.1 (2026-09-08)
+
+### Definitions and inputs
+
+Weather Persistence expresses how consistently the current observation-aligned weather state is holding. Weather Change Rate expresses only the absolute pace and magnitude of change since the immediately prior observation; it is not direction, buy/sell strength, or a forecast.
+
+For the selected BTC asset, the browser records at most four same-timeframe runtime snapshots. Each snapshot uses the validated FULL Weather Score, classified weather state, active major timeframe, HORUS quality/freshness, MAAT conflict count, and HORUS receipt timestamp. A repeated timestamp replaces the current snapshot rather than manufacturing history.
+
+### v0.1 calculation
+
+- Persistence: score stability 40%, weather-state stability 25%, major-timeframe stability 20%, quality continuity 15%.
+- Change Rate: absolute score delta 50%, weather-state transition 25%, major-timeframe transition 15%, quality/freshness adjustment 10%.
+- Both metrics are rounded and bounded to 0–100. Persistence labels are `VERY STRONG`, `STRONG`, `MODERATE`, `WEAK`, and `VERY WEAK`; Change Rate labels are `VERY CALM`, `CALM`, `MODERATE`, `FAST`, and `VERY FAST`.
+
+### Fail-closed behavior
+
+No numeric metric is shown without a prior valid same-asset, same-timeframe observation. Stale, invalid, cross-asset, PLANNED, NO_DATA, and LOCKED paths return the existing waiting/status UI instead. Non-BTC never receives BTC metrics as a fallback.
+
+This is an initial state-indicator implementation. SESHAT data, once available, may be used for later calibration; it is not required for v0.1 and was not added to the frontend.
+
+### Validation
+
+- Existing and new Weather tests: 49 passed, 0 failed.
+- Coverage includes stable repeated observations, score shock, weather transition, major timeframe transition, quality penalty, data insufficiency, stale/invalid/cross-asset rejection, and bounds.
+
+## PWA UI Stabilization + Weather Metrics Activation + Frontline v0.2 (2026-09-08)
+
+### Clock stabilization
+
+- The header clock now renders `YYYY.MM.DD · HH:MM` only and refreshes once per minute.
+- Tabular numerals and a reserved desktop width prevent minute transitions from shifting adjacent header content. The compact mobile rule retains a reserved clock width.
+
+### Persistence and Change Rate activation
+
+- The prior `Waiting` behavior after a browser reload was caused by history existing only in a runtime `Map`; the valid prior observation disappeared at reload, leaving fewer than two snapshots.
+- The browser now stores no more than four minimal validated snapshots in `localStorage`, partitioned by `assetId` and `timeframe` under `lynx.weather.history.<asset>.<timeframe>`. Stored fields are score, state, major timeframe, quality, freshness, validity, and observation timestamp; raw receipts and payloads are not stored.
+- Only two or more valid, fresh/aging, same-asset, same-timeframe snapshots calculate a numeric metric. Stale, invalid, PLANNED, NO_DATA, LOCKED, malformed, or cross-asset history fails closed to the existing status UI.
+- Persistence labels are now `매우 강함`, `강함`, `보통`, `약함`, and `매우 약함`. Change Rate labels are `매우 빠름`, `빠름`, `보통`, `안정`, and `매우 안정`.
+- Non-BTC assets still cannot inherit BTC Weather Engine values or history.
+
+### Frontline and PWA cache
+
+- The verified section heading is `주요 우선 타임프레임`; its asset-local nodes are 1H, 2H, 4H, 6H, 8H, 12H, and 1D. The chosen active timeframe is highlighted and the strip keeps its horizontal-overflow behavior on narrow screens.
+- The service-worker cache was incremented to `ailynx-weather-v29`, and the app shell now precaches the history module and `app.js?v=24`.
+
+### Deployment boundary
+
+This repository contains no `vercel.json` or other Vercel project configuration that identifies a deployed repository, production branch, or root directory. The older handoff text references a separate `ailynx-weather` repository on `main`, so it cannot establish that this monorepo's `integration/as1-live-v1` branch with `Weather/` root is deployed. No Vercel setting was changed; verify that mapping in the Vercel project before release.

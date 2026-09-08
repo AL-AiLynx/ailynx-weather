@@ -129,6 +129,7 @@
         <div class="hero-asset-select"><label for="assetSelector" data-i18n="selectAsset">SELECT ASSET</label><select id="assetSelector" aria-label="Selected asset"></select></div>
         <div class="hero-heading">
         <p class="eyebrow" id="heroAssetLabel">BTCUSD · LYNX WEATHER</p>
+        <p class="hero-asset-identity" id="heroAssetIdentity">COINBASE:BTCUSD / AVAILABLE / LIVE / RECEIPT AVAILABLE</p>
         <div class="hero-price-line"><span class="hero-price-label" data-i18n="currentPrice">CURRENT PRICE</span><strong class="price" id="marketPrice">—</strong><span class="price-change" id="marketPriceMeta">1 MIN UPDATE · WAITING FOR DATA</span></div>
         </div>
       </div>
@@ -137,10 +138,15 @@
         <div class="hero-weather-copy"><h2 class="weather-name" id="heroWeatherName">CALCULATING</h2><strong class="hero-weather-score" id="heroWeatherScore">—</strong><p class="hero-note" id="heroWeatherNote">WAITING</p></div>
       </div>
       <dl class="hero-signals" aria-label="Lynx observation signals">
-        <div><dt data-i18n="weatherDurability">WEATHER DURABILITY</dt><dd id="heroPersistence">CALCULATING</dd></div>
-        <div><dt data-i18n="weatherChangeRate">WEATHER CHANGE RATE</dt><dd id="heroChange">CALCULATING</dd></div>
+        <div><dt data-i18n="weatherDurability" title="How consistently the current weather state is holding">WEATHER DURABILITY</dt><dd id="heroPersistence">CALCULATING</dd></div>
+        <div><dt data-i18n="weatherChangeRate" title="How quickly the weather changed from the prior observation">WEATHER CHANGE RATE</dt><dd id="heroChange">CALCULATING</dd></div>
         <div class="hero-timeframe-state"><dt data-i18n="primaryTimeframe">MAIN TIMEFRAME</dt><dd><span id="heroTimeframe">WAITING</span><span aria-hidden="true"> · </span><span id="heroObservationState">WAITING</span></dd></div>
       </dl>
+    </section>
+
+    <section class="section frontline-section" aria-labelledby="frontlineTimeframeTitle">
+      <div class="section-title"><div><h2 id="frontlineTimeframeTitle">주요 우선 타임프레임</h2><span>ASSET-LOCAL OBSERVATION PRIORITY</span></div><span class="plan-chip">LIVE READ</span></div>
+      <div class="frontline-timeframe-strip" id="frontlineTimeframeStrip" aria-live="polite"></div>
     </section>
 
     <section class="section lynx-frames-section" aria-labelledby="dailyFramesTitle">
@@ -529,6 +535,8 @@
   <script src="./lynx-dashboard-config.js?v=17"></script>
   <script src="./lynx-notices.js?v=16"></script>
   <script type="module" src="./asset-registry.js?v=1"></script>
+  <script type="module" src="./frontline-timeframe.js?v=1"></script>
+  <script type="module" src="./weather-history.js?v=1"></script>
   <script src="./community-config.js?v=1"></script>
   <script src="./i18n.js?v=2"></script>
   <script src="./community-client.js?v=1"></script>
@@ -536,7 +544,7 @@
   <script src="./market-advisory-config.js?v=1"></script>
   <script src="./market-advisory.js?v=1"></script>
   <script src="./auth-gate.js?v=2"></script>
-  <script src="./app.js?v=21"></script>
+  <script src="./app.js?v=24"></script>
 
   <dialog class="account-dialog" id="accountDialog" aria-labelledby="accountDialogTitle">
     <form method="dialog"><button class="dialog-close" type="button" data-dialog-close aria-label="Close">×</button></form>
