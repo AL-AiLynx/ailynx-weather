@@ -6,12 +6,6 @@ window.LynxDashboardConfig = Object.freeze({
     PREMIUM: Object.freeze({label: "PREMIUM", assets: ["BTCUSD", "US100", "XAUUSD", "DXY"], intraday: ["1H", "4H"], daily: ["1D", "2D", "3D", "4D", "5D", "6D", "1W"]}),
     PRO: Object.freeze({label: "PRO", assets: ["BTCUSD", "US100", "XAUUSD", "DXY"], intraday: Array.from({length: 24}, (_, index) => `${index + 1}H`), daily: ["1D", "2D", "3D", "4D", "5D", "6D", "1W"]}),
   }),
-  assets: Object.freeze([
-    Object.freeze({id: "BTCUSD", label: "BTCUSD", status: "LIVE", requiredPlan: "FREE"}),
-    Object.freeze({id: "US100", label: "NASDAQ", status: "PLANNED", requiredPlan: "PLUS"}),
-    Object.freeze({id: "XAUUSD", label: "GOLD", status: "PLANNED", requiredPlan: "PLUS"}),
-    Object.freeze({id: "DXY", label: "DXY", status: "PLANNED", requiredPlan: "PREMIUM"}),
-  ]),
   dailyTimeframes: Object.freeze(["1D", "2D", "3D", "4D", "5D", "6D", "1W"]),
   intradayTimeframes: Object.freeze(Array.from({length: 24}, (_, index) => `${index + 1}H`)),
   weatherBands: Object.freeze([

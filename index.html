@@ -28,7 +28,7 @@
   <!-- 기본 디자인 -->
   <link
     rel="stylesheet"
-    href="./styles.css?v=19"
+    href="./styles.css?v=20"
   />
 
   <!-- PWA 매니페스트 -->
@@ -125,6 +125,7 @@
     <div class="app-panel" id="weatherPanel" data-tab-panel="weather">
 
     <section class="hero card">
+      <div class="hero-asset-select"><label for="assetSelector">ASSET</label><select id="assetSelector" aria-label="Selected asset"></select></div>
       <div class="hero-heading">
         <p class="eyebrow">BTCUSD · LYNX WEATHER</p>
         <div class="hero-weather"><span class="weather-icon" id="heroWeatherIcon" aria-hidden="true">◌</span><h2 class="weather-name" id="heroWeatherName">CALCULATING</h2></div>
@@ -515,6 +516,7 @@
   <script src="./weather-engine.js"></script>
   <script src="./lynx-dashboard-config.js?v=16"></script>
   <script src="./lynx-notices.js?v=16"></script>
+  <script type="module" src="./asset-registry.js?v=1"></script>
   <script src="./community-config.js?v=1"></script>
   <script src="./i18n.js?v=1"></script>
   <script src="./community-client.js?v=1"></script>

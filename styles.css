@@ -951,6 +951,10 @@ body, .card, .frame-cell { transition: background 550ms ease, border-color 450ms
 
 .card { box-shadow: 0 14px 42px rgba(0, 0, 0, .18); }
 .hero { margin-bottom: 14px; background: radial-gradient(circle at 85% 12%, rgba(100, 214, 255, .16), transparent 30%), radial-gradient(circle at 12% 100%, rgba(169, 139, 255, .1), transparent 35%), var(--card); }
+.hero { position: relative; min-height: 210px; padding-right: clamp(112px, 24vw, 220px); }
+.hero-asset-select { display: flex; align-items: center; gap: 7px; margin-bottom: 14px; color: var(--text-muted); font-size: 10px; font-weight: 800; letter-spacing: .08em; }
+.hero-asset-select select { max-width: 190px; padding: 6px 8px; border: 1px solid rgba(100,214,255,.2); border-radius: 9px; color: var(--text-main); background: rgba(7,24,36,.68); font: inherit; }
+.hero .weather-icon { position: absolute; top: 34px; right: clamp(24px, 7vw, 74px); display: grid; place-items: center; width: clamp(78px, 16vw, 142px); height: clamp(78px, 16vw, 142px); border: 1px solid rgba(100,214,255,.17); border-radius: 50%; background: radial-gradient(circle, rgba(100,214,255,.16), rgba(7,24,36,.05) 68%); font-size: clamp(42px, 8vw, 76px); line-height: 1; }
 .hero-price-line { margin-top: 20px; }
 .section { margin-top: 14px; }
 .section-title { margin-bottom: 8px; }
@@ -1011,6 +1015,8 @@ footer p { margin: 0; }
   .hero-price-line { gap: 5px 8px; }
   .hero .price { font-size: clamp(25px, 8.2vw, 34px); }
   .hero .price-change { flex-basis: 100%; }
+  .hero { min-height: 190px; padding-right: 98px; }
+  .hero .weather-icon { top: 54px; right: 15px; width: 72px; height: 72px; font-size: 38px; }
   .section-title h2 { font-size: 16px; }
   .member-controls { grid-column: 1 / -1; }
 }
