@@ -47,6 +47,11 @@ let validationRequestPromise = null;
 let marketPriceData = null;
 let marketPriceRequestPromise = null;
 let marketPriceIntervalId = null;
+let marketDominanceData = null;
+let marketDominanceRequestPromise = null;
+let marketDominanceIntervalId = null;
+let visitStatsData = null;
+let visitStatsRequestPromise = null;
 let localClockIntervalId = null;
 const dashboardConfig = window.LynxDashboardConfig;
 
@@ -651,6 +656,122 @@ function startLocalClock() {
   });
 }
 
+
+function renderMarketDominance() {
+  const strip = document.getElementById("marketDominanceStrip");
+  if (!strip) {
+    return;
+  }
+
+  strip.replaceChildren();
+  const values = marketDominanceData?.available
+    ? marketDominanceData.values
+    : ["BTC.D", "USDT.D", "USDC.D"].map((label) => ({label, value: null}));
+
+  values.forEach((item) => {
+    const card = document.createElement("article");
+    card.className = "dominance-card";
+    const label = document.createElement("span");
+    label.textContent = item.label;
+    const value = document.createElement("strong");
+    value.textContent = Number.isFinite(item.value) ? `${item.value.toFixed(1)}%` : "WAITING";
+    const status = document.createElement("small");
+    status.textContent = marketDominanceData?.available
+      ? marketDominanceData.stale ? "STALE" : "FREE · LIVE"
+      : "PUBLIC DATA";
+    card.append(label, value, status);
+    strip.appendChild(card);
+  });
+}
+
+
+async function refreshMarketDominance() {
+  if (marketDominanceRequestPromise) {
+    return marketDominanceRequestPromise;
+  }
+
+  marketDominanceRequestPromise = (async () => {
+    try {
+      const dominanceClient = await import("./market-dominance-client.js?v=15");
+      const result = await dominanceClient.fetchMarketDominance();
+      if (result.available) {
+        marketDominanceData = {...result, stale: false};
+      } else if (marketDominanceData?.available) {
+        marketDominanceData = {...marketDominanceData, stale: true};
+      }
+    } catch {
+      if (marketDominanceData?.available) {
+        marketDominanceData = {...marketDominanceData, stale: true};
+      }
+    }
+
+    renderMarketDominance();
+  })();
+
+  try {
+    return await marketDominanceRequestPromise;
+  } finally {
+    marketDominanceRequestPromise = null;
+  }
+}
+
+
+function renderVisitStats() {
+  const target = document.getElementById("visitStats");
+  if (!target) {
+    return;
+  }
+
+  if (!visitStatsData?.available) {
+    target.textContent = "TOTAL VISITS · WAITING";
+    return;
+  }
+
+  const formatter = new Intl.NumberFormat("en-US");
+  target.textContent = `TOTAL VISITS ${formatter.format(visitStatsData.totalVisits)} · TODAY ${formatter.format(visitStatsData.todayVisits)}`;
+}
+
+
+async function refreshVisitStats() {
+  if (visitStatsRequestPromise) {
+    return visitStatsRequestPromise;
+  }
+
+  visitStatsRequestPromise = (async () => {
+    try {
+      const visitClient = await import("./visit-counter-client.js?v=15");
+      let sessionRecorded = false;
+      try {
+        sessionRecorded = window.sessionStorage.getItem(visitClient.PWA_VISIT_SESSION_KEY) === "1";
+      } catch {
+        sessionRecorded = false;
+      }
+
+      const result = await visitClient.fetchVisitStats({method: sessionRecorded ? "GET" : "POST"});
+      if (result.available) {
+        visitStatsData = result;
+        if (!sessionRecorded) {
+          try {
+            window.sessionStorage.setItem(visitClient.PWA_VISIT_SESSION_KEY, "1");
+          } catch {
+            // The count remains functional if browser storage is unavailable.
+          }
+        }
+      }
+    } catch {
+      // The footer remains in its explicit WAITING state until the public counter is reachable.
+    }
+
+    renderVisitStats();
+  })();
+
+  try {
+    return await visitStatsRequestPromise;
+  } finally {
+    visitStatsRequestPromise = null;
+  }
+}
+
 function dashboardText(id, value) {
   const element = document.getElementById(id);
   if (element) element.textContent = value;
@@ -751,6 +872,7 @@ function renderLynxDashboard() {
     dashboardConfig.intradayTimeframes.forEach((timeframe) => intraday.appendChild(makeFrameCell(timeframe, "intraday")));
   }
   renderAssetAccess();
+  renderMarketDominance();
 }
 
 
@@ -1232,6 +1354,15 @@ function startMarketPriceTimer() {
 }
 
 
+function startMarketDominanceTimer() {
+  if (marketDominanceIntervalId !== null) {
+    return;
+  }
+
+  marketDominanceIntervalId = window.setInterval(refreshMarketDominance, 10 * 60 * 1000);
+}
+
+
 function initializeTabs() {
   const tabs = document.querySelectorAll("[data-tab]");
   const panels = document.querySelectorAll("[data-tab-panel]");
@@ -1279,7 +1410,10 @@ async function initializeApp() {
   renderApp();
   startFreshnessTimer();
   startMarketPriceTimer();
+  startMarketDominanceTimer();
   void refreshMarketPrice();
+  void refreshMarketDominance();
+  void refreshVisitStats();
   await applyAs1ValidationCards(validationTimeframe);
 
   const selector = document.getElementById("validationTimeframe");
@@ -1310,6 +1444,8 @@ window.addEventListener(
 
     renderApp();
     void refreshMarketPrice();
+    void refreshMarketDominance();
+    void refreshVisitStats();
   }
 );
 
@@ -1324,6 +1460,7 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
     renderLocalClock();
     void refreshMarketPrice();
+    void refreshMarketDominance();
   }
 });
 
