@@ -28,7 +28,7 @@
   <!-- 기본 디자인 -->
   <link
     rel="stylesheet"
-    href="./styles.css?v=20"
+    href="./styles.css?v=21"
   />
 
   <!-- PWA 매니페스트 -->
@@ -105,6 +105,7 @@
 
       <time class="local-clock" id="localClock" aria-live="off"></time>
       <div class="member-controls" aria-label="Member controls">
+        <span class="plan-status-chip" aria-label="Current plan">FREE</span>
         <div class="language-toggle" aria-label="Language"><button type="button" data-language="ko">KO</button><span aria-hidden="true">|</span><button type="button" data-language="en">EN</button></div>
         <button class="member-profile" id="memberProfile" type="button" hidden><span aria-hidden="true">◌</span> <span id="memberProfileLabel">로그인</span></button>
       </div>
@@ -125,12 +126,16 @@
     <div class="app-panel" id="weatherPanel" data-tab-panel="weather">
 
     <section class="hero card">
-      <div class="hero-asset-select"><label for="assetSelector">ASSET</label><select id="assetSelector" aria-label="Selected asset"></select></div>
-      <div class="hero-heading">
+      <div class="hero-market">
+        <div class="hero-asset-select"><label for="assetSelector">ASSET</label><select id="assetSelector" aria-label="Selected asset"></select></div>
+        <div class="hero-heading">
         <p class="eyebrow">BTCUSD · LYNX WEATHER</p>
-        <div class="hero-weather"><span class="weather-icon" id="heroWeatherIcon" aria-hidden="true">◌</span><h2 class="weather-name" id="heroWeatherName">CALCULATING</h2></div>
-        <p class="hero-note" id="heroWeatherNote">Weather score is waiting for a public LIVE contract.</p>
         <div class="hero-price-line"><span class="hero-price-label">BTC 현재가</span><strong class="price" id="marketPrice">—</strong><span class="price-change" id="marketPriceMeta">1분 갱신 · 데이터 대기</span></div>
+        </div>
+      </div>
+      <div class="hero-weather-panel" aria-live="polite">
+        <span class="weather-icon" id="heroWeatherIcon" aria-hidden="true">◌</span>
+        <div class="hero-weather-copy"><p class="hero-weather-label">LYNX WEATHER</p><h2 class="weather-name" id="heroWeatherName">CALCULATING</h2><p class="hero-note" id="heroWeatherNote">Weather score is waiting for a public LIVE contract.</p></div>
       </div>
       <dl class="hero-signals" aria-label="Lynx observation signals">
         <div><dt>날씨 유지력</dt><dd id="heroPersistence">CALCULATING</dd></div>
