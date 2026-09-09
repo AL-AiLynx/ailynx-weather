@@ -128,7 +128,7 @@ function normalizeHistory(history) {
     assetId: item?.assetId,
   }));
   const assetId = snapshots[0]?.assetId;
-  return snapshots.every((item) => item.timeframe === timeframe && item.assetId === assetId && Number.isFinite(item.score) && item.score >= 0 && item.score <= 100 && typeof item.state === "string" && typeof item.valid === "boolean" && item.valid === true && Number.isFinite(item.noise) && item.noise >= 0 && item.noise <= 100 && typeof item.majorTimeframe === "string" && ["GOOD", "WATCH", "LIMITED", "CONFLICT"].includes(item.quality) && ["FRESH", "AGING"].includes(item.freshness)) ? snapshots : null;
+  return snapshots.every((item) => item.timeframe === timeframe && item.assetId === assetId && Number.isFinite(item.score) && item.score >= 0 && item.score <= 100 && typeof item.state === "string" && typeof item.valid === "boolean" && item.valid === true && Number.isFinite(item.noise) && item.noise >= 0 && item.noise <= 100 && typeof item.majorTimeframe === "string" && ["GOOD", "WATCH", "LIMITED", "CONFLICT"].includes(item.quality) && ["FRESH", "AGING", "STALE"].includes(item.freshness)) ? snapshots : null;
 }
 
 function clamp(value) { return Math.round(Math.max(0, Math.min(100, value))); }
