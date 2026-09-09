@@ -482,7 +482,7 @@ async function applyAs1ValidationCards(timeframe = validationTimeframe) {
       validationTimeframe = timeframe;
       const nextCards = await client.fetchValidationCards({timeframe});
       const validPublicWeather = capturePublicWeatherSnapshot(nextCards, timeframe);
-      if (publicWeatherSnapshot?.source === "CURRENT") await hydrateServerWeatherHistory(publicWeatherSnapshot?.result);
+      if (selectedAssetId === "BTCUSD") await hydrateServerWeatherHistory({timeframe: weatherTimeframeLabel(timeframe)});
       heroWeatherPhase = validPublicWeather ? publicWeatherSnapshot?.source === "LAST_KNOWN_GOOD" ? "last-known-good" : "valid" : "empty";
       validationCardsData = hasFeature("viewer.professional_details") ? nextCards : null;
       renderValidationCards();
@@ -1883,7 +1883,7 @@ async function hydrateServerWeatherHistory(result) {
   if (selectedAssetId !== "BTCUSD" || !result?.timeframe) return [];
   const key = `BTCUSD:${result.timeframe}`;
   try {
-    const client = await import("./as1-asset-client.js?v=5");
+    const client = await import("./as1-asset-client.js?v=6");
     const response = await client.fetchAssetHistory({asset: "BTCUSD", timeframe: result.timeframe, limit: 4});
     if (!response.available) return [];
     const engine = window.AiLynxWeatherEngine;
