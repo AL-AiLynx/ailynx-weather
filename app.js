@@ -515,7 +515,7 @@ async function applyAs1ValidationCards(timeframe = validationTimeframe) {
       validationTimeframe = timeframe;
       const nextCards = await client.fetchValidationCards({timeframe});
       const validPublicWeather = capturePublicWeatherSnapshot(nextCards, timeframe);
-      if (selectedAssetId === "BTCUSD") await hydrateServerWeatherHistory({timeframe: weatherTimeframeLabel(timeframe)});
+      if (selectedAssetId === "BTCUSD") await hydrateVisibleTimeframeHistories();
       heroWeatherPhase = validPublicWeather ? publicWeatherSnapshot?.source === "LAST_KNOWN_GOOD" ? "last-known-good" : "valid" : "empty";
       validationCardsData = hasFeature("viewer.professional_details") ? nextCards : null;
       renderValidationCards();
@@ -1949,6 +1949,16 @@ async function hydrateServerWeatherHistory(result) {
   } catch {
     return [];
   }
+}
+
+async function hydrateVisibleTimeframeHistories() {
+  if (selectedAssetId !== "BTCUSD" || !dashboardConfig) return [];
+  const requests = [
+    ...dashboardConfig.intradayTimeframes.map((timeframe) => ({timeframe, kind: "intraday"})),
+    ...dashboardConfig.dailyTimeframes.map((timeframe) => ({timeframe, kind: "daily"})),
+  ].filter(({timeframe, kind}) => planAllows(timeframe, kind));
+  const unique = [...new Set(requests.map(({timeframe}) => timeframe === "24H" ? "1D" : timeframe))];
+  return Promise.all(unique.map((timeframe) => hydrateServerWeatherHistory({timeframe})));
 }
 
 function leaderTimeframe(hero = observedHeroState()) {

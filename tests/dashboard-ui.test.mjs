@@ -78,6 +78,8 @@ test("legacy weather sections use the current SVG symbol renderer", async () => 
 test("server history hydration updates the core-metric observation source", async () => {
   const app = await read("app.js");
   assert.match(app, /serverWeatherHistory\.set\(key, history\);\s*weatherObservationHistory\.set\(key, history\);/s);
+  assert.match(app, /async function hydrateVisibleTimeframeHistories\(\)/);
+  assert.match(app, /filter\(\(\{timeframe, kind\}\) => planAllows\(timeframe, kind\)\)/);
 });
 
 test("last-known-good display keeps stale receipts separate from LIVE", async () => {
@@ -111,9 +113,9 @@ test("asset navigation separates entitlement from the selected state", async () 
 
 test("dashboard cache shell includes the membership resolver and has no removed UI modules", async () => {
   const [html, worker] = await Promise.all([read("index.html"), read("service-worker.js")]);
-  assert.match(worker, /ailynx-weather-v63/);
+  assert.match(worker, /ailynx-weather-v64/);
   assert.match(html, /manifest\.webmanifest\?v=2/);
-  for (const asset of ["styles.css?v=34", "icons/ailynx-brand.jpg", "asset-registry.js?v=5", "manifest.webmanifest?v=2", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "community-config.js?v=4", "admin-access.js?v=2", "admin-preview.js?v=1", "admin-asset-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=6", "member-community.js?v=5", "admin.html", "admin-page.js?v=2", "auth-gate.js?v=4", "app.js?v=49"]) {
+  for (const asset of ["styles.css?v=34", "icons/ailynx-brand.jpg", "asset-registry.js?v=5", "manifest.webmanifest?v=2", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "community-config.js?v=4", "admin-access.js?v=2", "admin-preview.js?v=1", "admin-asset-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=6", "member-community.js?v=5", "admin.html", "admin-page.js?v=2", "auth-gate.js?v=4", "app.js?v=50"]) {
     assert.ok(html.includes(asset) || worker.includes(asset), `missing ${asset}`);
   }
   assert.doesNotMatch(worker, /frontline-timeframe|weather-dynamics/);
@@ -121,7 +123,7 @@ test("dashboard cache shell includes the membership resolver and has no removed 
 
 test("stable dashboard hydrates BTC history independently from Hero presentation", async () => {
   const app = await read("app.js");
-  assert.match(app, /selectedAssetId === "BTCUSD"\) await hydrateServerWeatherHistory\(\{timeframe: weatherTimeframeLabel\(timeframe\)\}\)/);
+  assert.match(app, /selectedAssetId === "BTCUSD"\) await hydrateVisibleTimeframeHistories\(\)/);
 });
 
 test("timeframe cards reuse the Hero SVG weather mapping without enum text", async () => {
