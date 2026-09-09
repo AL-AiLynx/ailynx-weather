@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {fetchAssetObservations} from "../as1-asset-client.js";
+import {fetchAssetHistory, fetchAssetObservations} from "../as1-asset-client.js";
 import {ASSET_READERS} from "../asset-registry.js";
 
 const response = (body, status = 200) => ({ok: status >= 200 && status < 300, status, json: async () => body});
@@ -27,4 +27,20 @@ test("single registry fixes the four canonical asset identities", () => {
 test("a stale valid receipt is not promoted to LIVE", async () => {
   const result = await fetchAssetObservations({asset: "XAUUSD", fetchImpl: async () => response({ok: true, asset: "XAUUSD", ticker_id: "OANDA:XAUUSD", source_profile_code: "OANDA_XAUUSD_CFD_V1", status: "LIVE", latest_receipt: {asset: "XAUUSD", symbol: "XAUUSD", ticker_id: "OANDA:XAUUSD", timeframe: "4H", received_at: "2026-09-08T00:00:00.000Z", bar_close_time: 1788825600000, bar_close: 3400, valid: true, sensor_quality: "GOOD", freshness: "STALE", flags: []}, timeframes: {"4H": {asset: "XAUUSD", symbol: "XAUUSD", ticker_id: "OANDA:XAUUSD", timeframe: "4H", received_at: "2026-09-08T00:00:00.000Z", bar_close_time: 1788825600000, bar_close: 3400, valid: true, sensor_quality: "GOOD", freshness: "STALE", flags: []}}})});
   assert.equal(result.status, "STALE");
+});
+
+
+test("receipt history requires confirmed valid same-timeframe canonical records", async () => {
+  const receipt = (barCloseTime, score) => ({asset: "BTCUSD", symbol: "BTCUSD", ticker_id: "COINBASE:BTCUSD", timeframe: "4H", received_at: new Date(barCloseTime).toISOString(), bar_close_time: barCloseTime, bar_close: 78000, valid: true, confirmed: true, sensor_quality: "GOOD", freshness: "FRESH", flags: [], score});
+  const result = await fetchAssetHistory({asset: "BTCUSD", timeframe: "4H", limit: 4, fetchImpl: async () => response({ok: true, asset: "BTCUSD", ticker_id: "COINBASE:BTCUSD", source_profile_code: "CB_BTCUSD_SPOT_20260722_V1", history: [receipt(1788897600000, 48), receipt(1788912000000, 54)]})});
+  assert.equal(result.available, true);
+  assert.deepEqual(result.history.map((item) => item.score), [48, 54]);
+});
+
+test("receipt history fails closed for missing confirmation, cross-asset, or stale records", async () => {
+  const base = {asset: "BTCUSD", symbol: "BTCUSD", ticker_id: "COINBASE:BTCUSD", timeframe: "4H", received_at: "2026-09-09T00:00:00.000Z", bar_close_time: 1788912000000, bar_close: 78000, valid: true, confirmed: true, sensor_quality: "GOOD", freshness: "FRESH", flags: [], score: 54};
+  for (const history of [[{...base, confirmed: false}], [{...base, asset: "XAUUSD"}], [{...base, freshness: "STALE"}]]) {
+    const result = await fetchAssetHistory({asset: "BTCUSD", timeframe: "4H", fetchImpl: async () => response({ok: true, asset: "BTCUSD", ticker_id: "COINBASE:BTCUSD", source_profile_code: "CB_BTCUSD_SPOT_20260722_V1", history})});
+    assert.equal(result.available, false);
+  }
 });
