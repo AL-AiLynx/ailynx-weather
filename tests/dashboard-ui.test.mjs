@@ -111,9 +111,9 @@ test("asset navigation separates entitlement from the selected state", async () 
 
 test("dashboard cache shell includes the membership resolver and has no removed UI modules", async () => {
   const [html, worker] = await Promise.all([read("index.html"), read("service-worker.js")]);
-  assert.match(worker, /ailynx-weather-v54/);
+  assert.match(worker, /ailynx-weather-v55/);
   assert.match(html, /manifest\.webmanifest\?v=2/);
-  for (const asset of ["styles.css?v=32", "icons/ailynx-brand.jpg", "asset-registry.js?v=5", "manifest.webmanifest?v=2", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "community-config.js?v=4", "admin-access.js?v=2", "admin-preview.js?v=1", "admin-asset-client.js?v=1", "auth-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=5", "member-community.js?v=5", "admin.html", "admin-page.js?v=2", "auth-gate.js?v=4", "app.js?v=40"]) {
+  for (const asset of ["styles.css?v=32", "icons/ailynx-brand.jpg", "asset-registry.js?v=5", "manifest.webmanifest?v=2", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "community-config.js?v=4", "admin-access.js?v=2", "admin-preview.js?v=1", "admin-asset-client.js?v=1", "auth-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=5", "member-community.js?v=5", "admin.html", "admin-page.js?v=2", "auth-gate.js?v=4", "app.js?v=41"]) {
     assert.ok(html.includes(asset) || worker.includes(asset), `missing ${asset}`);
   }
   assert.doesNotMatch(worker, /frontline-timeframe|weather-dynamics/);
@@ -177,14 +177,22 @@ test("daily timeframe locks follow Plus for 1D and Premium for 2D through 1W", a
 
 test("dashboard loads one canonical weather view model before app consumers", async () => {
   const [html, app, viewModel] = await Promise.all([
-    read(new URL("../index.html", root), "utf8"),
-    read(new URL("../app.js", root), "utf8"),
-    read(new URL("../weather-view-model.js", root), "utf8"),
+    read("index.html"),
+    read("app.js"),
+    read("weather-view-model.js"),
   ]);
-  assert.match(html, /weather-view-model\.js\?v=1[\s\S]*app\.js\?v=40/);
+  assert.match(html, /weather-view-model\.js\?v=1[\s\S]*app\.js\?v=41/);
   assert.match(app, /AiLynxWeatherViewModel/);
   assert.match(app, /buildMetricHistory/);
   assert.doesNotMatch(app, /dashboardConfig\?\.weatherBands\?\.find/);
   assert.match(viewModel, /normalizeWeatherTimeframe/);
   assert.match(viewModel, /buildWeatherViewModel/);
+});
+
+test("dashboard keeps raw MAAT validation cards out of the static UI", async () => {
+  const [html, app] = await Promise.all([read("index.html"), read("app.js")]);
+  assert.doesNotMatch(html, /data-validation-card=/);
+  assert.doesNotMatch(html, /MAAT2 TIME/);
+  assert.doesNotMatch(app, /renderMaatValidationCard\(validationCardsData/);
+  assert.doesNotMatch(app, /renderMaat2ValidationCard\(validationCardsData/);
 });

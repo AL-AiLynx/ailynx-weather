@@ -76,7 +76,9 @@ const displayState = (value) => {
 
 
 const weatherViewModel = (options) => window.AiLynxWeatherViewModel?.buildWeatherViewModel?.(options) ?? null;
-const normalizeWeatherTimeframe = (value) => window.AiLynxWeatherViewModel?.normalizeWeatherTimeframe?.(value) ?? null;
+// The view model is loaded as a classic script and already owns this global name.
+// Keep this app-level adapter distinct to avoid stopping all dashboard rendering.
+const normalizeViewTimeframe = (value) => window.AiLynxWeatherViewModel?.normalizeWeatherTimeframe?.(value) ?? null;
 const normalizedReceipt = (receipt) => receipt ? Object.freeze({...receipt, confirmed: receipt.confirmed ?? true, valid: receipt.valid ?? receipt.quality?.valid}) : null;
 
 const STATUS_CLASSES = [
@@ -347,7 +349,7 @@ async function applyHorusSampleOverlay() {
 
 
 function displayAs1Timeframe(timeframe) {
-  return normalizeWeatherTimeframe(timeframe) || String(timeframe || "-");
+  return normalizeViewTimeframe(timeframe) || String(timeframe || "-");
 }
 
 async function applyAs1LiveOverlay() {
@@ -434,7 +436,7 @@ async function applyConfiguredOverlay() {
 }
 
 function weatherTimeframeLabel(timeframe = validationTimeframe) {
-  return normalizeWeatherTimeframe(timeframe) || "1D";
+  return normalizeViewTimeframe(timeframe) || "1D";
 }
 
 function capturePublicWeatherSnapshot(cards, timeframe) {
@@ -678,13 +680,13 @@ function renderMaat2ValidationCard(maat2) {
 }
 
 function renderValidationCards() {
+  const target = document.getElementById("validationCards");
+  if (!target) return;
   if (!hasFeature("viewer.professional_details")) {
-    const target = document.getElementById("validationCards");
-    if (target) target.innerHTML = `<article class="validation-card card validation-locked"><p class="validation-kicker">프로 전용</p><h3>정밀 관측 도구</h3><p class="validation-status">정밀 관측 도구와 Mobile Viewer를 사용할 수 있습니다.</p><button type="button" data-open-plan data-plan-target="PRO">프로 보기</button></article>`;
+    target.innerHTML = `<article class="validation-card card validation-locked"><p class="validation-kicker">프로 전용</p><h3>정밀 관측 도구</h3><p class="validation-status">정밀 관측 도구와 Mobile Viewer를 사용할 수 있습니다.</p><button type="button" data-open-plan data-plan-target="PRO">프로 보기</button></article>`;
     return;
   }
-  renderMaatValidationCard(validationCardsData?.maat);
-  renderMaat2ValidationCard(validationCardsData?.maat2);
+  target.innerHTML = `<article class="validation-card card validation-locked"><p class="validation-kicker">프로 정밀 관측</p><h3>정밀 관측 도구</h3><p class="validation-status">정밀 검증 도구는 별도 관측 화면에서 제공합니다.</p></article>`;
 }
 
 
@@ -999,7 +1001,7 @@ function cachedLastKnownGoodTimeframes(assetId) {
   const timeframes = new Set([
     ...(dashboardConfig?.intradayTimeframes || []),
     ...(dashboardConfig?.dailyTimeframes || []),
-  ].map(normalizeWeatherTimeframe).filter(Boolean));
+  ].map(normalizeViewTimeframe).filter(Boolean));
   const entries = [...timeframes].map((timeframe) => {
     const snapshot = window.AiLynxWeatherHistory?.readLastKnownGood?.(window.localStorage, assetId, timeframe);
     const receipt = cachedReceipt(snapshot);
@@ -1098,7 +1100,7 @@ function requiredPlanForTimeframe(timeframe, kind) {
 function makeFrameCell(timeframe, kind) {
   const allowed = planAllows(timeframe, kind);
   const requiredPlan = requiredPlanForTimeframe(timeframe, kind);
-  const canonical = normalizeWeatherTimeframe(timeframe) || timeframe;
+  const canonical = normalizeViewTimeframe(timeframe) || timeframe;
   const selected = allowed ? currentAssetObservation() : null;
   const horus = selectedAssetId === "BTCUSD" ? horusSnapshot?.timeframes?.[canonical] : null;
   const currentObservation = allowed
@@ -1865,7 +1867,7 @@ function recordWeatherObservation(result) {
 }
 
 async function hydrateServerWeatherHistory(result) {
-  const timeframe = normalizeWeatherTimeframe(result?.timeframe);
+  const timeframe = normalizeViewTimeframe(result?.timeframe);
   if (selectedAssetId !== "BTCUSD" || !timeframe) return [];
   const key = `BTCUSD:${timeframe}`;
   try {
