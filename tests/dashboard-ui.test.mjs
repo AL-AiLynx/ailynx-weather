@@ -83,7 +83,7 @@ test("server history hydration updates the core-metric observation source", asyn
 test("last-known-good display keeps stale receipts separate from LIVE", async () => {
   const [app, css, history] = await Promise.all([read("app.js"), read("styles.css"), read("weather-history.js")]);
   for (const required of ["LAST OBSERVATION", "OLD OBSERVATION", "lastKnownGoodTimeframes", "withLastKnownGoodCache", "cachedLastKnownGoodTimeframes", "refreshLiveObservations"]) assert.match(app, new RegExp(required));
-  assert.match(app, /currentObservation \? localizeObservationStatus\("LIVE"\) : localizeObservationStatus\(status\)/);
+  assert.match(app, /state\.textContent = currentObservation \? "LIVE" : localizeObservationStatus\(status\)/);
   assert.match(css, /frame-cell\.is-last-observation/);
   assert.match(css, /hero-weather-panel\[data-state="last-known-good"\]/);
   assert.match(history, /lastKnownGoodKey/);
@@ -138,7 +138,7 @@ test("timeframe cards localize presentation status and format user-facing scores
   assert.match(app, /function localizeQuality\(value\)/);
   assert.match(app, /function formatObservationScore\(value\)/);
   assert.match(app, /localizeObservationStatus\(status\)/);
-  assert.match(app, /localizeQuality\(observationQuality\)/);
+  assert.match(app, /weatherLabel\.textContent = weather\?\.label/);
   assert.match(app, /formatObservationScore\(observationScore\)/);
   assert.match(i18n, /fresh: "신선"/);
   assert.match(i18n, /aging: "갱신 대기"/);
@@ -161,7 +161,8 @@ test("runtime plan gates use subscription canonical plans and never expose locke
   assert.match(app, /hasFeature\("viewer\.professional_details"\)/);
   assert.match(app, /const currentObservation = allowed/);
   assert.match(app, /const lastKnownGood = allowed/);
-  assert.match(app, /change\.textContent = !allowed \? ""/);
+  assert.match(app, /const history = allowed \? weatherObservationHistory\.get/);
+  assert.match(app, /지속 \$\{Number\.isFinite\(durability\)/);
   assert.match(app, /frame-entitlement/);
   assert.match(app, /assetReadPath\?\.reconcileAccess\?\.?\(\)/);
   assert.match(membership, /subscriptions\.plan_code/);

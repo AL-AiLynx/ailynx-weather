@@ -1155,6 +1155,12 @@ function makeFrameCell(timeframe, kind) {
   cell.className = `frame-cell ${allowed ? `is-${status.toLowerCase().replace(" ", "-")}` : "is-locked"}`;
   const label = document.createElement("strong");
   label.textContent = timeframe === "24H" ? "24H / 1D" : timeframe;
+  const state = document.createElement("small");
+  state.className = "frame-state";
+  state.textContent = currentObservation ? "LIVE" : localizeObservationStatus(status);
+  const header = document.createElement("div");
+  header.className = "frame-header";
+  header.append(label, state);
   const icon = document.createElement("span");
   icon.className = "frame-icon";
   const observationQuality = observation?.quality?.sensorQuality ?? observation?.sensorQuality;
@@ -1164,24 +1170,24 @@ function makeFrameCell(timeframe, kind) {
     : null;
   if (weather) icon.replaceChildren(createWeatherSymbol(weather.iconCode));
   else icon.textContent = !allowed ? "" : status === "FRESH" || status === "AGING" ? "●" : status === "LAST OBSERVATION" ? "◐" : status === "OLD OBSERVATION" || status === "STALE" ? "◌" : status === "INVALID" ? "!" : status === "NO DATA" ? "—" : "◌";
-  const persistence = document.createElement("small");
-  if (allowed) {
-    persistence.textContent = localizeObservationStatus(status);
-    persistence.hidden = Boolean(observation);
+  const weatherLabel = document.createElement("small");
+  weatherLabel.className = "frame-weather-label";
+  weatherLabel.textContent = weather?.label || (allowed ? localizeObservationStatus(status) : "");
+  const metrics = document.createElement("small");
+  metrics.className = "frame-metrics";
+  const history = allowed ? weatherObservationHistory.get(`${selectedAssetId}:${canonical}`) || serverWeatherHistory.get(`${selectedAssetId}:${canonical}`) || [] : [];
+  const durability = window.AiLynxWeatherEngine?.computeDurability?.(history);
+  const changeRate = window.AiLynxWeatherEngine?.computeChangeRate?.(history);
+  metrics.textContent = allowed && observation
+    ? `지속 ${Number.isFinite(durability) ? durability : "--"} · 변화 ${Number.isFinite(changeRate) ? changeRate : "--"}`
+    : "";
+  if (!allowed) {
+    weatherLabel.className = "frame-entitlement";
+    weatherLabel.append(createPlanLockIcon(), document.createTextNode(planDisplayName(requiredPlan)));
   }
-  else {
-    persistence.className = "frame-entitlement";
-    persistence.append(createPlanLockIcon(), document.createTextNode(planDisplayName(requiredPlan)));
-  }
-  const change = document.createElement("small");
-  change.className = "frame-change";
-  const compactScore = Number.isFinite(observationScore) ? ` · ${formatObservationScore(observationScore)}` : "";
-  const receiptState = currentObservation ? localizeObservationStatus("LIVE") : localizeObservationStatus(status);
-  change.textContent = !allowed ? "" : observation
-    ? `${localizeQuality(observationQuality)} · ${receiptState}${compactScore}`
-    : tr("waiting");
-  if (lastKnownGood && !currentObservation) change.title = lastKnownGoodNote(lastKnownGood);
-  cell.append(label, icon, persistence, change);
+  if (lastKnownGood && !currentObservation) state.title = lastKnownGoodNote(lastKnownGood);
+  if (Number.isFinite(observationScore)) cell.title = `${weather?.label || "Weather"} · ${formatObservationScore(observationScore)}`;
+  cell.append(header, icon, weatherLabel, metrics);
   return cell;
 }
 
