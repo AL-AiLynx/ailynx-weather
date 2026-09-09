@@ -14,7 +14,6 @@ function adminMembership(state) { return window.AiLynxAdminAccess?.isAdminMember
 function renderAdminShell(state) {
   const isAdmin = adminMembership(state);
   document.getElementById("adminEntry")?.remove();
-  document.getElementById("adminDialog")?.remove();
   document.getElementById("accountAdminBadge")?.remove();
   if (!isAdmin) return;
   const controls = document.querySelector(".member-controls");
@@ -22,15 +21,9 @@ function renderAdminShell(state) {
   entry.id = "adminEntry";
   entry.className = "admin-entry";
   entry.type = "button";
-  entry.innerHTML = '<span aria-hidden="true">◆</span> ADMIN';
-  const dialog = document.createElement("dialog");
-  dialog.id = "adminDialog";
-  dialog.className = "admin-dialog";
-  dialog.setAttribute("aria-labelledby", "adminDialogTitle");
-  dialog.innerHTML = '<form method="dialog"><button class="dialog-close" type="submit" aria-label="닫기">×</button></form><p class="eyebrow">AILYNX ADMIN</p><h2 id="adminDialogTitle">관리자 대시보드</h2><ul><li>사용자 플랜</li><li>구독 상태</li><li>기능 권한</li></ul><p>관리자 권한 연결을 위한 안전한 준비 화면입니다. 이 화면에서는 데이터나 권한을 변경하지 않습니다.</p>';
-  entry.addEventListener("click", () => dialog.showModal());
+  entry.innerHTML = '<span aria-hidden="true">◆</span> 관리자';
+  entry.addEventListener("click", () => window.location.assign("/admin"));
   controls?.insertBefore(entry, document.getElementById("memberProfile"));
-  document.body.append(dialog);
   const badge = document.createElement("span");
   badge.id = "accountAdminBadge";
   badge.className = "account-admin-badge";
@@ -152,6 +145,7 @@ function initializeMemberCommunity() {
   renderMemberState();
   window.addEventListener("ailynx-language", renderMemberState);
   window.addEventListener("ailynx-membership", (event) => renderMemberState(event.detail));
+  window.addEventListener("ailynx-admin", () => renderMemberState());
 }
 
 window.addEventListener("DOMContentLoaded", initializeMemberCommunity);

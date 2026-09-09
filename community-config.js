@@ -11,9 +11,6 @@ window.AiLynxCommunityConfig = Object.freeze({
   authGateEnabled: true,
   authGateDelayMs: 0,
   profilePersistenceAvailable: true,
-  // Display-only allowlist. Keep this empty until a verified auth.users UUID
-  // is deliberately approved; it never grants database or server privileges.
-  adminUserIds: Object.freeze([]),
   supabaseUrl: String(runtime.supabaseUrl || "https://jggazwqwalincsjegieo.supabase.co").replace(/\/$/, ""),
   publishableKey: String(runtime.publishableKey || "").trim(),
   providers: Object.freeze({google: "DISABLED", kakao: "DISABLED", toss: "COMING_SOON", chatgpt: "COMING_SOON"}),

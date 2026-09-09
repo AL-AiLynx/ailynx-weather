@@ -6,7 +6,7 @@ const root = new URL("../", import.meta.url);
 const read = (name) => readFile(new URL(name, root), "utf8");
 
 test("membership runtime uses public Auth configuration with anonymous FREE fallback", async () => {
-  const [config, runtime, authClient, client, i18n, gate, dashboard, admin] = await Promise.all([read("community-config.js"), read("public-runtime-config.js"), read("auth-client.js"), read("community-client.js"), read("i18n.js"), read("auth-gate.js"), read("lynx-dashboard-config.js"), read("admin-access.js")]);
+  const [config, runtime, authClient, client, i18n, gate, dashboard, admin, adminPage, adminHtml, vercel, adminMigration] = await Promise.all([read("community-config.js"), read("public-runtime-config.js"), read("auth-client.js"), read("community-client.js"), read("i18n.js"), read("auth-gate.js"), read("lynx-dashboard-config.js"), read("admin-access.js"), read("admin-page.js"), read("admin.html"), read("vercel.json"), read("supabase/migrations/20260909010000_create_server_verified_admin.sql")]);
   assert.match(config, /enabled: false/);
   assert.match(config, /authGateEnabled: true/);
   assert.match(runtime, /__AILYNX_SUPABASE_PUBLISHABLE_KEY__/);
@@ -16,8 +16,7 @@ test("membership runtime uses public Auth configuration with anonymous FREE fall
   assert.match(config, /google: "DISABLED"/);
   assert.match(config, /chatgpt: "COMING_SOON"/);
   assert.match(config, /profilePersistenceAvailable: true/);
-  assert.match(config, /adminUserIds: Object\.freeze\(\[\]\)/);
-  assert.doesNotMatch(config, /service_role/i);
+  assert.doesNotMatch(config, /adminUserIds|service_role/i);
   assert.match(client, /canUseCommunity/);
   assert.match(client, /beginOAuth/);
   assert.match(i18n, /localStorage/);
@@ -32,7 +31,19 @@ test("membership runtime uses public Auth configuration with anonymous FREE fall
   assert.doesNotMatch(dashboard, /\bassets:/);
   assert.match(dashboard, /label: "플러스"/);
   assert.match(admin, /isAdminMembership/);
-  assert.doesNotMatch(admin, /service_role/i);
+  assert.match(admin, /is_current_user_admin/);
+  assert.doesNotMatch(admin, /adminUserIds|localStorage|sjjunsaxsmax@gmail\.com|service_role/i);
+  assert.match(adminMigration, /create table if not exists public\.admin_users/i);
+  assert.match(adminMigration, /references auth\.users\(id\) on delete cascade/i);
+  assert.match(adminMigration, /alter table public\.admin_users enable row level security/i);
+  assert.match(adminMigration, /returns boolean[\s\S]*is_current_user_admin\(\)/i);
+  assert.match(adminMigration, /grant execute on function public\.is_current_user_admin\(\) to anon, authenticated/i);
+  assert.doesNotMatch(adminMigration, /sjjunsaxsmax@gmail\.com/i);
+  assert.match(vercel, /"source": "\/admin"[\s\S]*"destination": "\/admin\.html"/);
+  assert.match(adminPage, /if \(!verified \|\| !session\?\.user\) return redirectToWeather\(\)/);
+  assert.match(adminPage, /shell\.replaceChildren/);
+  assert.doesNotMatch(adminPage, /innerHTML|service_role/i);
+  assert.match(adminHtml, /id="adminPageShell" hidden/);
   assert.doesNotMatch(dashboard, /activePlan|PLUS/);
 });
 

@@ -1,11 +1,35 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {isAdminMembership, isAdminUser} from "../admin-access.js";
+import {isAdminMembership, isCurrentUserAdmin} from "../admin-access.js";
 
-test("admin display entry requires an authenticated user whose UUID is allowlisted", () => {
-  const config = {adminUserIds: ["approved-user-id"]};
-  assert.equal(isAdminUser({id: "approved-user-id"}, config), true);
-  assert.equal(isAdminUser({id: "other-user"}, config), false);
-  assert.equal(isAdminMembership({authenticated: false, user: {id: "approved-user-id"}}, config), false);
-  assert.equal(isAdminMembership({authenticated: true, user: {id: "approved-user-id"}}, config), true);
+const config = {supabaseUrl: "https://project.supabase.co", publishableKey: "public-key"};
+const session = {access_token: "member-token"};
+
+test("admin display entry accepts only a server-verified current-session RPC result", async () => {
+  const calls = [];
+  const verified = await isCurrentUserAdmin({
+    config,
+    session,
+    fetchImpl: async (url, options) => {
+      calls.push({url, options});
+      return {ok: true, json: async () => true};
+    },
+  });
+  assert.equal(verified, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "https://project.supabase.co/rest/v1/rpc/is_current_user_admin");
+  assert.equal(calls[0].options.method, "POST");
+  assert.equal(calls[0].options.body, "{}");
+  assert.equal(calls[0].options.headers.Authorization, "Bearer member-token");
+  assert.equal(isAdminMembership({authenticated: true}, verified), true);
+  assert.equal(isAdminMembership({authenticated: false}, verified), false);
+});
+
+test("anonymous, failed, or false admin RPC results fail closed", async () => {
+  let calls = 0;
+  assert.equal(await isCurrentUserAdmin({config, fetchImpl: async () => { calls += 1; return {ok: true, json: async () => true};}}), false);
+  assert.equal(calls, 0);
+  assert.equal(await isCurrentUserAdmin({config, session, fetchImpl: async () => ({ok: true, json: async () => false})}), false);
+  assert.equal(await isCurrentUserAdmin({config, session, fetchImpl: async () => ({ok: false, json: async () => ({})})}), false);
+  assert.equal(isAdminMembership({authenticated: true}, false), false);
 });
