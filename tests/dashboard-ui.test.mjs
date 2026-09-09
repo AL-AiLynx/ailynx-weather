@@ -111,9 +111,9 @@ test("asset navigation separates entitlement from the selected state", async () 
 
 test("dashboard cache shell includes the membership resolver and has no removed UI modules", async () => {
   const [html, worker] = await Promise.all([read("index.html"), read("service-worker.js")]);
-  assert.match(worker, /ailynx-weather-v60/);
+  assert.match(worker, /ailynx-weather-v61/);
   assert.match(html, /manifest\.webmanifest\?v=2/);
-  for (const asset of ["styles.css?v=32", "icons/ailynx-brand.jpg", "asset-registry.js?v=5", "manifest.webmanifest?v=2", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "community-config.js?v=4", "admin-access.js?v=2", "admin-preview.js?v=1", "admin-asset-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=6", "member-community.js?v=5", "admin.html", "admin-page.js?v=2", "auth-gate.js?v=4", "app.js?v=46"]) {
+  for (const asset of ["styles.css?v=32", "icons/ailynx-brand.jpg", "asset-registry.js?v=5", "manifest.webmanifest?v=2", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "community-config.js?v=4", "admin-access.js?v=2", "admin-preview.js?v=1", "admin-asset-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=6", "member-community.js?v=5", "admin.html", "admin-page.js?v=2", "auth-gate.js?v=4", "app.js?v=47"]) {
     assert.ok(html.includes(asset) || worker.includes(asset), `missing ${asset}`);
   }
   assert.doesNotMatch(worker, /frontline-timeframe|weather-dynamics/);
@@ -145,6 +145,13 @@ test("timeframe cards localize presentation status and format user-facing scores
   assert.match(i18n, /good: "양호"/);
   assert.match(i18n, /limited: "제한"/);
   assert.match(i18n, /staleObservation: "오래된 관측"/);
+});
+
+test("weather visuals are SVG/CSS-only and core presentation uses independent value bands", async () => {
+  const [app, css] = await Promise.all([read("app.js"), read("styles.css")]);
+  for (const token of ["weather-symbol-cloud", "weather-symbol-sun", "weather-symbol-rain", "previousLeadTimeframe", "core-leader-previous", "core-leader-current", "card.dataset.tint"]) assert.match(`${app}\n${css}`, new RegExp(token));
+  for (const tint of ["data-tint=\"red\"", "data-tint=\"yellow\"", "data-tint=\"green\""]) assert.match(css, new RegExp(tint));
+  assert.doesNotMatch(app, /fetch\([^)]*(?:png|jpg|jpeg)/i);
 });
 
 test("runtime plan gates use subscription canonical plans and never expose locked receipt details", async () => {
@@ -189,7 +196,8 @@ test("leader timeframe is a WEATHER gate with no FREE value exposure", async () 
   assert.match(html, /id="coreLeaderCta"/);
   assert.match(app, /const leaderAllowed = planAtLeast\("WEATHER"\)/);
   assert.match(app, /const leader = leaderAllowed \?/);
-  assert.match(app, /dashboardText\("coreLeaderTimeframe", allowed \? value : planDisplayName\("WEATHER"\)\)/);
+  assert.match(app, /dashboardText\("coreLeaderTimeframe", planDisplayName\("WEATHER"\)\)/);
+  assert.match(app, /if \(allowed && valueElement\)/);
   assert.match(css, /core-metric-leader\[data-state="locked"\]/);
 });
 
