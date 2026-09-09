@@ -1755,6 +1755,7 @@ async function hydrateServerWeatherHistory(result) {
       return Object.freeze({assetId: "BTCUSD", timeframe: receipt.timeframe, majorTimeframe: receipt.timeframe, score: receipt.score, state: classified.state, valid: true, noise: 0, quality, freshness: receipt.freshness, observedAt: receipt.receivedAt});
     }).filter(Boolean);
     serverWeatherHistory.set(key, history);
+    weatherObservationHistory.set(key, history);
     return history;
   } catch {
     return [];

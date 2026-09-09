@@ -75,6 +75,11 @@ test("legacy weather sections use the current SVG symbol renderer", async () => 
   assert.doesNotMatch(app, /getWeatherIcon\(/);
 });
 
+test("server history hydration updates the core-metric observation source", async () => {
+  const app = await read("app.js");
+  assert.match(app, /serverWeatherHistory\.set\(key, history\);\s*weatherObservationHistory\.set\(key, history\);/s);
+});
+
 test("asset navigation has four accessible canonical controls and no hero dropdown", async () => {
   const [html, app, registry, css] = await Promise.all([read("index.html"), read("app.js"), read("asset-registry.js"), read("styles.css")]);
   assert.match(html, /class="asset-navigation" id="assetNavigation"/);
