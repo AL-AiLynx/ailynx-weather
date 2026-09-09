@@ -53,10 +53,17 @@ test("receipt history requires confirmed valid same-timeframe canonical records"
   assert.deepEqual(result.history.map((item) => item.score), [48, 54]);
 });
 
-test("receipt history fails closed for missing confirmation, cross-asset, or stale records", async () => {
+test("receipt history fails closed for missing confirmation or cross-asset records", async () => {
   const base = {asset: "BTCUSD", symbol: "BTCUSD", ticker_id: "COINBASE:BTCUSD", timeframe: "4H", received_at: "2026-09-09T00:00:00.000Z", bar_close_time: 1788912000000, bar_close: 78000, valid: true, confirmed: true, sensor_quality: "GOOD", freshness: "FRESH", flags: [], score: 54};
-  for (const history of [[{...base, confirmed: false}], [{...base, asset: "XAUUSD"}], [{...base, freshness: "STALE"}]]) {
+  for (const history of [[{...base, confirmed: false}], [{...base, asset: "XAUUSD"}]]) {
     const result = await fetchAssetHistory({asset: "BTCUSD", timeframe: "4H", fetchImpl: async () => response({ok: true, asset: "BTCUSD", ticker_id: "COINBASE:BTCUSD", source_profile_code: "CB_BTCUSD_SPOT_20260722_V1", history})});
     assert.equal(result.available, false);
   }
+});
+
+test("receipt history accepts a confirmed stale receipt for historical metrics", async () => {
+  const receipt = {asset: "BTCUSD", symbol: "BTCUSD", ticker_id: "COINBASE:BTCUSD", timeframe: "4H", received_at: "2026-09-08T00:00:00.000Z", bar_close_time: 1788825600000, bar_close: 78000, valid: true, confirmed: true, sensor_quality: "GOOD", freshness: "STALE", flags: [], score: 48};
+  const result = await fetchAssetHistory({asset: "BTCUSD", timeframe: "4H", fetchImpl: async () => response({ok: true, asset: "BTCUSD", ticker_id: "COINBASE:BTCUSD", source_profile_code: "CB_BTCUSD_SPOT_20260722_V1", history: [receipt]})});
+  assert.equal(result.available, true);
+  assert.equal(result.history[0].freshness, "STALE");
 });

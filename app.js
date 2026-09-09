@@ -1883,7 +1883,7 @@ async function hydrateServerWeatherHistory(result) {
   if (selectedAssetId !== "BTCUSD" || !result?.timeframe) return [];
   const key = `BTCUSD:${result.timeframe}`;
   try {
-    const client = await import("./as1-asset-client.js?v=4");
+    const client = await import("./as1-asset-client.js?v=5");
     const response = await client.fetchAssetHistory({asset: "BTCUSD", timeframe: result.timeframe, limit: 4});
     if (!response.available) return [];
     const engine = window.AiLynxWeatherEngine;
@@ -1925,7 +1925,7 @@ function updateCoreMetric(cardId, valueId, bandId, noteId, gaugeId, presentation
   dashboardText(bandId, presentation.band);
   dashboardText(noteId, presentation.note);
   const note = document.getElementById(noteId);
-  if (note) note.hidden = presentation.ready;
+  if (note) note.hidden = presentation.ready && !presentation.note;
   setCoreMetricGauge(gaugeId, presentation.value);
   if (!card) return;
   card.dataset.state = presentation.ready ? "ready" : "accumulating";
@@ -1963,8 +1963,15 @@ function updateLeaderTimeframe(value, allowed) {
 function renderCoreMetrics(durability, changeRate, hero) {
   const history = weatherObservationHistory.get(`BTCUSD:${weatherTimeframeLabel()}`);
   const observationCount = Array.isArray(history) ? history.length : 0;
-  updateCoreMetric("corePersistenceMetric", "corePersistence", "corePersistenceBand", "corePersistenceNote", "corePersistenceGauge", coreMetricPresentation(durability, "persistence", observationCount));
-  updateCoreMetric("coreChangeMetric", "coreChange", "coreChangeBand", "coreChangeNote", "coreChangeGauge", coreMetricPresentation(changeRate, "changeRate", observationCount));
+  const usesHistoricalReceipts = history?.some((observation) => observation?.freshness === "STALE") === true;
+  const metricPresentationWithHistoryNote = (value, kind) => {
+    const presentation = coreMetricPresentation(value, kind, observationCount);
+    return presentation.ready && usesHistoricalReceipts
+      ? {...presentation, note: "최근 정상 관측 기준"}
+      : presentation;
+  };
+  updateCoreMetric("corePersistenceMetric", "corePersistence", "corePersistenceBand", "corePersistenceNote", "corePersistenceGauge", metricPresentationWithHistoryNote(durability, "persistence"));
+  updateCoreMetric("coreChangeMetric", "coreChange", "coreChangeBand", "coreChangeNote", "coreChangeGauge", metricPresentationWithHistoryNote(changeRate, "changeRate"));
   const leaderAllowed = planAtLeast("WEATHER");
   const leader = leaderAllowed ? (window.AiLynxCoreDynamics?.leaderPresentation?.(leaderTimeframe(hero))?.value || "—") : "—";
   updateLeaderTimeframe(leader, leaderAllowed);

@@ -51,7 +51,9 @@ Deno.serve(async (request) => {
       if (!latestValid.has(receipt.timeframe)) latestValid.set(receipt.timeframe, receipt);
       if (["FRESH", "AGING"].includes(receipt.freshness) && !currentValid.has(receipt.timeframe)) currentValid.set(receipt.timeframe, receipt);
     }
-    const history = requestedTimeframe ? receipts.filter((receipt) => receipt.timeframe === requestedTimeframe && receipt.confirmed === true && receipt.valid === true && receipt.freshness !== "STALE" && Number.isFinite(receipt.score)).slice(0, requestedLimit) : [];
+    // History is a confirmed, same-timeframe calculation input. Its freshness
+    // never upgrades a stale receipt to LIVE; the client labels that case.
+    const history = requestedTimeframe ? receipts.filter((receipt) => receipt.timeframe === requestedTimeframe && receipt.confirmed === true && receipt.valid === true && Number.isFinite(receipt.score)).slice(0, requestedLimit) : [];
     const status = latestValid.size ? "LIVE" : latestReceipt ? "INVALID" : "PLANNED";
     const current = requestedTimeframe ? currentValid.get(requestedTimeframe) ?? null : null;
     const lastKnownGood = requestedTimeframe ? latestValid.get(requestedTimeframe) ?? null : null;

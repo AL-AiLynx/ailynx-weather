@@ -38,7 +38,7 @@ function normalizeReceipt(value, expected, asset, {requireValid = false} = {}) {
 
 function normalizeHistoryReceipt(value, expected, asset, timeframe) {
   const receipt = normalizeReceipt(value, expected, asset, {requireValid: true});
-  if (!receipt || receipt.timeframe !== timeframe || receipt.freshness === "STALE" || value.confirmed !== true ||
+  if (!receipt || receipt.timeframe !== timeframe || value.confirmed !== true ||
       !Number.isFinite(value.score) || value.score < 0 || value.score > 100) return null;
   return Object.freeze({...receipt, confirmed: true, score: value.score});
 }
