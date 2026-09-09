@@ -1165,7 +1165,10 @@ function makeFrameCell(timeframe, kind) {
   if (weather) icon.replaceChildren(createWeatherSymbol(weather.iconCode));
   else icon.textContent = !allowed ? "" : status === "FRESH" || status === "AGING" ? "●" : status === "LAST OBSERVATION" ? "◐" : status === "OLD OBSERVATION" || status === "STALE" ? "◌" : status === "INVALID" ? "!" : status === "NO DATA" ? "—" : "◌";
   const persistence = document.createElement("small");
-  if (allowed) persistence.textContent = localizeObservationStatus(status);
+  if (allowed) {
+    persistence.textContent = localizeObservationStatus(status);
+    persistence.hidden = Boolean(observation);
+  }
   else {
     persistence.className = "frame-entitlement";
     persistence.append(createPlanLockIcon(), document.createTextNode(planDisplayName(requiredPlan)));
@@ -2004,7 +2007,7 @@ function updateLeaderTimeframe(value, allowed) {
       current.textContent = value;
       valueElement.append(previous, arrow, current);
     } else {
-      valueElement.textContent = value === "—" ? value : `${value} 유지`;
+      valueElement.textContent = value;
     }
     if (value !== "—") previousLeadTimeframe = value;
   } else {
