@@ -107,6 +107,10 @@ function formatObservationScore(value) {
   return window.AiLynxI18n?.language === "ko" ? `${score}점` : `${score} pts`;
 }
 
+function metricTone(value) {
+  return !Number.isFinite(value) ? "neutral" : value <= 44 ? "red" : value <= 65 ? "yellow" : "green";
+}
+
 const STATUS_CLASSES = [
   "status-fresh",
   "status-delay",
@@ -1178,9 +1182,18 @@ function makeFrameCell(timeframe, kind) {
   const history = allowed ? weatherObservationHistory.get(`${selectedAssetId}:${canonical}`) || serverWeatherHistory.get(`${selectedAssetId}:${canonical}`) || [] : [];
   const durability = window.AiLynxWeatherEngine?.computeDurability?.(history);
   const changeRate = window.AiLynxWeatherEngine?.computeChangeRate?.(history);
-  metrics.textContent = allowed && observation
-    ? `지속 ${Number.isFinite(durability) ? durability : "--"} · 변화 ${Number.isFinite(changeRate) ? changeRate : "--"}`
-    : "";
+  if (allowed && observation) {
+    const durabilityValue = Number.isFinite(durability) ? durability : "--";
+    const changeValue = Number.isFinite(changeRate) ? changeRate : "--";
+    const durabilityMetric = document.createElement("span");
+    durabilityMetric.className = `frame-metric frame-metric--${metricTone(durability)}`;
+    durabilityMetric.textContent = `지속 ${durabilityValue}`;
+    const separator = document.createTextNode(" · ");
+    const changeMetric = document.createElement("span");
+    changeMetric.className = `frame-metric frame-metric--${metricTone(changeRate)}`;
+    changeMetric.textContent = `변화 ${changeValue}`;
+    metrics.append(durabilityMetric, separator, changeMetric);
+  }
   if (!allowed) {
     weatherLabel.className = "frame-entitlement";
     weatherLabel.append(createPlanLockIcon(), document.createTextNode(planDisplayName(requiredPlan)));
