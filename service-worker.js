@@ -1,7 +1,7 @@
 +"use strict";
 
 const CACHE_NAME =
-  "ailynx-weather-v44";
+  "ailynx-weather-v45";
 
 const AS1_VALIDATION_ENDPOINT =
   "https://jggazwqwalincsjegieo.supabase.co/functions/v1/as1-validation-read";
@@ -38,11 +38,8 @@ const APP_SHELL = [
   "./app.js?v=35",
   "./weather-data.json",
   "./horus-sample.json",
-  "./manifest.webmanifest",
+  "./manifest.webmanifest?v=2",
   "./offline.html",
-  "./apple-touch-icon.png",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png",
   "./icons/ailynx-brand.jpg"
 ];
 

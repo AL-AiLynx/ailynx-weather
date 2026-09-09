@@ -53,6 +53,8 @@ test("core dynamics show real values or an explicit accumulation state without l
 test("the completed hero uses the official app mark and a summarized public BTC receipt", async () => {
   const [html, app, css] = await Promise.all([read("index.html"), read("app.js"), read("styles.css")]);
   assert.match(html, /class="logo brand-mark" id="brandMark" src="\.\/icons\/ailynx-brand\.jpg"/);
+  assert.match(html, /rel="icon"[\s\S]*type="image\/jpeg"[\s\S]*href="\.\/icons\/ailynx-brand\.jpg"/);
+  assert.match(html, /rel="apple-touch-icon"[\s\S]*href="\.\/icons\/ailynx-brand\.jpg"/);
   assert.match(html, /id="brandFallback" hidden/);
   assert.match(html, /class="asset-navigation" id="assetNavigation"/);
   assert.doesNotMatch(html, /asset-select-label/);
@@ -87,8 +89,9 @@ test("asset navigation separates entitlement from the selected state", async () 
 
 test("dashboard cache shell includes the membership resolver and has no removed UI modules", async () => {
   const [html, worker] = await Promise.all([read("index.html"), read("service-worker.js")]);
-  assert.match(worker, /ailynx-weather-v44/);
-  for (const asset of ["styles.css?v=31", "icons/ailynx-brand.jpg", "asset-registry.js?v=5", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "community-config.js?v=3", "admin-access.js?v=1", "auth-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=5", "member-community.js?v=4", "auth-gate.js?v=4", "app.js?v=35"]) {
+  assert.match(worker, /ailynx-weather-v45/);
+  assert.match(html, /manifest\.webmanifest\?v=2/);
+  for (const asset of ["styles.css?v=31", "icons/ailynx-brand.jpg", "asset-registry.js?v=5", "manifest.webmanifest?v=2", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "community-config.js?v=3", "admin-access.js?v=1", "auth-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=5", "member-community.js?v=4", "auth-gate.js?v=4", "app.js?v=35"]) {
     assert.ok(html.includes(asset) || worker.includes(asset), `missing ${asset}`);
   }
   assert.doesNotMatch(worker, /frontline-timeframe|weather-dynamics/);
