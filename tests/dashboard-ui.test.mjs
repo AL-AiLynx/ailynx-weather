@@ -173,3 +173,18 @@ test("daily timeframe locks follow Plus for 1D and Premium for 2D through 1W", a
   assert.match(config, /WEATHER[\s\S]*daily: \["1D"\]/);
   assert.match(config, /PREMIUM[\s\S]*daily: \["1D", "2D", "3D", "4D", "5D", "6D", "1W"\]/);
 });
+
+
+test("dashboard loads one canonical weather view model before app consumers", async () => {
+  const [html, app, viewModel] = await Promise.all([
+    read(new URL("../index.html", root), "utf8"),
+    read(new URL("../app.js", root), "utf8"),
+    read(new URL("../weather-view-model.js", root), "utf8"),
+  ]);
+  assert.match(html, /weather-view-model\.js\?v=1[\s\S]*app\.js\?v=40/);
+  assert.match(app, /AiLynxWeatherViewModel/);
+  assert.match(app, /buildMetricHistory/);
+  assert.doesNotMatch(app, /dashboardConfig\?\.weatherBands\?\.find/);
+  assert.match(viewModel, /normalizeWeatherTimeframe/);
+  assert.match(viewModel, /buildWeatherViewModel/);
+});
