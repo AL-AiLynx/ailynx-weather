@@ -33,12 +33,12 @@ function normalizeReceipt(value, expected, asset, {requireValid = false} = {}) {
   });
 }
 
-export async function fetchAssetObservations({asset, fetchImpl = globalThis.fetch, signal} = {}) {
+export async function fetchAssetObservations({asset, fetchImpl = globalThis.fetch, signal, endpoint = AS1_ASSET_ENDPOINT, headers = {}} = {}) {
   const expected = ASSET_READERS[asset];
   if (!expected || typeof fetchImpl !== "function") return unavailable("UNSUPPORTED_ASSET");
-  const url = new URL(AS1_ASSET_ENDPOINT); url.searchParams.set("asset", asset);
+  const url = new URL(endpoint); url.searchParams.set("asset", asset);
   try {
-    const response = await fetchImpl(url, {method: "GET", cache: "no-store", credentials: "omit", redirect: "error", ...(signal ? {signal} : {})});
+    const response = await fetchImpl(url, {method: "GET", cache: "no-store", credentials: "omit", redirect: "error", headers, ...(signal ? {signal} : {})});
     if (!response.ok) return unavailable(response.status === 404 ? "NO_OBSERVATION" : "HTTP_ERROR");
     const body = await response.json();
     if (body?.ok !== true || body.asset !== asset || body.ticker_id !== expected.tickerId ||

@@ -24,6 +24,12 @@ verify_jwt = false
 import_map = "./functions/as1-asset-read/deno.json"
 entrypoint = "./functions/as1-asset-read/index.ts"
 
+[functions.as1-admin-asset-read]
+enabled = true
+verify_jwt = false
+import_map = "./functions/as1-admin-asset-read/deno.json"
+entrypoint = "./functions/as1-admin-asset-read/index.ts"
+
 [functions.pwa-visit-counter]
 enabled = true
 verify_jwt = false

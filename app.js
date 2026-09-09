@@ -885,14 +885,20 @@ function dashboardText(id, value) {
   if (element) element.textContent = value;
 }
 
-function currentPlan() {
-  const code = window.AiLynxMembership?.plan;
-  return dashboardConfig?.plans?.[code] ?? dashboardConfig?.plans?.FREE ?? null;
+function subscriptionPlanCode() {
+  const membership = window.AiLynxMembership?.membership?.() || window.AiLynxAuthGate?.state?.();
+  const code = String(membership?.plan || "FREE").toUpperCase();
+  return dashboardConfig?.plans?.[code] ? code : "FREE";
 }
 
 function currentPlanCode() {
-  const code = window.AiLynxMembership?.plan;
-  return dashboardConfig?.plans?.[code] ? code : "FREE";
+  const subscriptionPlan = subscriptionPlanCode();
+  const previewPlan = window.AiLynxAdminPreview?.effectivePlan?.(subscriptionPlan);
+  return dashboardConfig?.plans?.[previewPlan] ? previewPlan : subscriptionPlan;
+}
+
+function currentPlan() {
+  return dashboardConfig?.plans?.[currentPlanCode()] ?? dashboardConfig?.plans?.FREE ?? null;
 }
 
 function planDisplayName(code = currentPlanCode()) {
@@ -969,7 +975,7 @@ function requiredPlanForTimeframe(timeframe, kind) {
   // Daily access is a product policy, not an inferred rank: 1D is the
   // Plus entry point, while every higher daily horizon is Premium.
   if (kind === "daily") return timeframe === "1D" ? "WEATHER" : "PREMIUM";
-  return ["FREE", "WEATHER", "PRO", "PREMIUM"].find((planCode) => dashboardConfig?.plans?.[planCode]?.[kind]?.includes(timeframe)) || "PRO";
+  return ["FREE", "WEATHER", "PREMIUM", "PRO"].find((planCode) => dashboardConfig?.plans?.[planCode]?.[kind]?.includes(timeframe)) || "PRO";
 }
 
 function makeFrameCell(timeframe, kind) {
@@ -1867,6 +1873,13 @@ window.addEventListener("ailynx-membership", () => {
   if (document.readyState !== "loading") {
     renderApp();
   }
+});
+
+window.addEventListener("ailynx-admin-preview", () => {
+  void enforceFreeSafeSelection();
+  assetReadPath?.reconcileAccess?.();
+  if (!hasFeature("viewer.professional_details")) validationCardsData = null;
+  if (document.readyState !== "loading") renderApp();
 });
 
 window.addEventListener("ailynx-auth-logout", () => {

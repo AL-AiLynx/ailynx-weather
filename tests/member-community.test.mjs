@@ -6,7 +6,7 @@ const root = new URL("../", import.meta.url);
 const read = (name) => readFile(new URL(name, root), "utf8");
 
 test("membership runtime uses public Auth configuration with anonymous FREE fallback", async () => {
-  const [config, runtime, authClient, client, i18n, gate, dashboard, admin, adminPage, adminHtml, vercel, adminMigration] = await Promise.all([read("community-config.js"), read("public-runtime-config.js"), read("auth-client.js"), read("community-client.js"), read("i18n.js"), read("auth-gate.js"), read("lynx-dashboard-config.js"), read("admin-access.js"), read("admin-page.js"), read("admin.html"), read("vercel.json"), read("supabase/migrations/20260909010000_create_server_verified_admin.sql")]);
+  const [config, runtime, authClient, client, i18n, gate, dashboard, admin, preview, adminPage, adminHtml, vercel, adminMigration] = await Promise.all([read("community-config.js"), read("public-runtime-config.js"), read("auth-client.js"), read("community-client.js"), read("i18n.js"), read("auth-gate.js"), read("lynx-dashboard-config.js"), read("admin-access.js"), read("admin-preview.js"), read("admin-page.js"), read("admin.html"), read("vercel.json"), read("supabase/migrations/20260909010000_create_server_verified_admin.sql")]);
   assert.match(config, /enabled: false/);
   assert.match(config, /authGateEnabled: true/);
   assert.match(runtime, /__AILYNX_SUPABASE_PUBLISHABLE_KEY__/);
@@ -38,11 +38,18 @@ test("membership runtime uses public Auth configuration with anonymous FREE fall
   assert.match(adminMigration, /alter table public\.admin_users enable row level security/i);
   assert.match(adminMigration, /returns boolean[\s\S]*is_current_user_admin\(\)/i);
   assert.match(adminMigration, /grant execute on function public\.is_current_user_admin\(\) to anon, authenticated/i);
+  assert.match(preview, /isCurrentUserAdmin/);
+  assert.match(preview, /ADMIN_PREVIEW_MODES/);
+  assert.doesNotMatch(preview, /localStorage|service_role|subscriptions\.plan_code/i);
   assert.doesNotMatch(adminMigration, /sjjunsaxsmax@gmail\.com/i);
   assert.match(vercel, /"source": "\/admin"[\s\S]*"destination": "\/admin\.html"/);
   assert.match(adminPage, /if \(!verified \|\| !session\?\.user\) return redirectToWeather\(\)/);
   assert.match(adminPage, /shell\.replaceChildren/);
   assert.doesNotMatch(adminPage, /innerHTML|service_role/i);
+  assert.match(adminPage, /권한 미리보기/);
+  assert.match(adminPage, /실측 관측 상태/);
+  assert.match(adminPage, /fetchAdminAssetObservations/);
+  assert.match(adminHtml, /admin-preview\.js\?v=1/);
   assert.match(adminHtml, /id="adminPageShell" hidden/);
   assert.doesNotMatch(dashboard, /activePlan|PLUS/);
 });
