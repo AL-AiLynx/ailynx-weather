@@ -70,9 +70,9 @@ test("asset navigation has four accessible canonical controls and no hero dropdo
   assert.match(html, /class="asset-navigation" id="assetNavigation"/);
   assert.doesNotMatch(html, /assetSelector|asset-access-section|assetAccessList/);
   for (const required of ["renderAssetNavigation", "aria-current", "requestAssetAccess", "asset-navigation-item", "focus-visible"]) assert.match(`${app}\n${css}`, new RegExp(required));
-  for (const label of ["비트코인", "금", "달러 인덱스", "나스닥 100"]) assert.match(registry, new RegExp(label));
+  for (const label of ["비트코인", "나스닥 100", "금", "달러 인덱스"]) assert.match(registry, new RegExp(label));
   assert.doesNotMatch(registry, /label: "GOLD"|label: "NASDAQ"/);
-  for (const ticker of ["BTCUSD", "XAUUSD", "DXY", "US100"]) assert.match(registry, new RegExp(ticker));
+  assert.match(registry, /BTCUSD[\s\S]*US100[\s\S]*XAUUSD[\s\S]*DXY/);
 });
 
 test("asset navigation separates entitlement from the selected state", async () => {
@@ -105,7 +105,12 @@ test("runtime plan gates use subscription canonical plans and never expose locke
   assert.match(app, /assetReadPath\?\.reconcileAccess\?\.?\(\)/);
   assert.match(membership, /subscriptions\.plan_code/);
   assert.match(membership, /source: "unavailable"/);
-  assert.match(registry, /US100[\s\S]*requiredPlan: "WEATHER"/);
+  assert.match(app, /function assetEntitled\(assetId\)/);
+  assert.match(app, /AiLynxAssetRegistry\?\.byId\?\.\(assetId\)\?\.requiredPlan/);
+  assert.match(app, /requiredPlan && planAtLeast\(requiredPlan\)/);
+  assert.match(registry, /US100[\s\S]*requiredPlan: "FREE"/);
+  assert.match(registry, /XAUUSD[\s\S]*requiredPlan: "WEATHER"/);
+  assert.match(registry, /DXY[\s\S]*requiredPlan: "WEATHER"/);
 });
 
 test("asset selection still delegates through the isolated read path", async () => {

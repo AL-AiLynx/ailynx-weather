@@ -42,6 +42,27 @@ test("locked assets do not fetch or expose a cached receipt", async () => {
   assert.equal(path.snapshot().observation, null);
 });
 
+test("FREE can fetch US100 while Plus assets remain fetch-blocked", async () => {
+  const freeAssets = new Set(["BTCUSD", "US100"]);
+  const fetched = [];
+  const path = createAssetReadPath({
+    canReadAsset: (asset) => freeAssets.has(asset),
+    fetchObservation: async ({asset}) => {
+      fetched.push(asset);
+      return observation(asset, "LIVE");
+    },
+  });
+  const us100 = await path.select("US100");
+  assert.equal(us100.applied, true);
+  assert.equal(path.snapshot().observation.asset, "US100");
+  const xauusd = await path.select("XAUUSD");
+  const dxy = await path.select("DXY");
+  assert.equal(xauusd.reason, "LOCKED");
+  assert.equal(dxy.reason, "LOCKED");
+  assert.deepEqual(fetched, ["US100"]);
+  assert.equal(path.snapshot().observation, null);
+});
+
 test("a plan downgrade clears an in-memory paid receipt before rendering can reuse it", async () => {
   let weatherPlan = true;
   const path = createAssetReadPath({canReadAsset: (asset) => asset !== "XAUUSD" || weatherPlan, fetchObservation: async ({asset}) => observation(asset, "LIVE")});

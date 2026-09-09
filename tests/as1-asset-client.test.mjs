@@ -16,8 +16,12 @@ test("multi-asset reader fails closed for unsupported assets", async () => {
   assert.deepEqual(await fetchAssetObservations({asset: "EURUSD"}), {available: false, reason: "UNSUPPORTED_ASSET"});
 });
 test("single registry fixes the four canonical asset identities", () => {
-  assert.deepEqual(Object.keys(ASSET_READERS), ["BTCUSD", "XAUUSD", "DXY", "US100"]);
+  assert.deepEqual(Object.keys(ASSET_READERS), ["BTCUSD", "US100", "XAUUSD", "DXY"]);
   assert.equal(ASSET_READERS.US100.tickerId, "SKILLING:US100");
+  assert.equal(ASSET_READERS.BTCUSD.requiredPlan, "FREE");
+  assert.equal(ASSET_READERS.US100.requiredPlan, "FREE");
+  assert.equal(ASSET_READERS.XAUUSD.requiredPlan, "WEATHER");
+  assert.equal(ASSET_READERS.DXY.requiredPlan, "WEATHER");
 });
 
 test("a stale valid receipt is not promoted to LIVE", async () => {

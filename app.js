@@ -909,7 +909,8 @@ function hasFeature(feature) {
 }
 
 function assetEntitled(assetId) {
-  return Boolean(currentPlan()?.assets?.includes(assetId));
+  const requiredPlan = window.AiLynxAssetRegistry?.byId?.(assetId)?.requiredPlan;
+  return Boolean(requiredPlan && planAtLeast(requiredPlan));
 }
 
 function currentAssetObservation() {

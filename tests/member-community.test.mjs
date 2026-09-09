@@ -29,7 +29,7 @@ test("membership runtime uses public Auth configuration with anonymous FREE fall
   assert.match(gate, /requestAssetAccess/);
   assert.match(gate, /ailynx-auth-logout/);
   assert.match(gate, /canFetchLive/);
-  assert.match(dashboard, /assets: \["BTCUSD"\]/);
+  assert.doesNotMatch(dashboard, /\bassets:/);
   assert.match(dashboard, /label: "플러스"/);
   assert.match(admin, /isAdminMembership/);
   assert.doesNotMatch(admin, /service_role/i);
