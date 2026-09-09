@@ -74,6 +74,38 @@ const displayState = (value) => {
   return key ? tr(key) : String(value || "").replaceAll("_", " ");
 };
 
+function localizeObservationStatus(value) {
+  const status = String(value || "").trim().toUpperCase();
+  const key = {
+    FRESH: "fresh",
+    AGING: "aging",
+    LIVE: "live",
+    PLANNED: "planned",
+    NO_DATA: "noData",
+    "NO DATA": "noData",
+    STALE: "staleObservation",
+    LAST_KNOWN_GOOD: "lastObservationState",
+    LKG: "lastObservationState",
+    "LAST OBSERVATION": "lastObservationState",
+    "OLD OBSERVATION": "oldObservation",
+    INVALID: "invalid",
+    WAITING: "waiting",
+    LOCKED: "locked",
+  }[status];
+  return key ? tr(key) : displayState(value);
+}
+
+function localizeQuality(value) {
+  const quality = String(value || "WATCH").trim().toUpperCase();
+  return tr({GOOD: "good", LIMITED: "limited", WATCH: "watch"}[quality] || "watch");
+}
+
+function formatObservationScore(value) {
+  if (!Number.isFinite(value)) return "";
+  const score = Math.round(value);
+  return window.AiLynxI18n?.language === "ko" ? `${score}점` : `${score} pts`;
+}
+
 const STATUS_CLASSES = [
   "status-fresh",
   "status-delay",
@@ -1132,18 +1164,19 @@ function makeFrameCell(timeframe, kind) {
   if (weather) icon.replaceChildren(createWeatherSymbol(weather.iconCode));
   else icon.textContent = !allowed ? "" : status === "FRESH" || status === "AGING" ? "●" : status === "LAST OBSERVATION" ? "◐" : status === "OLD OBSERVATION" || status === "STALE" ? "◌" : status === "INVALID" ? "!" : status === "NO DATA" ? "—" : "◌";
   const persistence = document.createElement("small");
-  if (allowed) persistence.textContent = displayState(status);
+  if (allowed) persistence.textContent = localizeObservationStatus(status);
   else {
     persistence.className = "frame-entitlement";
     persistence.append(createPlanLockIcon(), document.createTextNode(planDisplayName(requiredPlan)));
   }
   const change = document.createElement("small");
   change.className = "frame-change";
-  const compactScore = Number.isFinite(observationScore) ? ` · ${Math.round(observationScore)}` : "";
-  const receiptState = currentObservation ? "LIVE" : displayState(status);
+  const compactScore = Number.isFinite(observationScore) ? ` · ${formatObservationScore(observationScore)}` : "";
+  const receiptState = currentObservation ? localizeObservationStatus("LIVE") : localizeObservationStatus(status);
   change.textContent = !allowed ? "" : observation
-    ? `${observationQuality || "WATCH"} · ${receiptState}${compactScore}${lastKnownGood && !currentObservation ? ` · ${lastKnownGoodNote(lastKnownGood)}` : ""}`
+    ? `${localizeQuality(observationQuality)} · ${receiptState}${compactScore}`
     : tr("waiting");
+  if (lastKnownGood && !currentObservation) change.title = lastKnownGoodNote(lastKnownGood);
   cell.append(label, icon, persistence, change);
   return cell;
 }

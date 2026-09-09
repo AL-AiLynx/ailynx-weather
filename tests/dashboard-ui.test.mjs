@@ -83,7 +83,7 @@ test("server history hydration updates the core-metric observation source", asyn
 test("last-known-good display keeps stale receipts separate from LIVE", async () => {
   const [app, css, history] = await Promise.all([read("app.js"), read("styles.css"), read("weather-history.js")]);
   for (const required of ["LAST OBSERVATION", "OLD OBSERVATION", "lastKnownGoodTimeframes", "withLastKnownGoodCache", "cachedLastKnownGoodTimeframes", "refreshLiveObservations"]) assert.match(app, new RegExp(required));
-  assert.match(app, /currentObservation \? "LIVE" : displayState\(status\)/);
+  assert.match(app, /currentObservation \? localizeObservationStatus\("LIVE"\) : localizeObservationStatus\(status\)/);
   assert.match(css, /frame-cell\.is-last-observation/);
   assert.match(css, /hero-weather-panel\[data-state="last-known-good"\]/);
   assert.match(history, /lastKnownGoodKey/);
@@ -111,9 +111,9 @@ test("asset navigation separates entitlement from the selected state", async () 
 
 test("dashboard cache shell includes the membership resolver and has no removed UI modules", async () => {
   const [html, worker] = await Promise.all([read("index.html"), read("service-worker.js")]);
-  assert.match(worker, /ailynx-weather-v59/);
+  assert.match(worker, /ailynx-weather-v60/);
   assert.match(html, /manifest\.webmanifest\?v=2/);
-  for (const asset of ["styles.css?v=32", "icons/ailynx-brand.jpg", "asset-registry.js?v=5", "manifest.webmanifest?v=2", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "community-config.js?v=4", "admin-access.js?v=2", "admin-preview.js?v=1", "admin-asset-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=5", "member-community.js?v=5", "admin.html", "admin-page.js?v=2", "auth-gate.js?v=4", "app.js?v=45"]) {
+  for (const asset of ["styles.css?v=32", "icons/ailynx-brand.jpg", "asset-registry.js?v=5", "manifest.webmanifest?v=2", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "community-config.js?v=4", "admin-access.js?v=2", "admin-preview.js?v=1", "admin-asset-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=6", "member-community.js?v=5", "admin.html", "admin-page.js?v=2", "auth-gate.js?v=4", "app.js?v=46"]) {
     assert.ok(html.includes(asset) || worker.includes(asset), `missing ${asset}`);
   }
   assert.doesNotMatch(worker, /frontline-timeframe|weather-dynamics/);
@@ -130,6 +130,21 @@ test("timeframe cards reuse the Hero SVG weather mapping without enum text", asy
   assert.match(app, /icon\.replaceChildren\(createWeatherSymbol\(weather\.iconCode\)\)/);
   assert.match(css, /\.frame-icon \.weather-symbol \{ display: block; width: 22px; height: 22px; \}/);
   assert.match(css, /\.timeframe-matrix \.frame-icon \.weather-symbol \{ width: 18px; height: 18px; \}/);
+});
+
+test("timeframe cards localize presentation status and format user-facing scores", async () => {
+  const [app, i18n] = await Promise.all([read("app.js"), read("i18n.js")]);
+  assert.match(app, /function localizeObservationStatus\(value\)/);
+  assert.match(app, /function localizeQuality\(value\)/);
+  assert.match(app, /function formatObservationScore\(value\)/);
+  assert.match(app, /localizeObservationStatus\(status\)/);
+  assert.match(app, /localizeQuality\(observationQuality\)/);
+  assert.match(app, /formatObservationScore\(observationScore\)/);
+  assert.match(i18n, /fresh: "신선"/);
+  assert.match(i18n, /aging: "갱신 대기"/);
+  assert.match(i18n, /good: "양호"/);
+  assert.match(i18n, /limited: "제한"/);
+  assert.match(i18n, /staleObservation: "오래된 관측"/);
 });
 
 test("runtime plan gates use subscription canonical plans and never expose locked receipt details", async () => {
