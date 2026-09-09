@@ -83,7 +83,7 @@ test("server history hydration updates the core-metric observation source", asyn
 test("last-known-good display keeps stale receipts separate from LIVE", async () => {
   const [app, css, history] = await Promise.all([read("app.js"), read("styles.css"), read("weather-history.js")]);
   for (const required of ["LAST OBSERVATION", "OLD OBSERVATION", "lastKnownGoodTimeframes", "withLastKnownGoodCache", "cachedLastKnownGoodTimeframes", "refreshLiveObservations"]) assert.match(app, new RegExp(required));
-  assert.match(app, /view\?\.source === "CURRENT" \? "LIVE" : displayState\(status\)/);
+  assert.match(app, /currentObservation \? "LIVE" : displayState\(status\)/);
   assert.match(css, /frame-cell\.is-last-observation/);
   assert.match(css, /hero-weather-panel\[data-state="last-known-good"\]/);
   assert.match(history, /lastKnownGoodKey/);
@@ -111,9 +111,9 @@ test("asset navigation separates entitlement from the selected state", async () 
 
 test("dashboard cache shell includes the membership resolver and has no removed UI modules", async () => {
   const [html, worker] = await Promise.all([read("index.html"), read("service-worker.js")]);
-  assert.match(worker, /ailynx-weather-v55/);
+  assert.match(worker, /ailynx-weather-v53/);
   assert.match(html, /manifest\.webmanifest\?v=2/);
-  for (const asset of ["styles.css?v=32", "icons/ailynx-brand.jpg", "asset-registry.js?v=5", "manifest.webmanifest?v=2", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "community-config.js?v=4", "admin-access.js?v=2", "admin-preview.js?v=1", "admin-asset-client.js?v=1", "auth-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=5", "member-community.js?v=5", "admin.html", "admin-page.js?v=2", "auth-gate.js?v=4", "app.js?v=41"]) {
+  for (const asset of ["styles.css?v=32", "icons/ailynx-brand.jpg", "asset-registry.js?v=5", "manifest.webmanifest?v=2", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "community-config.js?v=4", "admin-access.js?v=2", "admin-preview.js?v=1", "admin-asset-client.js?v=1", "auth-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=5", "member-community.js?v=5", "admin.html", "admin-page.js?v=2", "auth-gate.js?v=4", "app.js?v=39"]) {
     assert.ok(html.includes(asset) || worker.includes(asset), `missing ${asset}`);
   }
   assert.doesNotMatch(worker, /frontline-timeframe|weather-dynamics/);
@@ -172,27 +172,4 @@ test("daily timeframe locks follow Plus for 1D and Premium for 2D through 1W", a
   assert.match(app, /const requiredPlan = requiredPlanForTimeframe\(timeframe, kind\)/);
   assert.match(config, /WEATHER[\s\S]*daily: \["1D"\]/);
   assert.match(config, /PREMIUM[\s\S]*daily: \["1D", "2D", "3D", "4D", "5D", "6D", "1W"\]/);
-});
-
-
-test("dashboard loads one canonical weather view model before app consumers", async () => {
-  const [html, app, viewModel] = await Promise.all([
-    read("index.html"),
-    read("app.js"),
-    read("weather-view-model.js"),
-  ]);
-  assert.match(html, /weather-view-model\.js\?v=1[\s\S]*app\.js\?v=41/);
-  assert.match(app, /AiLynxWeatherViewModel/);
-  assert.match(app, /buildMetricHistory/);
-  assert.doesNotMatch(app, /dashboardConfig\?\.weatherBands\?\.find/);
-  assert.match(viewModel, /normalizeWeatherTimeframe/);
-  assert.match(viewModel, /buildWeatherViewModel/);
-});
-
-test("dashboard keeps raw MAAT validation cards out of the static UI", async () => {
-  const [html, app] = await Promise.all([read("index.html"), read("app.js")]);
-  assert.doesNotMatch(html, /data-validation-card=/);
-  assert.doesNotMatch(html, /MAAT2 TIME/);
-  assert.doesNotMatch(app, /renderMaatValidationCard\(validationCardsData/);
-  assert.doesNotMatch(app, /renderMaat2ValidationCard\(validationCardsData/);
 });
