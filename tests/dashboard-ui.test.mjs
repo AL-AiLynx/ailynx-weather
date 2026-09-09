@@ -67,6 +67,14 @@ test("the completed hero uses the official app mark and a summarized public BTC 
   assert.match(css, /clamp\(56px, 5vw, 64px\)/);
 });
 
+test("legacy weather sections use the current SVG symbol renderer", async () => {
+  const app = await read("app.js");
+  assert.match(app, /function weatherSymbolMarkup\(iconCode\)/);
+  assert.match(app, /weatherIconElement\.replaceChildren\(\s*createWeatherSymbol\(weatherData\.weather\.icon\)/s);
+  assert.match(app, /weatherSymbolMarkup\(data\.icon\)/);
+  assert.doesNotMatch(app, /getWeatherIcon\(/);
+});
+
 test("asset navigation has four accessible canonical controls and no hero dropdown", async () => {
   const [html, app, registry, css] = await Promise.all([read("index.html"), read("app.js"), read("asset-registry.js"), read("styles.css")]);
   assert.match(html, /class="asset-navigation" id="assetNavigation"/);
@@ -89,9 +97,9 @@ test("asset navigation separates entitlement from the selected state", async () 
 
 test("dashboard cache shell includes the membership resolver and has no removed UI modules", async () => {
   const [html, worker] = await Promise.all([read("index.html"), read("service-worker.js")]);
-  assert.match(worker, /ailynx-weather-v50/);
+  assert.match(worker, /ailynx-weather-v51/);
   assert.match(html, /manifest\.webmanifest\?v=2/);
-  for (const asset of ["styles.css?v=32", "icons/ailynx-brand.jpg", "asset-registry.js?v=5", "manifest.webmanifest?v=2", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "community-config.js?v=4", "admin-access.js?v=2", "admin-preview.js?v=1", "admin-asset-client.js?v=1", "auth-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=5", "member-community.js?v=5", "admin.html", "admin-page.js?v=2", "auth-gate.js?v=4", "app.js?v=36"]) {
+  for (const asset of ["styles.css?v=32", "icons/ailynx-brand.jpg", "asset-registry.js?v=5", "manifest.webmanifest?v=2", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "community-config.js?v=4", "admin-access.js?v=2", "admin-preview.js?v=1", "admin-asset-client.js?v=1", "auth-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=5", "member-community.js?v=5", "admin.html", "admin-page.js?v=2", "auth-gate.js?v=4", "app.js?v=37"]) {
     assert.ok(html.includes(asset) || worker.includes(asset), `missing ${asset}`);
   }
   assert.doesNotMatch(worker, /frontline-timeframe|weather-dynamics/);

@@ -122,6 +122,10 @@ function createWeatherSymbol(iconCode) {
   return svg;
 }
 
+function weatherSymbolMarkup(iconCode) {
+  return createWeatherSymbol(iconCode).outerHTML;
+}
+
 function renderWeatherIcon(iconCode) {
   const target = document.getElementById("heroWeatherIcon");
   if (!target) return;
@@ -1340,10 +1344,9 @@ function renderCurrentWeather() {
   headlineElement.textContent =
     weatherData.headline;
 
-  weatherIconElement.textContent =
-    getWeatherIcon(
-      weatherData.weather.icon
-    );
+  weatherIconElement.replaceChildren(
+    createWeatherSymbol(weatherData.weather.icon)
+  );
 
   weatherNameElement.textContent =
     weatherData.weather.name;
@@ -1385,7 +1388,7 @@ function renderHourlyWeather() {
       </div>
 
       <div class="hour-icon">
-        ${getWeatherIcon(data.icon)}
+        ${weatherSymbolMarkup(data.icon)}
       </div>
 
       <div class="hour-energy">
@@ -1439,7 +1442,7 @@ function renderDailyForecast() {
 
       <div class="daily-status">
         <span class="daily-icon">
-          ${getWeatherIcon(data.icon)}
+          ${weatherSymbolMarkup(data.icon)}
         </span>
 
         <span class="daily-status-text">
