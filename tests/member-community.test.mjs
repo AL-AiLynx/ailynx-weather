@@ -84,6 +84,20 @@ test("community UI retains posts/chat and adds email Auth controls without uploa
   assert.match(html, /manualDialog/);
   assert.match(html, /id="planDialog"/);
   assert.match(html, /플러스에서 확인/);
+  const expectedPlanCards = [
+    ["FREE", "무료", "BTC · 나스닥100 중심의 기본 Lynx Weather", "기본 시장 점유율과 핵심 날씨 확인"],
+    ["WEATHER", "플러스", "추가 자산 2개 + 시장 리드 타임프레임", "추가 자산은 추후 선택 가능"],
+    ["PREMIUM", "프리미엄", "일간 타임프레임 + 검증 상태", "상위 시간축과 상세 검증 정보 확인"],
+    ["PRO", "프로", "전체 타임프레임 매트릭스 + Mobile Viewer", "Lynx 정밀 관측 환경"],
+  ];
+  let previous = -1;
+  expectedPlanCards.forEach(([code, title, summary, detail]) => {
+    const start = html.indexOf(`data-plan-card="${code}"`);
+    assert.ok(start > previous, `${code} card order`);
+    const card = html.slice(start, html.indexOf("</article>", start));
+    for (const text of [title, summary, detail]) assert.match(card, new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    previous = start;
+  });
   for (const label of ["회원 전용 기능", "무료 회원가입", "플러스 보기", "프리미엄 보기", "프로 보기", "구독 준비 중"]) assert.match(html, new RegExp(label));
   assert.doesNotMatch(html, /id="adminEntry"|id="adminDialog"/);
   assert.match(ui, /AiLynxAdminAccess/);
