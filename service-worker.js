@@ -1,7 +1,7 @@
 +"use strict";
 
 const CACHE_NAME =
-  "ailynx-weather-v43";
+  "ailynx-weather-v44";
 
 const AS1_VALIDATION_ENDPOINT =
   "https://jggazwqwalincsjegieo.supabase.co/functions/v1/as1-validation-read";
@@ -16,7 +16,7 @@ const APP_SHELL = [
   "./as1-horus-client.js?v=16",
   "./lynx-dashboard-config.js?v=20",
   "./lynx-notices.js?v=16",
-  "./asset-registry.js?v=4",
+  "./asset-registry.js?v=5",
   "./weather-history.js?v=1",
   "./core-dynamics.js?v=1",
   "./as1-asset-client.js?v=2",
