@@ -1,6 +1,6 @@
 "use strict";
 
-import {isCurrentUserAdmin} from "./admin-access.js?v=2";
+import {isCurrentUserAdmin} from "./admin-access.js?v=3";
 
 export const ADMIN_PREVIEW_MODES = Object.freeze(["FREE", "WEATHER", "PREMIUM", "PRO", "ADMIN"]);
 let state = Object.freeze({verified: false, mode: null});

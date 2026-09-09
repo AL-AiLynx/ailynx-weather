@@ -1,7 +1,7 @@
 "use strict";
 
-import {isCurrentUserAdmin} from "./admin-access.js?v=2";
-import {ADMIN_PREVIEW_MODES, previewUrl} from "./admin-preview.js?v=1";
+import {isCurrentUserAdmin} from "./admin-access.js?v=3";
+import {ADMIN_PREVIEW_MODES, previewUrl} from "./admin-preview.js?v=2";
 import {fetchAdminAssetObservations} from "./admin-asset-client.js?v=1";
 import {resolveMembership} from "./membership-client.js?v=2";
 

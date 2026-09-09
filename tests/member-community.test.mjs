@@ -49,7 +49,7 @@ test("membership runtime uses public Auth configuration with anonymous FREE fall
   assert.match(adminPage, /권한 미리보기/);
   assert.match(adminPage, /실측 관측 상태/);
   assert.match(adminPage, /fetchAdminAssetObservations/);
-  assert.match(adminHtml, /admin-preview\.js\?v=1/);
+  assert.match(adminHtml, /admin-preview\.js\?v=2/);
   assert.match(adminHtml, /id="adminPageShell" hidden/);
   assert.doesNotMatch(dashboard, /activePlan|PLUS/);
 });

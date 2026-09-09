@@ -25,6 +25,10 @@ export function isAdminMembership(state, verified = current) {
   return Boolean(state?.authenticated && verified === true);
 }
 
+export function hasAdminFullAccess(verified = current) {
+  return verified === true;
+}
+
 export const adminState = () => Object.freeze({verified: current});
 
 export async function refreshAdminAccess({config = globalThis.window?.AiLynxCommunityConfig, authClient = globalThis.window?.AiLynxSupabaseAuth, fetchImpl} = {}) {
@@ -35,7 +39,7 @@ export async function refreshAdminAccess({config = globalThis.window?.AiLynxComm
 }
 
 if (typeof window !== "undefined") {
-  window.AiLynxAdminAccess = Object.freeze({isCurrentUserAdmin, isAdminMembership, adminState, refresh: refreshAdminAccess});
+  window.AiLynxAdminAccess = Object.freeze({isCurrentUserAdmin, isAdminMembership, hasFullAccess: hasAdminFullAccess, adminState, refresh: refreshAdminAccess});
   window.addEventListener("ailynx-membership", () => { void refreshAdminAccess(); });
   window.addEventListener("ailynx-auth-logout", () => {
     current = false;

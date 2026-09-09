@@ -981,13 +981,18 @@ function planDisplayName(code = currentPlanCode()) {
   return dashboardConfig?.plans?.[code]?.label || dashboardConfig?.plans?.FREE?.label || "무료";
 }
 
+function hasAdminFullAccess() {
+  return window.AiLynxAdminAccess?.hasFullAccess?.() === true;
+}
+
 function planAtLeast(code) {
+  if (hasAdminFullAccess()) return Boolean(dashboardConfig?.plans?.[code]);
   const requiredRank = dashboardConfig?.plans?.[code]?.rank;
   return Number.isFinite(requiredRank) && (currentPlan()?.rank || 0) >= requiredRank;
 }
 
 function hasFeature(feature) {
-  return Boolean(currentPlan()?.features?.includes(feature));
+  return hasAdminFullAccess() || Boolean(currentPlan()?.features?.includes(feature));
 }
 
 function assetEntitled(assetId) {
@@ -1129,6 +1134,7 @@ function observedHeroState() {
 }
 
 function planAllows(timeframe, kind) {
+  if (hasAdminFullAccess()) return true;
   const plan = currentPlan();
   return Boolean(plan && plan[kind]?.includes(timeframe));
 }
@@ -2156,6 +2162,17 @@ window.addEventListener("ailynx-admin-preview", () => {
   assetReadPath?.reconcileAccess?.();
   if (!hasFeature("viewer.professional_details")) validationCardsData = null;
   if (document.readyState !== "loading") renderApp();
+});
+
+window.addEventListener("ailynx-admin", () => {
+  void enforceFreeSafeSelection();
+  assetReadPath?.reconcileAccess?.();
+  if (hasFeature("viewer.professional_details")) {
+    void applyAs1ValidationCards(validationTimeframe);
+  } else {
+    validationCardsData = null;
+    if (document.readyState !== "loading") renderApp();
+  }
 });
 
 window.addEventListener("ailynx-auth-logout", () => {
