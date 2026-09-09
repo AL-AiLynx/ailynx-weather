@@ -30,7 +30,15 @@ function normalizeReceipt(value, expected, asset, {requireValid = false} = {}) {
     sensorQuality: value.sensor_quality,
     freshness: value.freshness,
     flags: Object.freeze([...value.flags]),
+    score: Number.isFinite(value.score) && value.score >= 0 && value.score <= 100 ? value.score : null,
   });
+}
+
+function normalizeHistoryReceipt(value, expected, asset, timeframe) {
+  const receipt = normalizeReceipt(value, expected, asset, {requireValid: true});
+  if (!receipt || receipt.timeframe !== timeframe || receipt.freshness === "STALE" || value.confirmed !== true ||
+      !Number.isFinite(value.score) || value.score < 0 || value.score > 100) return null;
+  return Object.freeze({...receipt, confirmed: true, score: value.score});
 }
 
 export async function fetchAssetObservations({asset, fetchImpl = globalThis.fetch, signal, endpoint = AS1_ASSET_ENDPOINT, headers = {}} = {}) {
@@ -54,5 +62,28 @@ export async function fetchAssetObservations({asset, fetchImpl = globalThis.fetc
     const hasLiveReceipt = receipts.some((receipt) => receipt.freshness !== "STALE");
     const status = hasLiveReceipt ? "LIVE" : latestReceipt?.valid === true ? "STALE" : latestReceipt ? "INVALID" : "PLANNED";
     return Object.freeze({available: true, asset, tickerId: expected.tickerId, sourceProfileCode: expected.sourceProfileCode, status, latestReceipt, timeframes: Object.freeze(timeframes)});
+  } catch (error) { return unavailable(signal?.aborted || error?.name === "AbortError" ? "ABORTED" : "NETWORK_ERROR"); }
+}
+
+
+export async function fetchAssetHistory({asset, timeframe, limit = 4, fetchImpl = globalThis.fetch, signal, endpoint = AS1_ASSET_ENDPOINT, headers = {}} = {}) {
+  const expected = ASSET_READERS[asset];
+  const normalizedLimit = Number.isInteger(limit) && limit >= 1 && limit <= 4 ? limit : null;
+  if (!expected || typeof timeframe !== "string" || !timeframe || !normalizedLimit || typeof fetchImpl !== "function") return unavailable("INVALID_HISTORY_REQUEST");
+  const url = new URL(endpoint);
+  url.searchParams.set("asset", asset);
+  url.searchParams.set("timeframe", timeframe);
+  url.searchParams.set("limit", String(normalizedLimit));
+  try {
+    const response = await fetchImpl(url, {method: "GET", cache: "no-store", credentials: "omit", redirect: "error", headers, ...(signal ? {signal} : {})});
+    if (!response.ok) return unavailable(response.status === 404 ? "NO_OBSERVATION" : "HTTP_ERROR");
+    const body = await response.json();
+    if (body?.ok !== true || body.asset !== asset || body.ticker_id !== expected.tickerId ||
+        body.source_profile_code !== expected.sourceProfileCode || !Array.isArray(body.history)) return unavailable("IDENTITY_MISMATCH");
+    const history = body.history.map((item) => normalizeHistoryReceipt(item, expected, asset, timeframe));
+    if (history.some((item) => item === null) || history.length > normalizedLimit) return unavailable("IDENTITY_MISMATCH");
+    const ordered = [...history].sort((a, b) => a.barCloseTime - b.barCloseTime || Date.parse(a.receivedAt) - Date.parse(b.receivedAt));
+    if (ordered.some((item, index) => index > 0 && item.barCloseTime <= ordered[index - 1].barCloseTime)) return unavailable("IDENTITY_MISMATCH");
+    return Object.freeze({available: true, asset, timeframe, history: Object.freeze(ordered)});
   } catch (error) { return unavailable(signal?.aborted || error?.name === "AbortError" ? "ABORTED" : "NETWORK_ERROR"); }
 }
