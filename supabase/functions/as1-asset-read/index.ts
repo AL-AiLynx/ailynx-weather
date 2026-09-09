@@ -43,10 +43,33 @@ Deno.serve(async (request) => {
     const {data, error} = await db.from("as1_raw_events").select(COLUMNS).eq("satellite_id", "AS1").eq("platform", "TRADINGVIEW").eq("layout_id", "HORUS_A").eq("observer", "HORUS").eq("packet_type", "BAR_CLOSE_SNAPSHOT").eq("confirmed", true).eq("source_profile_code", expected.sourceProfileCode).eq("ticker_id", expected.tickerId).eq("venue", expected.venue).eq("symbol", expected.symbol).order("bar_close_time", {ascending: false}).order("received_at", {ascending: false}).limit(500);
     if (error) throw error;
     const receipts = (data ?? []).map((row) => project(row as RecordValue, asset)).filter((row): row is NonNullable<ReturnType<typeof project>> => row !== null);
-    const latestReceipt = receipts[0] ?? null, latestValid = new Map<string, NonNullable<ReturnType<typeof project>>>();
-    for (const receipt of receipts) if (receipt.valid && !latestValid.has(receipt.timeframe)) latestValid.set(receipt.timeframe, receipt);
+    const latestReceipt = receipts[0] ?? null;
+    const latestValid = new Map<string, NonNullable<ReturnType<typeof project>>>();
+    const currentValid = new Map<string, NonNullable<ReturnType<typeof project>>>();
+    for (const receipt of receipts) {
+      if (!receipt.valid) continue;
+      if (!latestValid.has(receipt.timeframe)) latestValid.set(receipt.timeframe, receipt);
+      if (["FRESH", "AGING"].includes(receipt.freshness) && !currentValid.has(receipt.timeframe)) currentValid.set(receipt.timeframe, receipt);
+    }
     const history = requestedTimeframe ? receipts.filter((receipt) => receipt.timeframe === requestedTimeframe && receipt.confirmed === true && receipt.valid === true && receipt.freshness !== "STALE" && Number.isFinite(receipt.score)).slice(0, requestedLimit) : [];
     const status = latestValid.size ? "LIVE" : latestReceipt ? "INVALID" : "PLANNED";
-    return json({ok: true, asset, ticker_id: expected.tickerId, source_profile_code: expected.sourceProfileCode, status, latest_receipt: latestReceipt, timeframes: Object.fromEntries(latestValid), history});
+    const current = requestedTimeframe ? currentValid.get(requestedTimeframe) ?? null : null;
+    const lastKnownGood = requestedTimeframe ? latestValid.get(requestedTimeframe) ?? null : null;
+    return json({
+      ok: true,
+      asset,
+      ticker_id: expected.tickerId,
+      source_profile_code: expected.sourceProfileCode,
+      status,
+      latest_receipt: latestReceipt,
+      // Legacy clients use timeframes. New clients distinguish fresh current
+      // observations from a verified stale fallback explicitly.
+      timeframes: Object.fromEntries(latestValid),
+      current,
+      history,
+      last_known_good: lastKnownGood,
+      current_timeframes: Object.fromEntries(currentValid),
+      last_known_good_timeframes: Object.fromEntries(latestValid),
+    });
   } catch { return json({ok: false, error: "SERVICE_UNAVAILABLE"}, 503); }
 });

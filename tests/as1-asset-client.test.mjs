@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {fetchAssetHistory, fetchAssetObservations} from "../as1-asset-client.js";
+import {fetchAssetHistory, fetchAssetObservations, lastKnownGoodState} from "../as1-asset-client.js";
 import {ASSET_READERS} from "../asset-registry.js";
 
 const response = (body, status = 200) => ({ok: status >= 200 && status < 300, status, json: async () => body});
@@ -27,6 +27,22 @@ test("single registry fixes the four canonical asset identities", () => {
 test("a stale valid receipt is not promoted to LIVE", async () => {
   const result = await fetchAssetObservations({asset: "XAUUSD", fetchImpl: async () => response({ok: true, asset: "XAUUSD", ticker_id: "OANDA:XAUUSD", source_profile_code: "OANDA_XAUUSD_CFD_V1", status: "LIVE", latest_receipt: {asset: "XAUUSD", symbol: "XAUUSD", ticker_id: "OANDA:XAUUSD", timeframe: "4H", received_at: "2026-09-08T00:00:00.000Z", bar_close_time: 1788825600000, bar_close: 3400, valid: true, sensor_quality: "GOOD", freshness: "STALE", flags: []}, timeframes: {"4H": {asset: "XAUUSD", symbol: "XAUUSD", ticker_id: "OANDA:XAUUSD", timeframe: "4H", received_at: "2026-09-08T00:00:00.000Z", bar_close_time: 1788825600000, bar_close: 3400, valid: true, sensor_quality: "GOOD", freshness: "STALE", flags: []}}})});
   assert.equal(result.status, "STALE");
+});
+
+test("current and last-known-good timeframe reads remain distinct", async () => {
+  const stale = {asset: "BTCUSD", symbol: "BTCUSD", ticker_id: "COINBASE:BTCUSD", timeframe: "4H", received_at: "2026-09-08T00:00:00.000Z", bar_close_time: 1788825600000, bar_close: 78000, valid: true, confirmed: true, sensor_quality: "GOOD", freshness: "STALE", flags: [], score: 48};
+  const fresh = {...stale, timeframe: "1H", received_at: "2026-09-09T00:00:00.000Z", bar_close_time: 1788912000000, freshness: "FRESH", score: 54};
+  const result = await fetchAssetObservations({asset: "BTCUSD", fetchImpl: async () => response({ok: true, asset: "BTCUSD", ticker_id: "COINBASE:BTCUSD", source_profile_code: "CB_BTCUSD_SPOT_20260722_V1", status: "LIVE", latest_receipt: fresh, timeframes: {"1H": fresh, "4H": stale}, current_timeframes: {"1H": fresh}, last_known_good_timeframes: {"1H": fresh, "4H": stale}})});
+  assert.equal(result.available, true);
+  assert.deepEqual(Object.keys(result.currentTimeframes), ["1H"]);
+  assert.deepEqual(Object.keys(result.lastKnownGoodTimeframes), ["1H", "4H"]);
+  assert.equal(result.lastKnownGoodTimeframes["4H"].freshness, "STALE");
+});
+
+test("last-known-good labels never claim stale data is LIVE", () => {
+  const receipt = {valid: true, receivedAt: "2026-09-08T20:00:00.000Z"};
+  assert.equal(lastKnownGoodState(receipt, Date.parse("2026-09-09T00:00:00.000Z")), "LAST OBSERVATION");
+  assert.equal(lastKnownGoodState(receipt, Date.parse("2026-09-11T00:00:00.000Z")), "OLD OBSERVATION");
 });
 
 

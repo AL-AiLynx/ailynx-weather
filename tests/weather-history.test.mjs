@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   WEATHER_HISTORY_LIMIT,
+  lastKnownGoodKey,
   mergeWeatherHistory,
+  readLastKnownGood,
   readWeatherHistory,
   weatherHistoryKey,
+  writeLastKnownGood,
   writeWeatherHistory,
 } from "../weather-history.js";
 
@@ -36,6 +39,8 @@ test("weather history is isolated by asset and timeframe", () => {
   assert.equal(weatherHistoryKey("BTCUSD", "4H"), "lynx.weather.history.BTCUSD.4H");
   assert.notEqual(weatherHistoryKey("BTCUSD", "4H"), weatherHistoryKey("XAUUSD", "4H"));
   assert.notEqual(weatherHistoryKey("BTCUSD", "4H"), weatherHistoryKey("BTCUSD", "1D"));
+  assert.equal(lastKnownGoodKey("BTCUSD", "4H"), "lynx.weather.lkg.BTCUSD.4H");
+  assert.notEqual(lastKnownGoodKey("BTCUSD", "4H"), lastKnownGoodKey("XAUUSD", "4H"));
 });
 
 test("weather history deduplicates an observation and retains only four snapshots", () => {
@@ -71,4 +76,14 @@ test("weather history survives a reload through minimal local storage snapshots"
   assert.ok(stored);
   assert.doesNotMatch(stored, /raw_envelope/);
   assert.deepEqual(readWeatherHistory(storage, "BTCUSD", "4H"), history);
+});
+
+test("last-known-good cache retains only a verified same-asset same-timeframe receipt", () => {
+  const storage = memoryStorage();
+  const lkg = {...snapshot(0, {freshness: "STALE"}), confirmed: true};
+  assert.equal(writeLastKnownGood(storage, lkg), true);
+  assert.deepEqual(readLastKnownGood(storage, "BTCUSD", "4H"), lkg);
+  storage.setItem(lastKnownGoodKey("BTCUSD", "1D"), JSON.stringify(lkg));
+  assert.equal(readLastKnownGood(storage, "BTCUSD", "1D"), null);
+  assert.equal(writeLastKnownGood(storage, {...lkg, confirmed: false}), false);
 });

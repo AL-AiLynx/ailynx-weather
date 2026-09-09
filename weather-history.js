@@ -2,6 +2,7 @@
 
 export const WEATHER_HISTORY_LIMIT = 4;
 export const weatherHistoryKey = (assetId, timeframe) => `lynx.weather.history.${assetId}.${timeframe}`;
+export const lastKnownGoodKey = (assetId, timeframe) => `lynx.weather.lkg.${assetId}.${timeframe}`;
 
 function validSnapshot(value, assetId, timeframe) {
   return value && value.assetId === assetId && value.timeframe === timeframe &&
@@ -10,6 +11,14 @@ function validSnapshot(value, assetId, timeframe) {
     typeof value.state === "string" && typeof value.majorTimeframe === "string" &&
     ["GOOD", "WATCH", "LIMITED", "CONFLICT"].includes(value.quality) &&
     value.valid === true && ["FRESH", "AGING"].includes(value.freshness);
+}
+
+function validLastKnownGood(value, assetId, timeframe) {
+  return value && value.assetId === assetId && value.timeframe === timeframe &&
+    typeof value.observedAt === "string" && Number.isFinite(Date.parse(value.observedAt)) &&
+    Number.isFinite(value.score) && value.score >= 0 && value.score <= 100 &&
+    typeof value.state === "string" && ["GOOD", "WATCH", "LIMITED", "CONFLICT"].includes(value.quality) &&
+    value.valid === true && value.confirmed === true && ["FRESH", "AGING", "STALE"].includes(value.freshness);
 }
 
 export function readWeatherHistory(storage, assetId, timeframe) {
@@ -34,4 +43,22 @@ export function writeWeatherHistory(storage, history) {
   try { storage?.setItem?.(weatherHistoryKey(latest.assetId, latest.timeframe), JSON.stringify(history)); return true; } catch { return false; }
 }
 
-if (typeof window !== "undefined") window.AiLynxWeatherHistory = Object.freeze({readWeatherHistory, mergeWeatherHistory, writeWeatherHistory});
+export function readLastKnownGood(storage, assetId, timeframe) {
+  try {
+    const value = JSON.parse(storage?.getItem?.(lastKnownGoodKey(assetId, timeframe)) || "null");
+    return validLastKnownGood(value, assetId, timeframe) ? value : null;
+  } catch { return null; }
+}
+
+export function writeLastKnownGood(storage, snapshot) {
+  if (!validLastKnownGood(snapshot, snapshot?.assetId, snapshot?.timeframe)) return false;
+  try { storage?.setItem?.(lastKnownGoodKey(snapshot.assetId, snapshot.timeframe), JSON.stringify(snapshot)); return true; } catch { return false; }
+}
+
+if (typeof window !== "undefined") window.AiLynxWeatherHistory = Object.freeze({
+  readWeatherHistory,
+  mergeWeatherHistory,
+  writeWeatherHistory,
+  readLastKnownGood,
+  writeLastKnownGood,
+});

@@ -18,7 +18,7 @@ test("dashboard retains weather history calculations without a graph renderer", 
   assert.match(app, /recordWeatherObservation/);
   assert.match(app, /computeDurability/);
   assert.match(app, /computeChangeRate/);
-  assert.match(worker, /weather-history\.js\?v=1/);
+  assert.match(worker, /weather-history\.js\?v=2/);
   assert.match(history, /mergeWeatherHistory/);
 });
 
@@ -80,6 +80,15 @@ test("server history hydration updates the core-metric observation source", asyn
   assert.match(app, /serverWeatherHistory\.set\(key, history\);\s*weatherObservationHistory\.set\(key, history\);/s);
 });
 
+test("last-known-good display keeps stale receipts separate from LIVE", async () => {
+  const [app, css, history] = await Promise.all([read("app.js"), read("styles.css"), read("weather-history.js")]);
+  for (const required of ["LAST OBSERVATION", "OLD OBSERVATION", "lastKnownGoodTimeframes", "withLastKnownGoodCache", "cachedLastKnownGoodTimeframes", "refreshLiveObservations"]) assert.match(app, new RegExp(required));
+  assert.match(app, /currentObservation \? "LIVE" : displayState\(status\)/);
+  assert.match(css, /frame-cell\.is-last-observation/);
+  assert.match(css, /hero-weather-panel\[data-state="last-known-good"\]/);
+  assert.match(history, /lastKnownGoodKey/);
+});
+
 test("asset navigation has four accessible canonical controls and no hero dropdown", async () => {
   const [html, app, registry, css] = await Promise.all([read("index.html"), read("app.js"), read("asset-registry.js"), read("styles.css")]);
   assert.match(html, /class="asset-navigation" id="assetNavigation"/);
@@ -102,9 +111,9 @@ test("asset navigation separates entitlement from the selected state", async () 
 
 test("dashboard cache shell includes the membership resolver and has no removed UI modules", async () => {
   const [html, worker] = await Promise.all([read("index.html"), read("service-worker.js")]);
-  assert.match(worker, /ailynx-weather-v52/);
+  assert.match(worker, /ailynx-weather-v53/);
   assert.match(html, /manifest\.webmanifest\?v=2/);
-  for (const asset of ["styles.css?v=32", "icons/ailynx-brand.jpg", "asset-registry.js?v=5", "manifest.webmanifest?v=2", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "community-config.js?v=4", "admin-access.js?v=2", "admin-preview.js?v=1", "admin-asset-client.js?v=1", "auth-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=5", "member-community.js?v=5", "admin.html", "admin-page.js?v=2", "auth-gate.js?v=4", "app.js?v=38"]) {
+  for (const asset of ["styles.css?v=32", "icons/ailynx-brand.jpg", "asset-registry.js?v=5", "manifest.webmanifest?v=2", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "community-config.js?v=4", "admin-access.js?v=2", "admin-preview.js?v=1", "admin-asset-client.js?v=1", "auth-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=5", "member-community.js?v=5", "admin.html", "admin-page.js?v=2", "auth-gate.js?v=4", "app.js?v=39"]) {
     assert.ok(html.includes(asset) || worker.includes(asset), `missing ${asset}`);
   }
   assert.doesNotMatch(worker, /frontline-timeframe|weather-dynamics/);
@@ -115,7 +124,8 @@ test("runtime plan gates use subscription canonical plans and never expose locke
   assert.doesNotMatch(`${app}\n${config}\n${registry}`, /activePlan|PLUS/);
   assert.match(config, /FREE.*WEATHER.*PREMIUM.*PRO/s);
   assert.match(app, /hasFeature\("viewer\.professional_details"\)/);
-  assert.match(app, /const observation = allowed \?/);
+  assert.match(app, /const currentObservation = allowed/);
+  assert.match(app, /const lastKnownGood = allowed/);
   assert.match(app, /change\.textContent = !allowed \? ""/);
   assert.match(app, /frame-entitlement/);
   assert.match(app, /assetReadPath\?\.reconcileAccess\?\.?\(\)/);

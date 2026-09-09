@@ -4,6 +4,8 @@ export const AS1_ASSET_ENDPOINT = "https://jggazwqwalincsjegieo.supabase.co/func
 const unavailable = (reason) => ({available: false, reason});
 const STATUS = new Set(["LIVE", "PLANNED", "INVALID"]);
 const FRESHNESS = new Set(["FRESH", "AGING", "STALE"]);
+const CURRENT_FRESHNESS = new Set(["FRESH", "AGING"]);
+export const LKG_RECENT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -41,6 +43,22 @@ function normalizeHistoryReceipt(value, expected, asset, timeframe) {
   return Object.freeze({...receipt, confirmed: true, score: value.score});
 }
 
+function normalizeTimeframes(value, expected, asset) {
+  if (!isRecord(value)) return null;
+  const normalized = Object.fromEntries(Object.entries(value).map(([timeframe, receipt]) => {
+    const item = normalizeReceipt(receipt, expected, asset, {requireValid: true});
+    return item?.timeframe === timeframe ? [timeframe, item] : null;
+  }).filter(Boolean));
+  return Object.keys(normalized).length === Object.keys(value).length ? Object.freeze(normalized) : null;
+}
+
+export function lastKnownGoodState(receipt, now = Date.now()) {
+  if (!receipt?.valid || !Number.isFinite(Date.parse(receipt.receivedAt))) return "NO DATA";
+  return Math.max(0, now - Date.parse(receipt.receivedAt)) <= LKG_RECENT_MAX_AGE_MS
+    ? "LAST OBSERVATION"
+    : "OLD OBSERVATION";
+}
+
 export async function fetchAssetObservations({asset, fetchImpl = globalThis.fetch, signal, endpoint = AS1_ASSET_ENDPOINT, headers = {}} = {}) {
   const expected = ASSET_READERS[asset];
   if (!expected || typeof fetchImpl !== "function") return unavailable("UNSUPPORTED_ASSET");
@@ -53,15 +71,28 @@ export async function fetchAssetObservations({asset, fetchImpl = globalThis.fetc
         body.source_profile_code !== expected.sourceProfileCode || !STATUS.has(body.status) ||
         !isRecord(body.timeframes)) return unavailable("IDENTITY_MISMATCH");
     const latestReceipt = body.latest_receipt === null ? null : normalizeReceipt(body.latest_receipt, expected, asset);
-    const timeframes = Object.fromEntries(Object.entries(body.timeframes).map(([timeframe, receipt]) => {
-      const normalized = normalizeReceipt(receipt, expected, asset, {requireValid: true});
-      return normalized?.timeframe === timeframe ? [timeframe, normalized] : null;
-    }).filter(Boolean));
-    if ((body.latest_receipt !== null && !latestReceipt) || Object.keys(timeframes).length !== Object.keys(body.timeframes).length) return unavailable("IDENTITY_MISMATCH");
-    const receipts = Object.values(timeframes);
-    const hasLiveReceipt = receipts.some((receipt) => receipt.freshness !== "STALE");
+    const legacyTimeframes = normalizeTimeframes(body.timeframes, expected, asset);
+    const currentTimeframes = body.current_timeframes === undefined
+      ? Object.freeze(Object.fromEntries(Object.entries(legacyTimeframes || {}).filter(([, receipt]) => CURRENT_FRESHNESS.has(receipt.freshness))))
+      : normalizeTimeframes(body.current_timeframes, expected, asset);
+    const lastKnownGoodTimeframes = body.last_known_good_timeframes === undefined
+      ? legacyTimeframes
+      : normalizeTimeframes(body.last_known_good_timeframes, expected, asset);
+    if ((body.latest_receipt !== null && !latestReceipt) || !legacyTimeframes || !currentTimeframes || !lastKnownGoodTimeframes) return unavailable("IDENTITY_MISMATCH");
+    const receipts = Object.values(currentTimeframes);
+    const hasLiveReceipt = receipts.some((receipt) => CURRENT_FRESHNESS.has(receipt.freshness));
     const status = hasLiveReceipt ? "LIVE" : latestReceipt?.valid === true ? "STALE" : latestReceipt ? "INVALID" : "PLANNED";
-    return Object.freeze({available: true, asset, tickerId: expected.tickerId, sourceProfileCode: expected.sourceProfileCode, status, latestReceipt, timeframes: Object.freeze(timeframes)});
+    return Object.freeze({
+      available: true,
+      asset,
+      tickerId: expected.tickerId,
+      sourceProfileCode: expected.sourceProfileCode,
+      status,
+      latestReceipt,
+      timeframes: lastKnownGoodTimeframes,
+      currentTimeframes,
+      lastKnownGoodTimeframes,
+    });
   } catch (error) { return unavailable(signal?.aborted || error?.name === "AbortError" ? "ABORTED" : "NETWORK_ERROR"); }
 }
 
