@@ -55,6 +55,8 @@ let selectedAssetObservation = null;
 let assetReadPath = null;
 let assetReadPathPromise = null;
 const weatherObservationHistory = new Map();
+// Supabase receipt history is canonical; localStorage remains only a cache fallback.
+const serverWeatherHistory = new Map();
 const coreDynamicsValues = new Map();
 let marketDominanceData = null;
 let marketDominanceRequestPromise = null;
@@ -456,6 +458,7 @@ async function applyAs1ValidationCards(timeframe = validationTimeframe) {
       validationTimeframe = timeframe;
       const nextCards = await client.fetchValidationCards({timeframe});
       const validPublicWeather = capturePublicWeatherSnapshot(nextCards, timeframe);
+      if (validPublicWeather) await hydrateServerWeatherHistory(publicWeatherSnapshot?.result);
       heroWeatherPhase = validPublicWeather ? "valid" : "empty";
       validationCardsData = hasFeature("viewer.professional_details") ? nextCards : null;
       renderValidationCards();
@@ -929,7 +932,7 @@ async function selectAsset(assetId) {
       assetReadPath = readPath.createAssetReadPath({
         canReadAsset: assetEntitled,
         fetchObservation: async ({asset, signal}) => {
-          const client = await import("./as1-asset-client.js?v=2");
+          const client = await import("./as1-asset-client.js?v=3");
           return client.fetchAssetObservations({asset, signal});
         },
         onChange: (selection) => {
@@ -1010,9 +1013,13 @@ function makeFrameCell(timeframe, kind) {
   }
   const change = document.createElement("small");
   change.className = "frame-change";
-  change.textContent = !allowed ? "" : selectedAssetId !== "BTCUSD" && observation ? `${observation.sensorQuality} · LIVE`
-    : observation?.available ? `${observation.quality.sensorQuality} · ${observation.quality.valid ? "LIVE" : "INVALID"}`
-      : tr("waiting");
+  const observationQuality = selectedAssetId === "BTCUSD" ? observation?.quality?.sensorQuality : observation?.sensorQuality;
+  const observationScore = selectedAssetId === "BTCUSD" ? observation?.state?.score : observation?.score;
+  const compactScore = Number.isFinite(observationScore) ? ` · ${Math.round(observationScore)}` : "";
+  const receiptState = status === "FRESH" || status === "AGING" ? "LIVE" : status;
+  change.textContent = !allowed ? "" : observation
+    ? `${observationQuality || "WATCH"} · ${receiptState}${compactScore}`
+    : tr("waiting");
   cell.append(label, icon, persistence, change);
   return cell;
 }
@@ -1714,6 +1721,8 @@ function recordWeatherObservation(result) {
     observedAt: receipt.receivedAt,
   });
   const key = `${snapshot.assetId}:${snapshot.timeframe}`;
+  const serverHistory = serverWeatherHistory.get(key);
+  if (serverHistory) return serverHistory;
   const historyClient = window.AiLynxWeatherHistory;
   const history = weatherObservationHistory.get(key) || historyClient?.readWeatherHistory?.(window.localStorage, snapshot.assetId, snapshot.timeframe) || [];
   const bounded = historyClient?.mergeWeatherHistory?.(history, snapshot) || (() => {
@@ -1726,6 +1735,27 @@ function recordWeatherObservation(result) {
   weatherObservationHistory.set(key, bounded);
   historyClient?.writeWeatherHistory?.(window.localStorage, bounded);
   return bounded;
+}
+
+async function hydrateServerWeatherHistory(result) {
+  if (selectedAssetId !== "BTCUSD" || !result?.timeframe) return [];
+  const key = `BTCUSD:${result.timeframe}`;
+  try {
+    const client = await import("./as1-asset-client.js?v=3");
+    const response = await client.fetchAssetHistory({asset: "BTCUSD", timeframe: result.timeframe, limit: 4});
+    if (!response.available) return [];
+    const engine = window.AiLynxWeatherEngine;
+    const history = response.history.map((receipt) => {
+      const classified = engine?.classifyWeather?.(receipt.score);
+      if (!classified) return null;
+      const quality = receipt.sensorQuality === "GOOD" ? "GOOD" : receipt.sensorQuality === "LIMITED" ? "LIMITED" : "WATCH";
+      return Object.freeze({assetId: "BTCUSD", timeframe: receipt.timeframe, majorTimeframe: receipt.timeframe, score: receipt.score, state: classified.state, valid: true, noise: 0, quality, freshness: receipt.freshness, observedAt: receipt.receivedAt});
+    }).filter(Boolean);
+    serverWeatherHistory.set(key, history);
+    return history;
+  } catch {
+    return [];
+  }
 }
 
 function leaderTimeframe(hero = observedHeroState()) {
