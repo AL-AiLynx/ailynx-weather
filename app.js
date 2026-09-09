@@ -1124,7 +1124,13 @@ function makeFrameCell(timeframe, kind) {
   label.textContent = timeframe === "24H" ? "24H / 1D" : timeframe;
   const icon = document.createElement("span");
   icon.className = "frame-icon";
-  icon.textContent = !allowed ? "" : status === "FRESH" || status === "AGING" ? "●" : status === "LAST OBSERVATION" ? "◐" : status === "OLD OBSERVATION" || status === "STALE" ? "◌" : status === "INVALID" ? "!" : status === "NO DATA" ? "—" : "◌";
+  const observationQuality = observation?.quality?.sensorQuality ?? observation?.sensorQuality;
+  const observationScore = observation?.state?.score ?? observation?.score;
+  const weather = allowed && observation && Number.isFinite(observationScore)
+    ? weatherPresentation(observationScore)
+    : null;
+  if (weather) icon.replaceChildren(createWeatherSymbol(weather.iconCode));
+  else icon.textContent = !allowed ? "" : status === "FRESH" || status === "AGING" ? "●" : status === "LAST OBSERVATION" ? "◐" : status === "OLD OBSERVATION" || status === "STALE" ? "◌" : status === "INVALID" ? "!" : status === "NO DATA" ? "—" : "◌";
   const persistence = document.createElement("small");
   if (allowed) persistence.textContent = displayState(status);
   else {
@@ -1133,8 +1139,6 @@ function makeFrameCell(timeframe, kind) {
   }
   const change = document.createElement("small");
   change.className = "frame-change";
-  const observationQuality = observation?.quality?.sensorQuality ?? observation?.sensorQuality;
-  const observationScore = observation?.state?.score ?? observation?.score;
   const compactScore = Number.isFinite(observationScore) ? ` · ${Math.round(observationScore)}` : "";
   const receiptState = currentObservation ? "LIVE" : displayState(status);
   change.textContent = !allowed ? "" : observation

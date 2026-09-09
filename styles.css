@@ -757,6 +757,7 @@
 .frame-cell { display: grid; align-content: center; justify-items: start; min-height: 126px; padding: 13px; border: 1px solid var(--card-border); border-radius: 18px; background: rgba(18,49,67,.62); }
 .frame-cell strong { font-size: 14px; }
 .frame-icon { margin: 7px 0; font-size: 22px; line-height: 1; }
+.frame-icon .weather-symbol { display: block; width: 22px; height: 22px; }
 .frame-cell small { color: var(--text-muted); font-size: 10px; font-weight: 700; letter-spacing: .02em; }
 .frame-cell .frame-change { margin-top: 3px; color: var(--cyan); }
 .frame-cell.is-locked { border-color: rgba(183,202,214,.12); background: rgba(9,28,40,.52); }
@@ -781,6 +782,7 @@
 .timeframe-matrix .frame-cell { min-height: 104px; min-width: 0; padding: 10px 8px; border-radius: 15px; }
 .timeframe-matrix .frame-cell strong { font-size: 12px; }
 .timeframe-matrix .frame-icon { margin: 6px 0; font-size: 18px; }
+.timeframe-matrix .frame-icon .weather-symbol { width: 18px; height: 18px; }
 .timeframe-matrix .frame-cell small { font-size: 9px; }
 
 .market-dominance-section .section-title { align-items: flex-end; }
