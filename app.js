@@ -708,11 +708,21 @@ function renderMaat2ValidationCard(maat2) {
 }
 
 function renderValidationCards() {
+  const summary = document.getElementById("precisionSummary");
   if (!hasFeature("viewer.professional_details")) {
+    if (summary) summary.hidden = true;
     const target = document.getElementById("validationCards");
     if (target) target.innerHTML = `<article class="validation-card card validation-locked"><p class="validation-kicker">프로 전용</p><h3>정밀 관측 도구</h3><p class="validation-status">정밀 관측 도구와 Mobile Viewer를 사용할 수 있습니다.</p><button type="button" data-open-plan data-plan-target="PRO">프로 보기</button></article>`;
     return;
   }
+  const stopwatch = validationCardsData?.maat?.payload?.stopwatch;
+  const noise = stopwatch?.noise_score;
+  if (summary && validationCardsData?.maat?.available && Number.isFinite(stopwatch?.main_tf_minutes)) {
+    const windowText = stopwatch.phase === "WINDOW_OPEN" ? "관측 창 열림" : stopwatch.phase === "WAIT" ? "관측 대기" : "관측 상태 확인";
+    const noiseText = Number.isFinite(noise) ? noise <= 33 ? "노이즈 낮음" : noise <= 66 ? "노이즈 보통" : "노이즈 높음" : "노이즈 확인 중";
+    summary.textContent = `${formatValidationTfMinutes(stopwatch.main_tf_minutes)} 중심 · ${windowText} · ${noiseText}`;
+    summary.hidden = false;
+  } else if (summary) summary.hidden = true;
   renderMaatValidationCard(validationCardsData?.maat);
   renderMaat2ValidationCard(validationCardsData?.maat2);
 }

@@ -544,6 +544,8 @@
   padding: 22px;
 }
 
+.precision-summary { margin: 0 0 12px; color: var(--cyan); font-size: 12px; font-weight: 800; letter-spacing: .03em; }
+
 .validation-card-head {
   justify-content: space-between;
   gap: 12px;
