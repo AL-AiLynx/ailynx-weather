@@ -808,9 +808,10 @@ function renderMarketPrice() {
       return;
     }
     const observed = preferredAssetReceipt(currentAssetObservation());
+    const priceUnit = window.AiLynxAssetRegistry?.byId?.(selectedAssetId)?.priceUnit;
     price.textContent = Number.isFinite(observed?.barClose) ? formatPrice(observed.barClose, selectedAssetId) : "—";
     meta.textContent = observed
-      ? tr("observedFreshness", {freshness: displayState(observationSource(observed))})
+      ? `${tr("observedFreshness", {freshness: displayState(observationSource(observed))})}${priceUnit ? ` · ${priceUnit}` : ""}`
       : `${tr("currentPrice")} · ${tr("waiting")}`;
     return;
   }
