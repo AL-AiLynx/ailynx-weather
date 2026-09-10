@@ -4,6 +4,7 @@ import test from "node:test";
 import {fileURLToPath} from "node:url";
 
 const migration = fileURLToPath(new URL("../supabase/migrations/20260910150000_recover_us100_profile_mismatch_observations.sql", import.meta.url));
+const xauMigration = fileURLToPath(new URL("../supabase/migrations/20260910170000_recover_xauusd_profile_mismatch_observations.sql", import.meta.url));
 const readerGrant = fileURLToPath(new URL("../supabase/migrations/20260910160000_grant_recovery_reader_access.sql", import.meta.url));
 const reader = fileURLToPath(new URL("../supabase/functions/as1-asset-read/index.ts", import.meta.url));
 
@@ -32,6 +33,30 @@ test("US100 recovery migration preserves raw rows and permits only the known det
 test("recovery reader preserves the source validator's actual INVALID quality", async () => {
   const source = await readFile(reader, "utf8");
   assert.match(source, /\["GOOD", "LIMITED", "WATCH", "INVALID"\]\.includes\(String\(row\.sensor_quality\)\)/);
+});
+
+test("XAUUSD recovery extends the existing lineage table for only the audited 4H mismatch", async () => {
+  const sql = await readFile(xauMigration, "utf8");
+  assert.match(sql, /^begin;/im);
+  assert.match(sql, /alter table public\.as1_recovered_observations/i);
+  assert.match(sql, /asset = 'XAUUSD'/);
+  assert.match(sql, /raw\.ticker_id = 'OANDA:XAUUSD'/);
+  assert.match(sql, /raw\.source_profile_code = 'CB_BTCUSD_SPOT_20260722_V1'/);
+  assert.match(sql, /canonical_timeframe = '4H'/);
+  assert.match(sql, /'OANDA_XAUUSD_CFD_V1'/);
+  assert.match(sql, /raw\.flags = jsonb_build_array\('SOURCE_PROFILE_MISMATCH'\)/);
+  assert.match(sql, /on conflict \(original_raw_event_id\) do nothing/i);
+  assert.doesNotMatch(sql, /create table/i);
+  assert.doesNotMatch(sql, /\bupdate\s+public\.as1_raw_events\b/i);
+  assert.doesNotMatch(sql, /\bdelete\s+from\s+public\.as1_raw_events\b/i);
+  assert.match(sql, /commit;\s*$/i);
+});
+
+test("recovery reader accepts a recovered row only when it matches the requested asset identity", async () => {
+  const source = await readFile(reader, "utf8");
+  assert.doesNotMatch(source, /asset !== "US100"/);
+  assert.match(source, /row\.asset !== asset \|\| row\.ticker_id !== expected\.tickerId/);
+  assert.match(source, /const recoveredQuery = db\.from\("as1_recovered_observations"\)/);
 });
 
 test("recovery reader access is server-only", async () => {
