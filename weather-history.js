@@ -5,12 +5,13 @@ export const weatherHistoryKey = (assetId, timeframe) => `lynx.weather.history.$
 export const lastKnownGoodKey = (assetId, timeframe) => `lynx.weather.lkg.${assetId}.${timeframe}`;
 
 function validSnapshot(value, assetId, timeframe) {
+  const recovered = value?.provenance === "RECOVERED_HISTORY";
   return value && value.assetId === assetId && value.timeframe === timeframe &&
     typeof value.observedAt === "string" && Number.isFinite(Date.parse(value.observedAt)) &&
     Number.isFinite(value.score) && value.score >= 0 && value.score <= 100 &&
     typeof value.state === "string" && typeof value.majorTimeframe === "string" &&
     ["GOOD", "WATCH", "LIMITED", "CONFLICT"].includes(value.quality) &&
-    value.valid === true && ["FRESH", "AGING"].includes(value.freshness);
+    value.valid === true && (["FRESH", "AGING"].includes(value.freshness) || (recovered && value.freshness === "STALE"));
 }
 
 function validLastKnownGood(value, assetId, timeframe) {
@@ -31,7 +32,9 @@ export function readWeatherHistory(storage, assetId, timeframe) {
 export function mergeWeatherHistory(history, snapshot) {
   if (!validSnapshot(snapshot, snapshot?.assetId, snapshot?.timeframe)) return [];
   const current = Array.isArray(history) ? history.filter((item) => validSnapshot(item, snapshot.assetId, snapshot.timeframe)) : [];
-  const index = current.findIndex((item) => item.observedAt === snapshot.observedAt);
+  const index = current.findIndex((item) => Number.isSafeInteger(snapshot.barCloseTime) && Number.isSafeInteger(item.barCloseTime)
+    ? item.barCloseTime === snapshot.barCloseTime
+    : item.observedAt === snapshot.observedAt);
   if (index >= 0) current[index] = snapshot;
   else current.push(snapshot);
   return current.slice(-WEATHER_HISTORY_LIMIT);

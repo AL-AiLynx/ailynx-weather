@@ -55,7 +55,7 @@ test("membership runtime uses public Auth configuration with anonymous FREE fall
 });
 
 test("community migration enforces RLS, text-only content, and referral/Xp invariants", async () => {
-  const sql = await read("supabase/migrations/20260908113000_create_member_community.sql");
+  const sql = await read("supabase/pending-migrations/20260908113000_create_member_community.sql");
   for (const table of ["profiles", "community_posts", "community_comments", "chat_messages", "community_xp_events"]) assert.match(sql, new RegExp(`alter table public\\.${table} enable row level security`, "i"));
   assert.match(sql, /SELF_REFERRAL_REJECTED/);
   assert.match(sql, /unique \(referrer_id, referred_user_id\)|referred_user_id uuid not null unique/i);

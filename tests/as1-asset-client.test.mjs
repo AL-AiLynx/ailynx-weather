@@ -45,6 +45,30 @@ test("last-known-good labels never claim stale data is LIVE", () => {
   assert.equal(lastKnownGoodState(receipt, Date.parse("2026-09-11T00:00:00.000Z")), "OLD OBSERVATION");
 });
 
+test("US100 uses a deterministic recovered observation only after current and last-known-good are absent", async () => {
+  const recovered = {asset: "US100", symbol: "US100", ticker_id: "SKILLING:US100", timeframe: "4H", received_at: "2026-09-08T00:00:00.000Z", bar_close_time: 1788825600000, bar_close: 23000, confirmed: true, valid: true, sensor_quality: "GOOD", freshness: "STALE", flags: [], score: 61, provenance: "RECOVERED_HISTORY"};
+  const result = await fetchAssetObservations({asset: "US100", fetchImpl: async () => response({ok: true, asset: "US100", ticker_id: "SKILLING:US100", source_profile_code: "SKILLING_US100_CFD_V1", status: "RECOVERED", latest_receipt: recovered, timeframes: {"4H": recovered}, current_timeframes: {}, last_known_good_timeframes: {}, recovered_timeframes: {"4H": recovered}})});
+  assert.equal(result.status, "RECOVERED");
+  assert.equal(result.recoveredTimeframes["4H"].score, 61);
+  assert.equal(result.recoveredTimeframes["4H"].tickerId, "SKILLING:US100");
+  assert.equal(result.recoveredTimeframes["4H"].provenance, "RECOVERED_HISTORY");
+});
+
+test("a new US100 LIVE receipt takes precedence over recovered history", async () => {
+  const live = {asset: "US100", symbol: "US100", ticker_id: "SKILLING:US100", timeframe: "4H", received_at: "2026-09-10T00:00:00.000Z", bar_close_time: 1788998400000, bar_close: 23100, confirmed: true, valid: true, sensor_quality: "GOOD", freshness: "FRESH", flags: [], score: 67};
+  const recovered = {...live, received_at: "2026-09-08T00:00:00.000Z", bar_close_time: 1788825600000, score: 61, freshness: "STALE", provenance: "RECOVERED_HISTORY"};
+  const result = await fetchAssetObservations({asset: "US100", fetchImpl: async () => response({ok: true, asset: "US100", ticker_id: "SKILLING:US100", source_profile_code: "SKILLING_US100_CFD_V1", status: "LIVE", latest_receipt: live, timeframes: {"4H": live}, current_timeframes: {"4H": live}, last_known_good_timeframes: {"4H": live}, recovered_timeframes: {"4H": recovered}})});
+  assert.equal(result.status, "LIVE");
+  assert.equal(result.currentTimeframes["4H"].score, 67);
+  assert.equal(result.recoveredTimeframes["4H"].score, 61);
+});
+
+test("malformed recovered records fail closed", async () => {
+  const malformed = {asset: "US100", symbol: "US100", ticker_id: "COINBASE:BTCUSD", timeframe: "4H", received_at: "2026-09-08T00:00:00.000Z", bar_close_time: 1788825600000, bar_close: 23000, confirmed: true, valid: true, sensor_quality: "GOOD", freshness: "STALE", flags: [], score: 61, provenance: "RECOVERED_HISTORY"};
+  const result = await fetchAssetObservations({asset: "US100", fetchImpl: async () => response({ok: true, asset: "US100", ticker_id: "SKILLING:US100", source_profile_code: "SKILLING_US100_CFD_V1", status: "RECOVERED", latest_receipt: null, timeframes: {}, current_timeframes: {}, last_known_good_timeframes: {}, recovered_timeframes: {"4H": malformed}})});
+  assert.deepEqual(result, {available: false, reason: "IDENTITY_MISMATCH"});
+});
+
 
 test("receipt history requires confirmed valid same-timeframe canonical records", async () => {
   const receipt = (barCloseTime, score) => ({asset: "BTCUSD", symbol: "BTCUSD", ticker_id: "COINBASE:BTCUSD", timeframe: "4H", received_at: new Date(barCloseTime).toISOString(), bar_close_time: barCloseTime, bar_close: 78000, valid: true, confirmed: true, sensor_quality: "GOOD", freshness: "FRESH", flags: [], score});

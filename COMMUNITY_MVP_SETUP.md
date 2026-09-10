@@ -4,7 +4,7 @@ The shipped browser configuration is intentionally disabled. It contains no serv
 
 ## Database migration
 
-Apply `supabase/migrations/20260908113000_create_member_community.sql` only after reconciling the remote migration history with this clone. The current CLI dry-run reports remote versions missing locally (`20260901010000`, `20260907220000`), so do **not** run migration repair, pull, or push blindly. First audit those existing AS1-era migrations, then use the approved migration workflow to apply the new member/community migration.
+`supabase/pending-migrations/20260908113000_create_member_community.sql` is intentionally excluded from the migration runner. It conflicts with the audited Production membership baseline, so do **not** run, repair-history-mark, or move it back into `supabase/migrations/` without a separately approved replacement design.
 
 The migration creates the profile, referral, text-only posts/comments/reactions/reports, one general chat room/messages, roles, and XP event ledger. It enables RLS for every user-owned table. It does not change the AS1 raw ledger, ingest, TradingView, or existing weather tables.
 

@@ -56,6 +56,19 @@ test("weather history deduplicates an observation and retains only four snapshot
   assert.equal(updated.at(-1).state, "RAIN");
 });
 
+test("recovered history is allowed only with explicit provenance and dedupes a later LIVE receipt by bar close", () => {
+  const recovered = {...snapshot(0), freshness: "STALE", provenance: "RECOVERED_HISTORY", barCloseTime: 1_788_825_600_000};
+  const live = {...snapshot(1), freshness: "FRESH", provenance: "RAW", barCloseTime: 1_788_825_600_000, score: 61};
+  const history = mergeWeatherHistory([recovered], live);
+  assert.equal(history.length, 1);
+  assert.equal(history[0].score, 61);
+  assert.deepEqual(readWeatherHistory(memoryStorage(), "BTCUSD", "4H"), []);
+});
+
+test("stale history without recovered provenance remains rejected", () => {
+  assert.deepEqual(mergeWeatherHistory([], {...snapshot(0), freshness: "STALE"}), []);
+});
+
 test("weather history rejects malformed, stale, and cross-asset persisted observations", () => {
   const storage = memoryStorage();
   storage.setItem(weatherHistoryKey("BTCUSD", "4H"), JSON.stringify([

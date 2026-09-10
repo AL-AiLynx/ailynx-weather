@@ -2,9 +2,10 @@ import {ASSET_READERS} from "./asset-registry.js";
 
 export const AS1_ASSET_ENDPOINT = "https://jggazwqwalincsjegieo.supabase.co/functions/v1/as1-asset-read";
 const unavailable = (reason) => ({available: false, reason});
-const STATUS = new Set(["LIVE", "PLANNED", "INVALID"]);
+const STATUS = new Set(["LIVE", "STALE", "RECOVERED", "PLANNED", "INVALID"]);
 const FRESHNESS = new Set(["FRESH", "AGING", "STALE"]);
 const CURRENT_FRESHNESS = new Set(["FRESH", "AGING"]);
+const PROVENANCE = new Set(["RAW", "RECOVERED_HISTORY"]);
 export const LKG_RECENT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 function isRecord(value) {
@@ -19,6 +20,7 @@ function normalizeReceipt(value, expected, asset, {requireValid = false} = {}) {
       !Number.isFinite(value.bar_close) || typeof value.valid !== "boolean" ||
       typeof value.sensor_quality !== "string" || !FRESHNESS.has(value.freshness) ||
       !Array.isArray(value.flags) || value.flags.some((flag) => typeof flag !== "string") ||
+      (value.provenance !== undefined && !PROVENANCE.has(value.provenance)) ||
       (requireValid && value.valid !== true)) return null;
   return Object.freeze({
     asset,
@@ -33,6 +35,7 @@ function normalizeReceipt(value, expected, asset, {requireValid = false} = {}) {
     freshness: value.freshness,
     flags: Object.freeze([...value.flags]),
     score: Number.isFinite(value.score) && value.score >= 0 && value.score <= 100 ? value.score : null,
+    provenance: value.provenance === "RECOVERED_HISTORY" ? "RECOVERED_HISTORY" : "RAW",
   });
 }
 
@@ -78,10 +81,13 @@ export async function fetchAssetObservations({asset, fetchImpl = globalThis.fetc
     const lastKnownGoodTimeframes = body.last_known_good_timeframes === undefined
       ? legacyTimeframes
       : normalizeTimeframes(body.last_known_good_timeframes, expected, asset);
-    if ((body.latest_receipt !== null && !latestReceipt) || !legacyTimeframes || !currentTimeframes || !lastKnownGoodTimeframes) return unavailable("IDENTITY_MISMATCH");
+    const recoveredTimeframes = body.recovered_timeframes === undefined
+      ? Object.freeze({})
+      : normalizeTimeframes(body.recovered_timeframes, expected, asset);
+    if ((body.latest_receipt !== null && !latestReceipt) || !legacyTimeframes || !currentTimeframes || !lastKnownGoodTimeframes || !recoveredTimeframes || Object.values(recoveredTimeframes).some((receipt) => receipt.provenance !== "RECOVERED_HISTORY")) return unavailable("IDENTITY_MISMATCH");
     const receipts = Object.values(currentTimeframes);
     const hasLiveReceipt = receipts.some((receipt) => CURRENT_FRESHNESS.has(receipt.freshness));
-    const status = hasLiveReceipt ? "LIVE" : latestReceipt?.valid === true ? "STALE" : latestReceipt ? "INVALID" : "PLANNED";
+    const status = hasLiveReceipt ? "LIVE" : Object.keys(lastKnownGoodTimeframes).length ? "STALE" : Object.keys(recoveredTimeframes).length ? "RECOVERED" : latestReceipt ? "INVALID" : "PLANNED";
     return Object.freeze({
       available: true,
       asset,
@@ -92,6 +98,7 @@ export async function fetchAssetObservations({asset, fetchImpl = globalThis.fetc
       timeframes: lastKnownGoodTimeframes,
       currentTimeframes,
       lastKnownGoodTimeframes,
+      recoveredTimeframes,
     });
   } catch (error) { return unavailable(signal?.aborted || error?.name === "AbortError" ? "ABORTED" : "NETWORK_ERROR"); }
 }
