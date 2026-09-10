@@ -62,6 +62,14 @@ test("XAUUSD uses the same deterministic recovered path after current and last-k
   assert.equal(result.recoveredTimeframes["4H"].provenance, "RECOVERED_HISTORY");
 });
 
+test("DXY uses the same deterministic recovered path after current and last-known-good are absent", async () => {
+  const recovered = {asset: "DXY", symbol: "DXY", ticker_id: "CAPITALCOM:DXY", timeframe: "4H", received_at: "2026-09-07T06:00:00.000Z", bar_close_time: 1788760800000, bar_close: 98.825, confirmed: true, valid: true, sensor_quality: "INVALID", freshness: "STALE", flags: [], score: 0, provenance: "RECOVERED_HISTORY"};
+  const result = await fetchAssetObservations({asset: "DXY", fetchImpl: async () => response({ok: true, asset: "DXY", ticker_id: "CAPITALCOM:DXY", source_profile_code: "CAPITALCOM_DXY_CFD_V1", status: "RECOVERED", latest_receipt: recovered, timeframes: {"4H": recovered}, current_timeframes: {}, last_known_good_timeframes: {}, recovered_timeframes: {"4H": recovered}})});
+  assert.equal(result.status, "RECOVERED");
+  assert.equal(result.recoveredTimeframes["4H"].tickerId, "CAPITALCOM:DXY");
+  assert.equal(result.recoveredTimeframes["4H"].score, 0);
+});
+
 test("a new US100 LIVE receipt takes precedence over recovered history", async () => {
   const live = {asset: "US100", symbol: "US100", ticker_id: "SKILLING:US100", timeframe: "4H", received_at: "2026-09-10T00:00:00.000Z", bar_close_time: 1788998400000, bar_close: 23100, confirmed: true, valid: true, sensor_quality: "GOOD", freshness: "FRESH", flags: [], score: 67};
   const recovered = {...live, received_at: "2026-09-08T00:00:00.000Z", bar_close_time: 1788825600000, score: 61, freshness: "STALE", provenance: "RECOVERED_HISTORY"};

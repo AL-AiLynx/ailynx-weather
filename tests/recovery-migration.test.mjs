@@ -5,6 +5,7 @@ import {fileURLToPath} from "node:url";
 
 const migration = fileURLToPath(new URL("../supabase/migrations/20260910150000_recover_us100_profile_mismatch_observations.sql", import.meta.url));
 const xauMigration = fileURLToPath(new URL("../supabase/migrations/20260910170000_recover_xauusd_profile_mismatch_observations.sql", import.meta.url));
+const dxyMigration = fileURLToPath(new URL("../supabase/migrations/20260910180000_recover_dxy_profile_mismatch_observations.sql", import.meta.url));
 const readerGrant = fileURLToPath(new URL("../supabase/migrations/20260910160000_grant_recovery_reader_access.sql", import.meta.url));
 const reader = fileURLToPath(new URL("../supabase/functions/as1-asset-read/index.ts", import.meta.url));
 
@@ -57,6 +58,23 @@ test("recovery reader accepts a recovered row only when it matches the requested
   assert.doesNotMatch(source, /asset !== "US100"/);
   assert.match(source, /row\.asset !== asset \|\| row\.ticker_id !== expected\.tickerId/);
   assert.match(source, /const recoveredQuery = db\.from\("as1_recovered_observations"\)/);
+});
+
+test("DXY recovery extends the same lineage table for only the audited 4H raw mismatch", async () => {
+  const sql = await readFile(dxyMigration, "utf8");
+  assert.match(sql, /^begin;/im);
+  assert.match(sql, /drop constraint as1_recovered_observations_identity_check/i);
+  assert.match(sql, /asset = 'DXY'/);
+  assert.match(sql, /raw\.ticker_id = 'CAPITALCOM:DXY'/);
+  assert.match(sql, /raw\.source_profile_code = 'CB_BTCUSD_SPOT_20260722_V1'/);
+  assert.match(sql, /canonical_timeframe = '4H'/);
+  assert.match(sql, /'CAPITALCOM_DXY_CFD_V1'/);
+  assert.match(sql, /raw\.flags = jsonb_build_array\('SOURCE_PROFILE_MISMATCH'\)/);
+  assert.match(sql, /on conflict \(original_raw_event_id\) do nothing/i);
+  assert.doesNotMatch(sql, /ailynx_history_packets|create table/i);
+  assert.doesNotMatch(sql, /\bupdate\s+public\.as1_raw_events\b/i);
+  assert.doesNotMatch(sql, /\bdelete\s+from\s+public\.as1_raw_events\b/i);
+  assert.match(sql, /commit;\s*$/i);
 });
 
 test("recovery reader access is server-only", async () => {

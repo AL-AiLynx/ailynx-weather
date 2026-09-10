@@ -1195,7 +1195,7 @@ async function selectAsset(assetId) {
           selectedAssetId = selection.assetId;
           selectedAssetObservation = selection.observation;
           Object.values(selection.observation?.lastKnownGoodTimeframes || {}).forEach((receipt) => cacheLastKnownGoodReceipt(selection.assetId, receipt));
-          if (["US100", "XAUUSD"].includes(selection.assetId)) {
+          if (["US100", "XAUUSD", "DXY"].includes(selection.assetId)) {
             const receipt = preferredAssetReceipt(selection.observation);
             if (receipt?.timeframe) void hydrateServerWeatherHistory({timeframe: receipt.timeframe});
           }
@@ -2079,7 +2079,7 @@ function recordWeatherObservation(result) {
 }
 
 async function hydrateServerWeatherHistory(result) {
-  if (!result?.timeframe || !["BTCUSD", "US100", "XAUUSD"].includes(selectedAssetId)) return [];
+  if (!result?.timeframe || !["BTCUSD", "US100", "XAUUSD", "DXY"].includes(selectedAssetId)) return [];
   const assetId = selectedAssetId;
   const key = `${assetId}:${result.timeframe}`;
   try {
