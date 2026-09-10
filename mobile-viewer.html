@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="theme-color" content="#071824"><title>AiLynx · Mobile Viewer</title><link rel="stylesheet" href="./styles.css?v=36"><link rel="manifest" href="./manifest.webmanifest?v=2"><link rel="icon" type="image/jpeg" href="./icons/ailynx-brand.jpg"></head>
+<body class="mobile-viewer-page"><main class="mobile-viewer-shell">
+  <header class="mobile-viewer-header"><a href="/" aria-label="AiLynx Weather로 돌아가기">← AiLynx Weather</a><span>PRO MOBILE VIEWER</span></header>
+  <section id="mobileViewerLocked" class="mobile-viewer-lock card" hidden><p class="eyebrow">PRO ONLY</p><h1>모바일 뷰어</h1><p id="mobileViewerGate">접근 권한을 확인하는 중입니다.</p><a class="mobile-viewer-primary" href="/">Weather로 돌아가기</a></section>
+  <section id="mobileViewerData" hidden aria-live="polite"><div class="mobile-viewer-title"><p class="eyebrow">AILYNX WEATHER</p><h1>모바일 뷰어</h1><p>현재 시장 날씨와 정밀 관측</p></div>
+    <nav id="mobileViewerAssets" class="mobile-viewer-assets" aria-label="자산 선택"></nav>
+    <article class="mobile-viewer-hero card"><p id="mobileViewerAsset">BTCUSD</p><div class="mobile-viewer-reading"><div><strong id="mobileViewerPrice">—</strong><small id="mobileViewerUnit"></small></div><div id="mobileViewerIcon" class="mobile-viewer-icon"></div></div><div class="mobile-viewer-weather"><strong id="mobileViewerWeather">관측 대기</strong><span>점수 <b id="mobileViewerScore">—</b></span></div><dl><div><dt>관측 상태</dt><dd id="mobileViewerStatus">관측 대기</dd></div><div><dt>관측 시각</dt><dd id="mobileViewerObservedAt">—</dd></div></dl></article>
+    <section class="mobile-viewer-metrics"><article class="card"><p>날씨 지속력</p><strong id="mobileViewerPersistence">관측 축적 중</strong></article><article class="card"><p>날씨 변화율</p><strong id="mobileViewerChange">관측 축적 중</strong></article></section>
+    <article id="mobileViewerLeader" class="mobile-viewer-leader card" hidden><p>시장 리드 타임프레임</p><strong id="mobileViewerLeaderValue">—</strong></article>
+    <article class="mobile-viewer-precision card"><p class="eyebrow">정밀 관측 요약</p><strong id="mobileViewerPrecision">관측을 불러오는 중</strong><small>기압 상태 (타임프레임 압력 상태) · 시간 전선 (타임프레임 전선)</small></article>
+  </section>
+</main>
+<script src="./weather-engine.js"></script><script src="/api/public-runtime-config.js"></script><script src="./public-runtime-config.js?v=1"></script><script src="./community-config.js?v=4"></script><script type="module" src="./auth-client.js?v=1"></script><script type="module" src="./membership-client.js?v=2"></script><script type="module" src="./admin-access.js?v=3"></script><script type="module" src="./mobile-viewer.js?v=1"></script></body></html>

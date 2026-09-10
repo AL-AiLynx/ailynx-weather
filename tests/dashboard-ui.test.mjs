@@ -89,27 +89,29 @@ test("precision observations use Korean packet summaries and distinguish stale r
   assert.match(app, /validationRecordStatus\(payload\.record_status\)/);
   assert.match(app, /validationWindowStatus\(stopwatch\.phase\)/);
   assert.doesNotMatch(app, /\$\{payload\.record_status \|\| "WATCH"\}/);
-  assert.match(worker, /ailynx-weather-v74/);
-  assert.match(worker, /app\.js\?v=59/);
+  assert.match(worker, /ailynx-weather-v75/);
+  assert.match(worker, /app\.js\?v=60/);
 });
 
 test("hero price formatting follows each asset's canonical display metadata", async () => {
-  const [app, registry, html, worker] = await Promise.all([read("app.js"), read("asset-registry.js"), read("index.html"), read("service-worker.js")]);
+  const [app, registry, presentation, html, worker] = await Promise.all([read("app.js"), read("asset-registry.js"), read("asset-presentation.js"), read("index.html"), read("service-worker.js")]);
   for (const format of ["USD_0", "NUMBER_0", "NUMBER_2"]) assert.match(registry, new RegExp(`priceFormat: "${format}"`));
   assert.match(app, /function formatPrice\(value, assetId = "BTCUSD"\)/);
-  assert.match(app, /USD_0: \{style: "currency", currency: "USD", maximumFractionDigits: 0\}/);
-  assert.match(app, /USD_2: \{style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2\}/);
-  assert.match(app, /NUMBER_0: \{style: "decimal", maximumFractionDigits: 0\}/);
-  assert.match(app, /NUMBER_2: \{style: "decimal", minimumFractionDigits: 2, maximumFractionDigits: 2\}/);
+  assert.match(app, /AiLynxAssetPresentation\?\.formatAssetPrice/);
+  assert.match(presentation, /USD_0: \{style: "currency", currency: "USD", maximumFractionDigits: 0\}/);
+  assert.match(presentation, /NUMBER_0: \{style: "decimal", maximumFractionDigits: 0\}/);
+  assert.match(presentation, /NUMBER_2: \{style: "decimal", minimumFractionDigits: 2, maximumFractionDigits: 2\}/);
   assert.match(app, /formatPrice\(observed\.barClose, selectedAssetId\)/);
   assert.match(app, /formatPrice\(marketPriceData\.price, "BTCUSD"\)/);
   assert.match(registry, /XAUUSD[\s\S]*priceFormat: "NUMBER_2", priceUnit: "USD\/oz"/);
   assert.doesNotMatch(registry, /XAUUSD[\s\S]*priceFormat: "USD_2"/);
   assert.match(app, /const priceUnit = window\.AiLynxAssetRegistry\?\.byId\?\.\(selectedAssetId\)\?\.priceUnit/);
   assert.match(html, /asset-registry\.js\?v=7/);
-  assert.match(html, /app\.js\?v=59/);
+  assert.match(html, /asset-presentation\.js\?v=1/);
+  assert.match(html, /app\.js\?v=60/);
   assert.match(worker, /asset-registry\.js\?v=7/);
-  assert.match(worker, /app\.js\?v=59/);
+  assert.match(worker, /asset-presentation\.js\?v=1/);
+  assert.match(worker, /app\.js\?v=60/);
 });
 
 test("admin access restores the original precision cards after a FREE placeholder render", async () => {
@@ -153,9 +155,9 @@ test("asset navigation separates entitlement from the selected state", async () 
 
 test("dashboard cache shell includes the membership resolver and has no removed UI modules", async () => {
   const [html, worker] = await Promise.all([read("index.html"), read("service-worker.js")]);
-  assert.match(worker, /ailynx-weather-v74/);
+  assert.match(worker, /ailynx-weather-v75/);
   assert.match(html, /manifest\.webmanifest\?v=2/);
-  for (const asset of ["styles.css?v=35", "icons/ailynx-brand.jpg", "asset-registry.js?v=7", "manifest.webmanifest?v=2", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "community-config.js?v=4", "admin-access.js?v=3", "admin-preview.js?v=2", "admin-asset-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=6", "member-community.js?v=5", "admin.html", "admin-page.js?v=3", "auth-gate.js?v=4", "app.js?v=59"]) {
+  for (const asset of ["styles.css?v=36", "icons/ailynx-brand.jpg", "asset-registry.js?v=7", "asset-presentation.js?v=1", "weather-symbols.js?v=1", "manifest.webmanifest?v=2", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "community-config.js?v=4", "admin-access.js?v=3", "admin-preview.js?v=2", "admin-asset-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=6", "member-community.js?v=5", "admin.html", "admin-page.js?v=3", "mobile-viewer.html", "mobile-viewer.js?v=1", "auth-gate.js?v=4", "app.js?v=60"]) {
     assert.ok(html.includes(asset) || worker.includes(asset), `missing ${asset}`);
   }
   assert.doesNotMatch(worker, /frontline-timeframe|weather-dynamics/);

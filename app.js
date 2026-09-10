@@ -231,19 +231,7 @@ async function loadWeatherData() {
   가격 표시
 */
 function formatPrice(value, assetId = "BTCUSD") {
-  if (!Number.isFinite(value) || value <= 0) {
-    return "데이터 대기";
-  }
-
-  const priceFormat = window.AiLynxAssetRegistry?.byId?.(assetId)?.priceFormat || "USD_0";
-  const formatOptions = {
-    USD_0: {style: "currency", currency: "USD", maximumFractionDigits: 0},
-    USD_2: {style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2},
-    NUMBER_0: {style: "decimal", maximumFractionDigits: 0},
-    NUMBER_2: {style: "decimal", minimumFractionDigits: 2, maximumFractionDigits: 2}
-  };
-
-  return new Intl.NumberFormat("en-US", formatOptions[priceFormat] || formatOptions.USD_0).format(value);
+  return window.AiLynxAssetPresentation?.formatAssetPrice?.(value, assetId) || "데이터 대기";
 }
 
 
@@ -1876,7 +1864,19 @@ function renderApp() {
   renderInfoCards();
   renderLastUpdated();
   renderValidationCards();
+  renderMobileViewerEntry();
   renderLynxDashboard();
+}
+
+function renderMobileViewerEntry() {
+  const entry = document.getElementById("mobileViewerEntry");
+  const open = document.getElementById("mobileViewerOpen");
+  const locked = document.getElementById("mobileViewerLocked");
+  if (!entry || !open || !locked) return;
+  const allowed = subscriptionPlanCode() === "PRO" || hasAdminFullAccess();
+  entry.dataset.access = allowed ? "granted" : "locked";
+  open.hidden = !allowed;
+  locked.hidden = allowed;
 }
 
 
