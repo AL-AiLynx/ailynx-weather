@@ -43,6 +43,7 @@ let freshnessIntervalId = null;
 let as1ObservationRequestPromise = null;
 let horusSnapshot = null;
 let validationCardsData = null;
+let validationCardsShell = null;
 let publicWeatherSnapshot = null;
 let heroWeatherPhase = "loading";
 let validationTimeframe = "240";
@@ -521,7 +522,7 @@ async function applyAs1ValidationCards(timeframe = validationTimeframe) {
       const validPublicWeather = capturePublicWeatherSnapshot(nextCards, timeframe);
       if (selectedAssetId === "BTCUSD") await hydrateVisibleTimeframeHistories();
       heroWeatherPhase = validPublicWeather ? publicWeatherSnapshot?.source === "LAST_KNOWN_GOOD" ? "last-known-good" : "valid" : "empty";
-      validationCardsData = hasFeature("viewer.professional_details") ? nextCards : null;
+      validationCardsData = canViewPrecision() ? nextCards : null;
       renderValidationCards();
       renderLynxDashboard();
       return validPublicWeather;
@@ -764,12 +765,14 @@ function renderMaat2ValidationCard(maat2) {
 
 function renderValidationCards() {
   const summary = document.getElementById("precisionSummary");
-  if (!hasFeature("viewer.professional_details")) {
+  const target = document.getElementById("validationCards");
+  if (!validationCardsShell && target) validationCardsShell = target.innerHTML;
+  if (!canViewPrecision()) {
     if (summary) summary.hidden = true;
-    const target = document.getElementById("validationCards");
     if (target) target.innerHTML = `<article class="validation-card card validation-locked"><p class="validation-kicker">프로 전용</p><h3>정밀 관측 도구</h3><p class="validation-status">정밀 관측 도구와 Mobile Viewer를 사용할 수 있습니다.</p><button type="button" data-open-plan data-plan-target="PRO">프로 보기</button></article>`;
     return;
   }
+  if (target && validationCardsShell && !target.querySelector('[data-validation-card="maat"]')) target.innerHTML = validationCardsShell;
   const stopwatch = validationCardsData?.maat?.payload?.stopwatch;
   const noise = stopwatch?.noise_score;
   if (summary && validationCardsData?.maat?.available && Number.isFinite(stopwatch?.main_tf_minutes)) {
@@ -1049,6 +1052,10 @@ function planAtLeast(code) {
 
 function hasFeature(feature) {
   return hasAdminFullAccess() || Boolean(currentPlan()?.features?.includes(feature));
+}
+
+function canViewPrecision() {
+  return hasFeature("viewer.professional_details");
 }
 
 function assetEntitled(assetId) {
@@ -2205,7 +2212,12 @@ async function enforceFreeSafeSelection() {
 window.addEventListener("ailynx-membership", () => {
   void enforceFreeSafeSelection();
   assetReadPath?.reconcileAccess?.();
-  if (!hasFeature("viewer.professional_details")) validationCardsData = null;
+  if (canViewPrecision()) {
+    renderValidationCards();
+    void applyAs1ValidationCards(validationTimeframe);
+  } else {
+    validationCardsData = null;
+  }
   const plan = currentPlan();
   dashboardText("currentPlanLabel", tr("currentPlan", {plan: plan?.label || currentPlanCode()}));
   if (document.readyState !== "loading") {
@@ -2216,14 +2228,20 @@ window.addEventListener("ailynx-membership", () => {
 window.addEventListener("ailynx-admin-preview", () => {
   void enforceFreeSafeSelection();
   assetReadPath?.reconcileAccess?.();
-  if (!hasFeature("viewer.professional_details")) validationCardsData = null;
+  if (canViewPrecision()) {
+    renderValidationCards();
+    void applyAs1ValidationCards(validationTimeframe);
+  } else {
+    validationCardsData = null;
+  }
   if (document.readyState !== "loading") renderApp();
 });
 
 window.addEventListener("ailynx-admin", () => {
   void enforceFreeSafeSelection();
   assetReadPath?.reconcileAccess?.();
-  if (hasFeature("viewer.professional_details")) {
+  if (canViewPrecision()) {
+    renderValidationCards();
     void applyAs1ValidationCards(validationTimeframe);
   } else {
     validationCardsData = null;

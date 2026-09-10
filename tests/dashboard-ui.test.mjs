@@ -60,7 +60,7 @@ test("the completed hero uses the official app mark and a summarized public BTC 
   assert.doesNotMatch(html, /asset-select-label/);
   assert.match(app, /capturePublicWeatherSnapshot/);
   assert.match(app, /heroWeatherPhase/);
-  assert.match(app, /validationCardsData = hasFeature\("viewer\.professional_details"\) \? nextCards : null/);
+  assert.match(app, /validationCardsData = canViewPrecision\(\) \? nextCards : null/);
   assert.match(app, /label: "관측 준비 중"/);
   assert.match(css, /\.brand-mark/);
   assert.match(css, /object-fit: contain/);
@@ -89,8 +89,18 @@ test("precision observations use Korean packet summaries and distinguish stale r
   assert.match(app, /validationRecordStatus\(payload\.record_status\)/);
   assert.match(app, /validationWindowStatus\(stopwatch\.phase\)/);
   assert.doesNotMatch(app, /\$\{payload\.record_status \|\| "WATCH"\}/);
-  assert.match(worker, /ailynx-weather-v69/);
-  assert.match(worker, /app\.js\?v=54/);
+  assert.match(worker, /ailynx-weather-v70/);
+  assert.match(worker, /app\.js\?v=55/);
+});
+
+test("admin access restores the original precision cards after a FREE placeholder render", async () => {
+  const app = await read("app.js");
+  assert.match(app, /function canViewPrecision\(\)/);
+  assert.match(app, /let validationCardsShell = null/);
+  assert.match(app, /if \(!validationCardsShell && target\) validationCardsShell = target\.innerHTML/);
+  assert.match(app, /!target\.querySelector\('\[data-validation-card="maat"\]'\)/);
+  assert.match(app, /if \(canViewPrecision\(\)\) \{\s*renderValidationCards\(\);\s*void applyAs1ValidationCards\(validationTimeframe\);/s);
+  assert.match(app, /window\.addEventListener\("ailynx-membership"[\s\S]*if \(canViewPrecision\(\)\) \{\s*renderValidationCards\(\);\s*void applyAs1ValidationCards\(validationTimeframe\);[\s\S]*validationCardsData = null/s);
 });
 
 test("last-known-good display keeps stale receipts separate from LIVE", async () => {
@@ -124,9 +134,9 @@ test("asset navigation separates entitlement from the selected state", async () 
 
 test("dashboard cache shell includes the membership resolver and has no removed UI modules", async () => {
   const [html, worker] = await Promise.all([read("index.html"), read("service-worker.js")]);
-  assert.match(worker, /ailynx-weather-v69/);
+  assert.match(worker, /ailynx-weather-v70/);
   assert.match(html, /manifest\.webmanifest\?v=2/);
-  for (const asset of ["styles.css?v=35", "icons/ailynx-brand.jpg", "asset-registry.js?v=5", "manifest.webmanifest?v=2", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "community-config.js?v=4", "admin-access.js?v=3", "admin-preview.js?v=2", "admin-asset-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=6", "member-community.js?v=5", "admin.html", "admin-page.js?v=3", "auth-gate.js?v=4", "app.js?v=54"]) {
+  for (const asset of ["styles.css?v=35", "icons/ailynx-brand.jpg", "asset-registry.js?v=5", "manifest.webmanifest?v=2", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "community-config.js?v=4", "admin-access.js?v=3", "admin-preview.js?v=2", "admin-asset-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=6", "member-community.js?v=5", "admin.html", "admin-page.js?v=3", "auth-gate.js?v=4", "app.js?v=55"]) {
     assert.ok(html.includes(asset) || worker.includes(asset), `missing ${asset}`);
   }
   assert.doesNotMatch(worker, /frontline-timeframe|weather-dynamics/);
