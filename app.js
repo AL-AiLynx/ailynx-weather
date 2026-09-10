@@ -230,16 +230,20 @@ async function loadWeatherData() {
 /*
   가격 표시
 */
-function formatPrice(value) {
+function formatPrice(value, assetId = "BTCUSD") {
   if (!Number.isFinite(value) || value <= 0) {
     return "데이터 대기";
   }
 
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0
-  }).format(value);
+  const priceFormat = window.AiLynxAssetRegistry?.byId?.(assetId)?.priceFormat || "USD_0";
+  const formatOptions = {
+    USD_0: {style: "currency", currency: "USD", maximumFractionDigits: 0},
+    USD_2: {style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2},
+    NUMBER_0: {style: "decimal", maximumFractionDigits: 0},
+    NUMBER_2: {style: "decimal", minimumFractionDigits: 2, maximumFractionDigits: 2}
+  };
+
+  return new Intl.NumberFormat("en-US", formatOptions[priceFormat] || formatOptions.USD_0).format(value);
 }
 
 
@@ -804,7 +808,7 @@ function renderMarketPrice() {
       return;
     }
     const observed = preferredAssetReceipt(currentAssetObservation());
-    price.textContent = Number.isFinite(observed?.barClose) ? formatPrice(observed.barClose) : "—";
+    price.textContent = Number.isFinite(observed?.barClose) ? formatPrice(observed.barClose, selectedAssetId) : "—";
     meta.textContent = observed
       ? tr("observedFreshness", {freshness: displayState(observationSource(observed))})
       : `${tr("currentPrice")} · ${tr("waiting")}`;
@@ -817,7 +821,7 @@ function renderMarketPrice() {
     return;
   }
 
-  price.textContent = formatPrice(marketPriceData.price);
+  price.textContent = formatPrice(marketPriceData.price, "BTCUSD");
   meta.textContent = marketPriceData.stale
     ? `COINBASE BTC-USD · ${tr("stale")}`
     : `COINBASE BTC-USD · ${tr("oneMinuteUpdate")}`;
