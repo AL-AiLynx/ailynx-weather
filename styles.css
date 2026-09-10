@@ -595,6 +595,11 @@
   color: #ff8d8d;
 }
 
+.validation-quality.quality-stale {
+  border-color: rgba(255, 212, 90, 0.45);
+  color: var(--yellow);
+}
+
 .validation-status {
   min-height: 42px;
   margin-top: 18px;

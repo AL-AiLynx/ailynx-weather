@@ -197,44 +197,44 @@
         <article class="validation-card card" data-validation-card="maat">
           <div class="validation-card-head">
             <div>
-              <p class="validation-kicker">CURRENT COMBINED VALIDATION</p>
+              <p class="validation-kicker">정밀 관측</p>
               <h3>MAAT</h3>
             </div>
-            <span class="validation-quality" id="maatQuality">LOADING</span>
+            <span class="validation-quality" id="maatQuality">불러오는 중</span>
           </div>
-          <p class="validation-status" id="maatStatus">Checking observation data.</p>
+          <p class="validation-status" id="maatStatus">정밀 관측을 확인하는 중입니다.</p>
           <div class="validation-metrics">
-            <div><span>STATE</span><strong id="maatState">—</strong></div>
-            <div><span>SCORE</span><strong id="maatScore">—</strong></div>
-            <div><span>RISK</span><strong id="maatRisk">—</strong></div>
-            <div><span>NOISE</span><strong id="maatNoise">—</strong></div>
+            <div><span>상태</span><strong id="maatState">—</strong></div>
+            <div><span>점수</span><strong id="maatScore">—</strong></div>
+            <div><span>위험도</span><strong id="maatRisk">—</strong></div>
+            <div><span>노이즈</span><strong id="maatNoise">—</strong></div>
           </div>
           <dl class="validation-details">
-            <div><dt>SENSORS</dt><dd id="maatSensors">—</dd></div>
-            <div><dt>WINDOW</dt><dd id="maatWindow">—</dd></div>
-            <div><dt>OBSERVED</dt><dd id="maatUpdated">—</dd></div>
+            <div><dt>관측 창</dt><dd id="maatWindow">—</dd></div>
+            <div><dt>상위 TF</dt><dd id="maatParentTf">—</dd></div>
+            <div><dt>관측 시각</dt><dd id="maatUpdated">—</dd></div>
           </dl>
         </article>
 
         <article class="validation-card card" data-validation-card="maat2">
           <div class="validation-card-head">
             <div>
-              <p class="validation-kicker">PRIMARY TIMEFRAME VALIDATION</p>
-              <h3>MAAT2 TIME</h3>
+              <p class="validation-kicker">시간 정밀 관측</p>
+              <h3>MAAT2</h3>
             </div>
-            <span class="validation-quality" id="maat2Quality">LOADING</span>
+            <span class="validation-quality" id="maat2Quality">불러오는 중</span>
           </div>
-          <p class="validation-status" id="maat2Status">Checking Hub and Time Engine.</p>
+          <p class="validation-status" id="maat2Status">정밀 관측을 확인하는 중입니다.</p>
           <div class="validation-metrics">
-            <div><span>ROLE</span><strong id="maat2Role">—</strong></div>
-            <div><span>TIME SCORE</span><strong id="maat2TimeScore">—</strong></div>
-            <div><span>CANDIDATE / PARENT</span><strong id="maat2Timeframes">—</strong></div>
-            <div><span>NOISE</span><strong id="maat2Noise">—</strong></div>
+            <div><span>역할</span><strong id="maat2Role">—</strong></div>
+            <div><span>시간 점수</span><strong id="maat2TimeScore">—</strong></div>
+            <div><span>후보 / 상위 TF</span><strong id="maat2Timeframes">—</strong></div>
+            <div><span>노이즈</span><strong id="maat2Noise">—</strong></div>
           </div>
           <dl class="validation-details">
-            <div><dt>HUB SCORE</dt><dd id="maat2HubScores">—</dd></div>
-            <div><dt>WHY / RESET</dt><dd id="maat2Why">—</dd></div>
-            <div><dt>SYNC</dt><dd id="maat2Sync">—</dd></div>
+            <div><dt>Hub 점수</dt><dd id="maat2HubScores">—</dd></div>
+            <div><dt>사유 / 리셋</dt><dd id="maat2Why">—</dd></div>
+            <div><dt>동기화</dt><dd id="maat2Sync">—</dd></div>
           </dl>
         </article>
       </div>
@@ -556,7 +556,7 @@
   <script src="./market-advisory-config.js?v=1"></script>
   <script src="./market-advisory.js?v=1"></script>
   <script type="module" src="./auth-gate.js?v=4"></script>
-  <script src="./app.js?v=53"></script>
+  <script src="./app.js?v=54"></script>
 
   <dialog class="account-dialog" id="accountDialog" aria-labelledby="accountDialogTitle">
     <form method="dialog"><button class="dialog-close" type="button" data-dialog-close aria-label="닫기">×</button></form>

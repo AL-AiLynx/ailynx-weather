@@ -581,6 +581,42 @@ const MAAT_STATE_TEXT = [
   "과열"
 ];
 
+const MAAT_RECORD_STATUS_TEXT = Object.freeze({
+  WATCH: "관측 중",
+  PRE_WINDOW: "관측 전",
+  WINDOW_CANDIDATE: "관측 창 후보",
+  WINDOW_OPEN: "관측 창 열림",
+  FORCE_EXPRESSION_CANDIDATE: "힘 표현 후보",
+  NOISE_ONLY: "노이즈 우세",
+  FALSE_RELEASE: "거짓 해제",
+  RESET_REQUIRED: "리셋 필요",
+});
+
+const MAAT_WINDOW_TEXT = Object.freeze({
+  WAIT: "관측 대기",
+  WINDOW_OPEN: "관측 창 열림",
+  VOL_TRIGGER_WAIT: "거래량 신호 대기",
+  FORCE_EXPRESSION_CANDIDATE: "힘 표현 후보",
+  NOISE_ONLY: "노이즈 우세",
+  FALSE_RELEASE: "거짓 해제",
+  RESET_REQUIRED: "리셋 필요",
+});
+
+const VALIDATION_QUALITY_TEXT = Object.freeze({
+  GOOD: "양호",
+  LIMITED: "제한",
+  WATCH: "확인 중",
+  INVALID: "유효하지 않음",
+});
+
+const VALIDATION_FRESHNESS_TEXT = Object.freeze({
+  FRESH: "현재 정밀 관측",
+  AGING: "갱신 대기 관측",
+  STALE: "마지막 정밀 관측",
+  EXPIRED: "마지막 정밀 관측",
+  INVALID_CLOCK: "시각 확인 필요",
+});
+
 const TIME_ROLE_TEXT = [
   "없음",
   "부모 문맥",
@@ -633,6 +669,26 @@ function formatValidationTfMinutes(value) {
   return `${value}M`;
 }
 
+function validationValue(value) {
+  return value === null || value === undefined || value === "" ? "데이터 없음" : String(value);
+}
+
+function validationObservationLabel(observation) {
+  return VALIDATION_FRESHNESS_TEXT[observation?.freshness] || "정밀 관측 상태 확인";
+}
+
+function validationRecordStatus(value) {
+  return MAAT_RECORD_STATUS_TEXT[String(value || "").toUpperCase()] || "데이터 없음";
+}
+
+function validationWindowStatus(value) {
+  return MAAT_WINDOW_TEXT[String(value || "").toUpperCase()] || "데이터 없음";
+}
+
+function isStaleValidation(observation) {
+  return ["STALE", "EXPIRED"].includes(observation?.freshness);
+}
+
 function renderValidationQuality(id, observation) {
   const element = document.getElementById(id);
   if (!element) {
@@ -642,23 +698,24 @@ function renderValidationQuality(id, observation) {
     "quality-good",
     "quality-limited",
     "quality-watch",
-    "quality-invalid"
+    "quality-invalid",
+    "quality-stale"
   );
   if (!observation?.available) {
-    element.textContent = tr("waiting");
+    element.textContent = "데이터 없음";
     return;
   }
-  const quality = observation.quality.sensorQuality;
-  element.textContent = `${quality} · ${observation.freshness}`;
-  element.classList.add(`quality-${quality.toLowerCase()}`);
+  const quality = observation.quality?.sensorQuality;
+  element.textContent = `${validationObservationLabel(observation)} · ${VALIDATION_QUALITY_TEXT[quality] || "확인 중"}`;
+  element.classList.add(isStaleValidation(observation) ? "quality-stale" : `quality-${String(quality || "watch").toLowerCase()}`);
 }
 
 function renderMaatValidationCard(observation) {
   renderValidationQuality("maatQuality", observation);
   if (!observation?.available) {
-    setValidationText("maatStatus", tr("waiting"));
-    for (const id of ["maatState", "maatScore", "maatRisk", "maatNoise", "maatSensors", "maatWindow", "maatUpdated"]) {
-      setValidationText(id, "—");
+    setValidationText("maatStatus", "정밀 관측 데이터 없음");
+    for (const id of ["maatState", "maatScore", "maatRisk", "maatNoise", "maatWindow", "maatParentTf", "maatUpdated"]) {
+      setValidationText(id, "데이터 없음");
     }
     return;
   }
@@ -666,17 +723,13 @@ function renderMaatValidationCard(observation) {
   const payload = observation.payload;
   const aggregate = payload.aggregate || {};
   const stopwatch = payload.stopwatch || {};
-  const sensors = payload.sensors && typeof payload.sensors === "object"
-    ? Object.values(payload.sensors)
-    : [];
-  const validSensors = sensors.filter((sensor) => sensor?.valid === true).length;
-  setValidationText("maatStatus", `${payload.record_status || "WATCH"} · 검증 결과는 PENDING으로 분리 기록됩니다.`);
-  setValidationText("maatState", MAAT_STATE_TEXT[aggregate.state_code] || "확인 필요");
-  setValidationText("maatScore", Number.isFinite(aggregate.score) ? Math.round(aggregate.score).toString() : "—");
-  setValidationText("maatRisk", Number.isFinite(aggregate.risk_code) ? `R${aggregate.risk_code}` : "—");
-  setValidationText("maatNoise", Number.isFinite(stopwatch.noise_score) ? stopwatch.noise_score.toString() : "—");
-  setValidationText("maatSensors", `${validSensors}/6 유효 · 동기 ${aggregate.sync_count ?? "—"} · 충돌 ${aggregate.conflict_count ?? "—"}`);
-  setValidationText("maatWindow", `${stopwatch.phase || "—"} · ${formatValidationTfMinutes(stopwatch.main_tf_minutes)} → ${formatValidationTfMinutes(stopwatch.parent_tf_minutes)}`);
+  setValidationText("maatStatus", `${validationObservationLabel(observation)} · ${validationRecordStatus(payload.record_status)}`);
+  setValidationText("maatState", validationValue(MAAT_STATE_TEXT[aggregate.state_code]));
+  setValidationText("maatScore", Number.isFinite(aggregate.score) ? Math.round(aggregate.score).toString() : "데이터 없음");
+  setValidationText("maatRisk", Number.isFinite(aggregate.risk_code) ? aggregate.risk_code.toString() : "데이터 없음");
+  setValidationText("maatNoise", Number.isFinite(stopwatch.noise_score) ? stopwatch.noise_score.toString() : "데이터 없음");
+  setValidationText("maatWindow", validationWindowStatus(stopwatch.phase));
+  setValidationText("maatParentTf", Number.isFinite(stopwatch.parent_tf_minutes) ? formatValidationTfMinutes(stopwatch.parent_tf_minutes) : "데이터 없음");
   setValidationText("maatUpdated", formatUpdatedAt(observation.receivedAt) ? `${formatUpdatedAt(observation.receivedAt)} KST` : "시각 확인 불가");
 }
 
@@ -686,9 +739,9 @@ function renderMaat2ValidationCard(maat2) {
   const primary = time?.available ? time : hub;
   renderValidationQuality("maat2Quality", primary);
   if (!primary?.available) {
-    setValidationText("maat2Status", tr("waiting"));
+    setValidationText("maat2Status", "정밀 관측 데이터 없음");
     for (const id of ["maat2Role", "maat2TimeScore", "maat2Timeframes", "maat2Noise", "maat2HubScores", "maat2Why", "maat2Sync"]) {
-      setValidationText(id, "—");
+      setValidationText(id, "데이터 없음");
     }
     return;
   }
@@ -697,13 +750,15 @@ function renderMaat2ValidationCard(maat2) {
   const hubPayload = hub?.available ? hub.payload : null;
   const timeState = timePayload?.time || {};
   const scores = hubPayload?.scores || timePayload?.scores || {};
-  setValidationText("maat2Status", `${timePayload?.record_status || hubPayload?.record_status || "WATCH"} · 방향 예측과 HIT/MISS는 제공하지 않습니다.`);
-  setValidationText("maat2Role", TIME_ROLE_TEXT[timeState.role_code] || "—");
-  setValidationText("maat2TimeScore", Number.isFinite(timeState.score) ? timeState.score.toString() : "—");
-  setValidationText("maat2Timeframes", `${formatValidationTfMinutes(timeState.candidate_tf_minutes)} / ${formatValidationTfMinutes(timeState.parent_tf_minutes)}`);
-  setValidationText("maat2Noise", Number.isFinite(timeState.noise_score) ? timeState.noise_score.toString() : "—");
-  setValidationText("maat2HubScores", `구조 ${Math.round(scores.structure ?? 0)} · 힘 ${Math.round(scores.force ?? 0)} · 창 ${Math.round(scores.window ?? 0)} · 위험 ${Math.round(scores.risk ?? 0)}`);
-  setValidationText("maat2Why", `${TIME_WHY_TEXT[timeState.why_code] || "확인 필요"} · ${timeState.reset_flag ? "RESET" : "유지"}`);
+  setValidationText("maat2Status", `${validationObservationLabel(primary)} · ${validationRecordStatus(timePayload?.record_status || hubPayload?.record_status)}`);
+  setValidationText("maat2Role", validationValue(TIME_ROLE_TEXT[timeState.role_code]));
+  setValidationText("maat2TimeScore", Number.isFinite(timeState.score) ? timeState.score.toString() : "데이터 없음");
+  setValidationText("maat2Timeframes", Number.isFinite(timeState.candidate_tf_minutes) || Number.isFinite(timeState.parent_tf_minutes) ? `${formatValidationTfMinutes(timeState.candidate_tf_minutes)} / ${formatValidationTfMinutes(timeState.parent_tf_minutes)}` : "데이터 없음");
+  setValidationText("maat2Noise", Number.isFinite(timeState.noise_score) ? timeState.noise_score.toString() : "데이터 없음");
+  setValidationText("maat2HubScores", [
+    ["구조", scores.structure], ["힘", scores.force], ["창", scores.window], ["위험", scores.risk],
+  ].filter(([, value]) => Number.isFinite(value)).map(([label, value]) => `${label} ${Math.round(value)}`).join(" · ") || "데이터 없음");
+  setValidationText("maat2Why", `${validationValue(TIME_WHY_TEXT[timeState.why_code])} · ${timeState.reset_flag === true ? "리셋 필요" : timeState.reset_flag === false ? "리셋 없음" : "데이터 없음"}`);
   setValidationText("maat2Sync", hub?.available && time?.available ? (maat2.synchronized ? "같은 봉 확인" : "봉 시각 불일치") : "일부 패킷 대기");
 }
 
@@ -718,9 +773,10 @@ function renderValidationCards() {
   const stopwatch = validationCardsData?.maat?.payload?.stopwatch;
   const noise = stopwatch?.noise_score;
   if (summary && validationCardsData?.maat?.available && Number.isFinite(stopwatch?.main_tf_minutes)) {
-    const windowText = stopwatch.phase === "WINDOW_OPEN" ? "관측 창 열림" : stopwatch.phase === "WAIT" ? "관측 대기" : "관측 상태 확인";
+    const windowText = validationWindowStatus(stopwatch.phase);
     const noiseText = Number.isFinite(noise) ? noise <= 33 ? "노이즈 낮음" : noise <= 66 ? "노이즈 보통" : "노이즈 높음" : "노이즈 확인 중";
-    summary.textContent = `${formatValidationTfMinutes(stopwatch.main_tf_minutes)} 중심 · ${windowText} · ${noiseText}`;
+    const stalePrefix = isStaleValidation(validationCardsData.maat) ? "마지막 정밀 관측 · " : "";
+    summary.textContent = `${stalePrefix}${formatValidationTfMinutes(stopwatch.main_tf_minutes)} 중심 · ${windowText} · ${noiseText}`;
     summary.hidden = false;
   } else if (summary) summary.hidden = true;
   renderMaatValidationCard(validationCardsData?.maat);

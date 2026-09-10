@@ -82,6 +82,17 @@ test("server history hydration updates the core-metric observation source", asyn
   assert.match(app, /filter\(\(\{timeframe, kind\}\) => planAllows\(timeframe, kind\)\)/);
 });
 
+test("precision observations use Korean packet summaries and distinguish stale receipts", async () => {
+  const [html, app, css, worker] = await Promise.all([read("index.html"), read("app.js"), read("styles.css"), read("service-worker.js")]);
+  for (const label of ["상태", "점수", "위험도", "노이즈", "관측 창", "상위 TF", "관측 시각", "역할", "시간 점수", "후보 / 상위 TF", "Hub 점수", "사유 / 리셋", "동기화"]) assert.match(html, new RegExp(label));
+  for (const token of ["MAAT_RECORD_STATUS_TEXT", "MAAT_WINDOW_TEXT", "VALIDATION_FRESHNESS_TEXT", "마지막 정밀 관측", "데이터 없음", "리셋 필요", "quality-stale"]) assert.match(`${app}\n${css}`, new RegExp(token));
+  assert.match(app, /validationRecordStatus\(payload\.record_status\)/);
+  assert.match(app, /validationWindowStatus\(stopwatch\.phase\)/);
+  assert.doesNotMatch(app, /\$\{payload\.record_status \|\| "WATCH"\}/);
+  assert.match(worker, /ailynx-weather-v69/);
+  assert.match(worker, /app\.js\?v=54/);
+});
+
 test("last-known-good display keeps stale receipts separate from LIVE", async () => {
   const [app, css, history] = await Promise.all([read("app.js"), read("styles.css"), read("weather-history.js")]);
   for (const required of ["LAST OBSERVATION", "OLD OBSERVATION", "lastKnownGoodTimeframes", "withLastKnownGoodCache", "cachedLastKnownGoodTimeframes", "refreshLiveObservations"]) assert.match(app, new RegExp(required));
@@ -113,9 +124,9 @@ test("asset navigation separates entitlement from the selected state", async () 
 
 test("dashboard cache shell includes the membership resolver and has no removed UI modules", async () => {
   const [html, worker] = await Promise.all([read("index.html"), read("service-worker.js")]);
-  assert.match(worker, /ailynx-weather-v68/);
+  assert.match(worker, /ailynx-weather-v69/);
   assert.match(html, /manifest\.webmanifest\?v=2/);
-  for (const asset of ["styles.css?v=35", "icons/ailynx-brand.jpg", "asset-registry.js?v=5", "manifest.webmanifest?v=2", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "community-config.js?v=4", "admin-access.js?v=3", "admin-preview.js?v=2", "admin-asset-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=6", "member-community.js?v=5", "admin.html", "admin-page.js?v=3", "auth-gate.js?v=4", "app.js?v=53"]) {
+  for (const asset of ["styles.css?v=35", "icons/ailynx-brand.jpg", "asset-registry.js?v=5", "manifest.webmanifest?v=2", "/api/public-runtime-config.js", "public-runtime-config.js?v=1", "community-config.js?v=4", "admin-access.js?v=3", "admin-preview.js?v=2", "admin-asset-client.js?v=1", "membership-client.js?v=2", "core-dynamics.js?v=1", "i18n.js?v=6", "member-community.js?v=5", "admin.html", "admin-page.js?v=3", "auth-gate.js?v=4", "app.js?v=54"]) {
     assert.ok(html.includes(asset) || worker.includes(asset), `missing ${asset}`);
   }
   assert.doesNotMatch(worker, /frontline-timeframe|weather-dynamics/);
