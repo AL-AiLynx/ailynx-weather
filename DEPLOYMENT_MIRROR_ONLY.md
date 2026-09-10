@@ -1,14 +1,8 @@
-# Deployment mirror only
+# Retired deployment mirror
 
-**Do not develop features in this repository.**
+This repository is **not** an active Production source.
 
-Canonical source: `AL-AiLynx/AiLynx`, directory `Weather/`.
+Canonical source: `AL-AiLynx/AiLynx@integration/as1-live-v1`, directory `Weather/`.
 Canonical local root: `C:\\Lynx\\GitHub\\AiLynx`.
 
-This repository exists only as the approved Vercel Production deployment mirror until the Vercel cutover is separately completed. Permitted work here is one-way canonical sync, mirror verification, and an explicitly approved deployment task.
-
-Deployment direction:
-
-```text
-AiLynx canonical → approved deploy subset → this mirror → Vercel
-```
+This repository is retained as a historical deployment mirror and reference. Do not develop features here or copy source back into canonical.
